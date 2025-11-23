@@ -1,0 +1,74 @@
+{
+  "en": {
+    "dbStats": {
+      "performance": "Performance Statistics",
+      "activeBackends": "Active Backends",
+      "transactions": "Transactions",
+      "commits": "Commits",
+      "rollbacks": "Rollbacks",
+      "tuples": "Tuples",
+      "inserted": "Inserted",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "cacheHitRatio": "Cache Hit Ratio",
+      "conflicts": "Conflicts",
+      "deadlocks": "Deadlocks",
+      "tempFiles": "Temporary Files",
+      "tempBytes": "Temporary Bytes"
+    }
+  },
+  "zh-CN": {
+    "dbStats": {
+      "performance": "性能统计",
+      "activeBackends": "活动后端",
+      "transactions": "事务",
+      "commits": "提交数",
+      "rollbacks": "回滚数",
+      "tuples": "元组",
+      "inserted": "插入",
+      "updated": "更新",
+      "deleted": "删除",
+      "cacheHitRatio": "缓存命中率",
+      "conflicts": "冲突数",
+      "deadlocks": "死锁数",
+      "tempFiles": "临时文件",
+      "tempBytes": "临时文件大小"
+    }
+  },
+  "ja": {
+    "dbStats": {
+      "performance": "パフォーマンス統計",
+      "activeBackends": "アクティブバックエンド",
+      "transactions": "トランザクション",
+      "commits": "コミット数",
+      "rollbacks": "ロールバック数",
+      "tuples": "タプル",
+      "inserted": "挿入",
+      "updated": "更新",
+      "deleted": "削除",
+      "cacheHitRatio": "キャッシュヒット率",
+      "conflicts": "競合数",
+      "deadlocks": "デッドロック数",
+      "tempFiles": "一時ファイル",
+      "tempBytes": "一時ファイルサイズ"
+    }
+  },
+  "fr": {
+    "dbStats": {
+      "performance": "Statistiques de Performance",
+      "activeBackends": "Backends Actifs",
+      "transactions": "Transactions",
+      "commits": "Validations",
+      "rollbacks": "Annulations",
+      "tuples": "Tuples",
+      "inserted": "Insérés",
+      "updated": "Mis à jour",
+      "deleted": "Supprimés",
+      "cacheHitRatio": "Taux de Cache",
+      "conflicts": "Conflits",
+      "deadlocks": "Verrous Mortels",
+      "tempFiles": "Fichiers Temporaires",
+      "tempBytes": "Taille Temporaire"
+    }
+  }
+}

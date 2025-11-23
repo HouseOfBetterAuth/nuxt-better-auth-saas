@@ -1,0 +1,114 @@
+{
+  "en": {
+    "global": {
+      "appName": "NuxSaaS",
+      "nav": {
+        "admin": "Admin",
+        "features": "Features",
+        "pricing": "Pricing",
+        "docs": "Documentation"
+      },
+      "auth": {
+        "signIn": "Sign In",
+        "signOut": "Sign Out",
+        "profile": "Profile"
+      },
+      "page": {
+        "actions": "Actions",
+        "create": "Create",
+        "edit": "Edit",
+        "save": "Save",
+        "delete": "Delete",
+        "cancel": "Cancel",
+        "name": "Name",
+        "status": "Status",
+        "createdAt": "Created At",
+        "all": "All"
+      }
+    }
+  },
+  "zh-CN": {
+    "global": {
+      "appName": "NuxSaaS",
+      "nav": {
+        "admin": "管理后台",
+        "features": "功能特性",
+        "pricing": "定价方案",
+        "docs": "文档"
+      },
+      "auth": {
+        "signIn": "登录",
+        "signOut": "退出",
+        "profile": "个人资料"
+      },
+      "page": {
+        "actions": "操作",
+        "create": "创建",
+        "edit": "编辑",
+        "save": "保存",
+        "delete": "删除",
+        "cancel": "取消",
+        "name": "名称",
+        "status": "状态",
+        "createdAt": "创建时间",
+        "all": "全部"
+      }
+    }
+  },
+  "ja": {
+    "global": {
+      "appName": "NuxSaaS",
+      "nav": {
+        "admin": "管理画面",
+        "features": "機能",
+        "pricing": "料金",
+        "docs": "ドキュメント"
+      },
+      "auth": {
+        "signIn": "ログイン",
+        "signOut": "ログアウト",
+        "profile": "プロフィール"
+      },
+      "page": {
+        "actions": "アクション",
+        "create": "作成",
+        "edit": "編集",
+        "save": "保存",
+        "delete": "削除",
+        "cancel": "キャンセル",
+        "name": "名前",
+        "status": "状態",
+        "createdAt": "作成日時",
+        "all": "すべて"
+      }
+    }
+  },
+  "fr": {
+    "global": {
+      "appName": "NuxSaaS",
+      "nav": {
+        "admin": "Administration",
+        "features": "Fonctionnalités",
+        "pricing": "Tarification",
+        "docs": "Documentation"
+      },
+      "auth": {
+        "signIn": "Connexion",
+        "signOut": "Déconnexion",
+        "profile": "Profil"
+      },
+      "page": {
+        "actions": "Actions",
+        "create": "Créer",
+        "edit": "Modifier",
+        "save": "Enregistrer",
+        "delete": "Supprimer",
+        "cancel": "Annuler",
+        "name": "Nom",
+        "status": "Statut",
+        "createdAt": "Créé le",
+        "all": "Tout"
+      }
+    }
+  }
+}

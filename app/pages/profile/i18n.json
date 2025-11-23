@@ -1,0 +1,78 @@
+{
+  "en": {
+    "profile": {
+      "back": "Back",
+      "anonymousUser": "Anonymous User",
+      "role": "Role",
+      "emailVerified": "Email Verified",
+      "verified": "Verified",
+      "notVerified": "Not Verified",
+      "created": "Created",
+      "lastUpdated": "Last Updated",
+      "sessionInfo": "Session Information",
+      "ipAddress": "IP Address",
+      "expires": "Expires",
+      "userAgent": "User Agent",
+      "connectedAccounts": "Connected Accounts",
+      "linkedGithub": "Linked with GitHub",
+      "linkGithub": "Link account with GitHub"
+    }
+  },
+  "zh-CN": {
+    "profile": {
+      "back": "返回",
+      "anonymousUser": "匿名用户",
+      "role": "角色",
+      "emailVerified": "邮箱验证",
+      "verified": "已验证",
+      "notVerified": "未验证",
+      "created": "创建时间",
+      "lastUpdated": "更新时间",
+      "sessionInfo": "会话信息",
+      "ipAddress": "IP地址",
+      "expires": "过期时间",
+      "userAgent": "用户代理",
+      "connectedAccounts": "关联账号",
+      "linkedGithub": "已关联 GitHub",
+      "linkGithub": "关联 GitHub 账号"
+    }
+  },
+  "ja": {
+    "profile": {
+      "back": "戻る",
+      "anonymousUser": "匿名ユーザー",
+      "role": "役割",
+      "emailVerified": "メール確認",
+      "verified": "確認済み",
+      "notVerified": "未確認",
+      "created": "作成日時",
+      "lastUpdated": "更新日時",
+      "sessionInfo": "セッション情報",
+      "ipAddress": "IPアドレス",
+      "expires": "有効期限",
+      "userAgent": "ユーザーエージェント",
+      "connectedAccounts": "連携アカウント",
+      "linkedGithub": "GitHub連携済み",
+      "linkGithub": "GitHubと連携する"
+    }
+  },
+  "fr": {
+    "profile": {
+      "back": "Retour",
+      "anonymousUser": "Utilisateur Anonyme",
+      "role": "Rôle",
+      "emailVerified": "Email Vérifié",
+      "verified": "Vérifié",
+      "notVerified": "Non Vérifié",
+      "created": "Créé le",
+      "lastUpdated": "Dernière mise à jour",
+      "sessionInfo": "Informations de Session",
+      "ipAddress": "Adresse IP",
+      "expires": "Expire le",
+      "userAgent": "Agent Utilisateur",
+      "connectedAccounts": "Comptes Connectés",
+      "linkedGithub": "Lié à GitHub",
+      "linkGithub": "Lier le compte avec GitHub"
+    }
+  }
+}

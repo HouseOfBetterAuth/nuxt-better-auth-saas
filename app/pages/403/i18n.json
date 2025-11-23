@@ -1,0 +1,30 @@
+{
+  "en": {
+    "403": {
+      "title": "Access Denied",
+      "message": "Sorry, you don't have permission to access this page.",
+      "back": "Back to home"
+    }
+  },
+  "zh-CN": {
+    "403": {
+      "title": "访问被拒绝",
+      "message": "抱歉，您没有权限访问此页面。",
+      "back": "返回首页"
+    }
+  },
+  "ja": {
+    "403": {
+      "title": "アクセス拒否",
+      "message": "申し訳ありませんが、このページにアクセスする権限がありません。",
+      "back": "ホームに戻る"
+    }
+  },
+  "fr": {
+    "403": {
+      "title": "Accès Refusé",
+      "message": "Désolé, vous n'avez pas la permission d'accéder à cette page.",
+      "back": "Retour à l'accueil"
+    }
+  }
+}

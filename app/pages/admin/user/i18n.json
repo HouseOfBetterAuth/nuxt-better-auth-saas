@@ -1,0 +1,202 @@
+{
+  "en": {
+    "user": {
+      "title": "User Management",
+      "columns": {
+        "avatar": "Avatar",
+        "email": "Email",
+        "role": "Role"
+      },
+      "status": {
+        "banned": "Banned",
+        "verified": "Verified",
+        "unverified": "Unverified"
+      },
+      "actions": {
+        "createUser": "Create User",
+        "ban": "Ban",
+        "unban": "Unban"
+      },
+      "form": {
+        "email": "Email",
+        "password": "Password",
+        "role": "Role"
+      },
+      "validation": {
+        "nameMin": "Name must be at least {n} characters",
+        "emailInvalid": "Invalid email address",
+        "passwordMin": "Password must be at least {n} characters"
+      },
+      "roles": {
+        "user": "User",
+        "admin": "Administrator"
+      },
+      "modals": {
+        "createUser": "Create New User",
+        "ban": {
+          "title": "Ban User",
+          "reason": "Ban Reason",
+          "reasonPlaceholder": "Enter reason for banning user",
+          "period": "Ban Period",
+          "periods": {
+            "permanent": "Permanent",
+            "1_day": "1 Day",
+            "7_days": "7 Days",
+            "30_days": "30 Days"
+          },
+          "submit": "Ban User"
+        }
+      }
+    }
+  },
+  "zh-CN": {
+    "user": {
+      "title": "用户管理",
+      "columns": {
+        "avatar": "头像",
+        "email": "邮箱",
+        "role": "角色"
+      },
+      "status": {
+        "banned": "已封禁",
+        "verified": "已验证",
+        "unverified": "未验证"
+      },
+      "actions": {
+        "createUser": "创建用户",
+        "ban": "封禁",
+        "unban": "解封"
+      },
+      "form": {
+        "email": "邮箱",
+        "password": "密码",
+        "role": "角色"
+      },
+      "validation": {
+        "nameMin": "名称至少需要 {n} 个字符",
+        "emailInvalid": "无效的邮箱地址",
+        "passwordMin": "密码至少需要 {n} 个字符"
+      },
+      "roles": {
+        "user": "普通用户",
+        "admin": "管理员"
+      },
+      "modals": {
+        "createUser": "创建新用户",
+        "ban": {
+          "title": "封禁用户",
+          "reason": "封禁原因",
+          "reasonPlaceholder": "请输入封禁用户的原因",
+          "period": "封禁期限",
+          "periods": {
+            "permanent": "永久",
+            "1_day": "1天",
+            "7_days": "7天",
+            "30_days": "30天"
+          },
+          "submit": "封禁用户"
+        }
+      }
+    }
+  },
+  "ja": {
+    "user": {
+      "title": "ユーザー管理",
+      "columns": {
+        "avatar": "アバター",
+        "email": "メール",
+        "role": "役割"
+      },
+      "status": {
+        "banned": "禁止",
+        "verified": "確認済み",
+        "unverified": "未確認"
+      },
+      "actions": {
+        "createUser": "ユーザー作成",
+        "ban": "禁止",
+        "unban": "解除"
+      },
+      "form": {
+        "email": "メールアドレス",
+        "password": "パスワード",
+        "role": "役割"
+      },
+      "validation": {
+        "nameMin": "名前は少なくとも {n} 文字必要です",
+        "emailInvalid": "無効なメールアドレス",
+        "passwordMin": "パスワードは少なくとも {n} 文字必要です"
+      },
+      "roles": {
+        "user": "ユーザー",
+        "admin": "管理者"
+      },
+      "modals": {
+        "createUser": "新規ユーザー作成",
+        "ban": {
+          "title": "ユーザーをバン",
+          "reason": "バンの理由",
+          "reasonPlaceholder": "ユーザーをバンする理由を入力してください",
+          "period": "バン期間",
+          "periods": {
+            "permanent": "永久",
+            "1_day": "1日",
+            "7_days": "7日間",
+            "30_days": "30日間"
+          },
+          "submit": "ユーザーをバン"
+        }
+      }
+    }
+  },
+  "fr": {
+    "user": {
+      "title": "Gestion des utilisateurs",
+      "columns": {
+        "avatar": "Avatar",
+        "email": "Email",
+        "role": "Rôle"
+      },
+      "status": {
+        "banned": "Banni",
+        "verified": "Vérifié",
+        "unverified": "Non vérifié"
+      },
+      "actions": {
+        "createUser": "Créer un utilisateur",
+        "ban": "Bannir",
+        "unban": "Débannir"
+      },
+      "form": {
+        "email": "Email",
+        "password": "Mot de passe",
+        "role": "Rôle"
+      },
+      "validation": {
+        "nameMin": "Le nom doit contenir au moins {n} caractères",
+        "emailInvalid": "Adresse e-mail invalide",
+        "passwordMin": "Le mot de passe doit contenir au moins {n} caractères"
+      },
+      "roles": {
+        "user": "Utilisateur",
+        "admin": "Administrateur"
+      },
+      "modals": {
+        "createUser": "Créer un nouvel utilisateur",
+        "ban": {
+          "title": "Bannir l'utilisateur",
+          "reason": "Raison du bannissement",
+          "reasonPlaceholder": "Entrez la raison du bannissement",
+          "period": "Période de bannissement",
+          "periods": {
+            "permanent": "Permanent",
+            "1_day": "1 jour",
+            "7_days": "7 jours",
+            "30_days": "30 jours"
+          },
+          "submit": "Bannir l'utilisateur"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+name = "nuxsaas"
+compatibility_date = "2024-11-01"
+compatibility_flags = [ "nodejs_compat" ]
+main = "./dist/server/index.mjs"
+assets = { directory = "./dist/public/", binding = "ASSETS" }
+kv_namespaces = [ { binding = "KV", id = "your_kv_id" } ]
+routes = [ { pattern = "nuxsaas.com", custom_domain = true } ]
+
+[observability.logs]
+enabled = true
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "your_hyperdrive_id"

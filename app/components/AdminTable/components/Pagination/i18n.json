@@ -1,0 +1,34 @@
+{
+  "en": {
+    "pagination": {
+      "rowsPerPage": "Rows per page",
+      "pageOf": "Page {page} of {totalPage}",
+      "selectedRows": "{selected} / {total} row(s) selected",
+      "totalRows": "Total row(s): {total}"
+    }
+  },
+  "zh-CN": {
+    "pagination": {
+      "rowsPerPage": "每页行数",
+      "pageOf": "第 {page} 页，共 {totalPage} 页",
+      "selectedRows": "已选择 {selected} / {total} 行",
+      "totalRows": "共 {total} 行"
+    }
+  },
+  "ja": {
+    "pagination": {
+      "rowsPerPage": "表示件数",
+      "pageOf": "ページ {page} / {totalPage}",
+      "selectedRows": "{selected} / {total} 行を選択",
+      "totalRows": "合計: {total} 行"
+    }
+  },
+  "fr": {
+    "pagination": {
+      "rowsPerPage": "Lignes par page",
+      "pageOf": "Page {page} sur {totalPage}",
+      "selectedRows": "{selected} / {total} ligne(s) sélectionnée(s)",
+      "totalRows": "Total: {total} ligne(s)"
+    }
+  }
+}

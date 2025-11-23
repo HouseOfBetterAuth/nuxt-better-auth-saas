@@ -1,0 +1,46 @@
+{
+  // Disable the default formatter, use eslint instead
+  "editor.formatOnSave": false,
+
+  "editor.gotoLocation.multipleDefinitions": "goto",
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+
+  // Auto fix
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "never"
+  },
+  "eslint.rules.customizations": [
+    { "rule": "style/*", "severity": "warn", "fixable": true },
+    { "rule": "format/*", "severity": "warn", "fixable": true },
+    { "rule": "*-indent", "severity": "warn", "fixable": true },
+    { "rule": "*-spacing", "severity": "warn", "fixable": true },
+    { "rule": "*-spaces", "severity": "warn", "fixable": true },
+    { "rule": "*-order", "severity": "warn", "fixable": true },
+    { "rule": "*-dangle", "severity": "warn", "fixable": true },
+    { "rule": "*-newline", "severity": "warn", "fixable": true },
+    { "rule": "*quotes", "severity": "warn", "fixable": true },
+    { "rule": "*semi", "severity": "warn", "fixable": true }
+  ],
+  "eslint.validate": [
+    "javascript",
+    "typescript",
+    "vue",
+    "html",
+    "markdown",
+    "json",
+    "css",
+    "less",
+    "scss"
+  ],
+  "workbench.editor.labelFormat": "short",
+  "workbench.editorAssociations": {
+    "*.svg": "default"
+  },
+  "vitest.nodeExecutable": "~/.nvm/versions/node/v22.15.0/bin/node"
+}

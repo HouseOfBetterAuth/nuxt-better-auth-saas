@@ -1,0 +1,22 @@
+{
+  "en": {
+    "checkboxFilter": {
+      "nSelected": "{n} selected"
+    }
+  },
+  "zh-CN": {
+    "checkboxFilter": {
+      "nSelected": "{n} 个已选择"
+    }
+  },
+  "ja": {
+    "checkboxFilter": {
+      "nSelected": "{n} 個選択済み"
+    }
+  },
+  "fr": {
+    "checkboxFilter": {
+      "nSelected": "{n} sélectionné(s)"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "en": {
+    "forgotPassword": {
+      "title": "Reset Password",
+      "description": "Enter your email address and we'll send you instructions to reset your password.",
+      "email": "Email",
+      "emailPlaceholder": "Enter your email address",
+      "submit": "Send Instructions",
+      "backToSignIn": "Back to Sign In",
+      "success": "Reset instructions have been sent to your email",
+      "errors": {
+        "invalidEmail": "Invalid email address"
+      }
+    }
+  },
+  "zh-CN": {
+    "forgotPassword": {
+      "title": "重置密码",
+      "description": "请输入您的邮箱地址，我们将向您发送重置密码的说明。",
+      "email": "邮箱",
+      "emailPlaceholder": "请输入邮箱地址",
+      "submit": "发送说明",
+      "backToSignIn": "返回登录",
+      "success": "重置说明已发送至您的邮箱",
+      "errors": {
+        "invalidEmail": "无效的邮箱地址"
+      }
+    }
+  },
+  "ja": {
+    "forgotPassword": {
+      "title": "パスワードのリセット",
+      "description": "メールアドレスを入力してください。パスワードをリセットする手順をお送りします。",
+      "email": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力",
+      "submit": "手順を送信",
+      "backToSignIn": "ログインに戻る",
+      "success": "リセット手順をメールに送信しました",
+      "errors": {
+        "invalidEmail": "無効なメールアドレス"
+      }
+    }
+  },
+  "fr": {
+    "forgotPassword": {
+      "title": "Réinitialiser le mot de passe",
+      "description": "Saisissez votre adresse e-mail et nous vous enverrons les instructions pour réinitialiser votre mot de passe.",
+      "email": "E-mail",
+      "emailPlaceholder": "Saisissez votre adresse e-mail",
+      "submit": "Envoyer les instructions",
+      "backToSignIn": "Retour à la connexion",
+      "success": "Les instructions de réinitialisation ont été envoyées à votre e-mail",
+      "errors": {
+        "invalidEmail": "Adresse e-mail invalide"
+      }
+    }
+  }
+}

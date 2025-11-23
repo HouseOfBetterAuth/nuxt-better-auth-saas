@@ -1,0 +1,22 @@
+{
+  "en": {
+    "colorModeToggler": {
+      "ariaLabel": "Change Color Mode"
+    }
+  },
+  "zh-CN": {
+    "colorModeToggler": {
+      "ariaLabel": "切换颜色模式"
+    }
+  },
+  "ja": {
+    "colorModeToggler": {
+      "ariaLabel": "カラーモードを変更"
+    }
+  },
+  "fr": {
+    "colorModeToggler": {
+      "ariaLabel": "Changer le mode de couleur"
+    }
+  }
+}

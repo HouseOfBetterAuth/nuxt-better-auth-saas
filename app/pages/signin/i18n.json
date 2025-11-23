@@ -1,0 +1,111 @@
+{
+  "en": {
+    "signIn": {
+      "welcome": "Welcome to {name}",
+      "email": "Email",
+      "password": "Password",
+      "emailPlaceholder": "Email Address",
+      "passwordPlaceholder": "Password",
+      "rememberMe": "Remember me",
+      "forgotPassword": "Forgot your password?",
+      "signIn": "Sign In",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create today!",
+      "or": "Or",
+      "signInSuccess": "Sign in Success",
+      "errors": {
+        "invalidEmail": "Invalid email address",
+        "passwordLength": "Password must be at least {min} characters"
+      },
+      "emailNotVerified": "Email Not Verified",
+      "emailNotVerifiedDesc": "Please verify your email address to continue.",
+      "sendEmail": "Send Verification Email",
+      "sendEmailSuccess": "Verification email has been sent",
+      "sendEmailError": "Failed to send verification email"
+    }
+  },
+  "zh-CN": {
+    "signIn": {
+      "welcome": "欢迎使用 {name}",
+      "email": "邮箱",
+      "password": "密码",
+      "emailPlaceholder": "邮箱地址",
+      "passwordPlaceholder": "密码",
+      "rememberMe": "记住我",
+      "forgotPassword": "忘记密码？",
+      "signIn": "登录",
+      "noAccount": "还没有账号？",
+      "createAccount": "立即注册！",
+      "or": "或者",
+      "signInSuccess": "登录成功",
+      "errors": {
+        "invalidEmail": "无效的邮箱地址",
+        "passwordLength": "密码长度至少为{min}个字符"
+      },
+      "emailNotVerified": "邮箱未验证",
+      "emailNotVerifiedDesc": "请验证您的邮箱地址以继续。",
+      "resendEmail": "重新发送验证邮件",
+      "resendEmailSuccess": "验证邮件已发送",
+      "resendEmailError": "发送验证邮件失败",
+      "sendEmail": "发送验证邮件",
+      "sendEmailSuccess": "验证邮件已发送",
+      "sendEmailError": "发送验证邮件失败"
+    }
+  },
+  "ja": {
+    "signIn": {
+      "welcome": "{name}へようこそ",
+      "email": "メールアドレス",
+      "password": "パスワード",
+      "emailPlaceholder": "メールアドレス",
+      "passwordPlaceholder": "パスワード",
+      "rememberMe": "ログイン状態を保持",
+      "forgotPassword": "パスワードをお忘れですか？",
+      "signIn": "ログイン",
+      "noAccount": "アカウントをお持ちでない方",
+      "createAccount": "新規登録！",
+      "or": "または",
+      "signInSuccess": "ログインに成功しました",
+      "errors": {
+        "invalidEmail": "無効なメールアドレス",
+        "passwordLength": "パスワードは{min}文字以上である必要があります"
+      },
+      "emailNotVerified": "メールアドレス未確認",
+      "emailNotVerifiedDesc": "続行するにはメールアドレスを確認してください。",
+      "resendEmail": "確認メールを再送信",
+      "resendEmailSuccess": "確認メールを送信しました",
+      "resendEmailError": "確認メールの送信に失敗しました",
+      "sendEmail": "認証メールを送信",
+      "sendEmailSuccess": "認証メールを送信しました",
+      "sendEmailError": "認証メールの送信に失敗しました"
+    }
+  },
+  "fr": {
+    "signIn": {
+      "welcome": "Bienvenue sur {name}",
+      "email": "E-mail",
+      "password": "Mot de passe",
+      "emailPlaceholder": "Adresse e-mail",
+      "passwordPlaceholder": "Mot de passe",
+      "rememberMe": "Se souvenir de moi",
+      "forgotPassword": "Mot de passe oublié ?",
+      "signIn": "Se connecter",
+      "noAccount": "Vous n'avez pas de compte ?",
+      "createAccount": "Créez-en un !",
+      "or": "Ou",
+      "signInSuccess": "Connexion réussie",
+      "errors": {
+        "invalidEmail": "Adresse e-mail invalide",
+        "passwordLength": "Le mot de passe doit contenir au moins {min} caractères"
+      },
+      "emailNotVerified": "Email non vérifié",
+      "emailNotVerifiedDesc": "Veuillez vérifier votre adresse e-mail pour continuer.",
+      "resendEmail": "Renvoyer l'e-mail de vérification",
+      "resendEmailSuccess": "L'e-mail de vérification a été envoyé",
+      "resendEmailError": "Échec de l'envoi de l'e-mail de vérification",
+      "sendEmail": "Envoyer l'e-mail de vérification",
+      "sendEmailSuccess": "L'e-mail de vérification a été envoyé",
+      "sendEmailError": "Échec de l'envoi de l'e-mail de vérification"
+    }
+  }
+}

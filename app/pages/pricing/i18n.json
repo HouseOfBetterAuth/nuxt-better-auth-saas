@@ -1,0 +1,178 @@
+{
+  "en": {
+    "pricing": {
+      "title": "Simple, transparent pricing",
+      "subtitle": "Choose the plan that suits your needs",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "savePercent": "Save {percent}%",
+      "popular": "Popular",
+      "free": {
+        "name": "Free",
+        "description": "Perfect for getting started",
+        "price": "Free",
+        "period": "forever",
+        "feature1": "Basic features",
+        "feature2": "Community support"
+      },
+      "pro": {
+        "name": "Pro",
+        "description": "For growing businesses",
+        "price": "${price}",
+        "period": "per month",
+        "yearPeriod": "per year",
+        "feature1": "All features",
+        "feature2": "Priority support"
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "description": "For large organizations",
+        "price": "Custom",
+        "period": "contact us",
+        "feature1": "Everything in Pro",
+        "feature2": "Dedicated support",
+        "feature3": "Custom deployment"
+      },
+      "features": {
+        "title": "Features included:"
+      },
+      "cta": {
+        "free": "Get Started",
+        "pro": "Start Pro Trial",
+        "enterprise": "Contact Sales"
+      }
+    }
+  },
+  "zh-CN": {
+    "pricing": {
+      "title": "简单透明的定价",
+      "subtitle": "选择最适合您需求的方案",
+      "monthly": "按月付费",
+      "yearly": "按年付费",
+      "savePercent": "节省 {percent}%",
+      "popular": "热门",
+      "free": {
+        "name": "免费版",
+        "description": "完美的入门选择",
+        "price": "免费",
+        "period": "永久",
+        "feature1": "基础功能",
+        "feature2": "社区支持"
+      },
+      "pro": {
+        "name": "专业版",
+        "description": "适合成长中的企业",
+        "price": "${price}",
+        "period": "每月",
+        "yearPeriod": "每年",
+        "feature1": "所有功能",
+        "feature2": "优先支持"
+      },
+      "enterprise": {
+        "name": "企业版",
+        "description": "适合大型组织",
+        "price": "定制",
+        "period": "联系我们",
+        "feature1": "包含专业版所有功能",
+        "feature2": "专属支持",
+        "feature3": "自定义部署"
+      },
+      "features": {
+        "title": "包含功能："
+      },
+      "cta": {
+        "free": "立即开始",
+        "pro": "开始专业版试用",
+        "enterprise": "联系销售"
+      }
+    }
+  },
+  "ja": {
+    "pricing": {
+      "title": "シンプルで透明な料金体系",
+      "subtitle": "ニーズに合ったプランを選択",
+      "monthly": "月払い",
+      "yearly": "年払い",
+      "savePercent": "{percent}%お得",
+      "popular": "人気",
+      "free": {
+        "name": "無料プラン",
+        "description": "始めるのに最適",
+        "price": "無料",
+        "period": "永久",
+        "feature1": "基本機能",
+        "feature2": "コミュニティサポート"
+      },
+      "pro": {
+        "name": "プロプラン",
+        "description": "成長中の企業向け",
+        "price": "${price}",
+        "period": "月額",
+        "yearPeriod": "年額",
+        "feature1": "全機能",
+        "feature2": "優先サポート"
+      },
+      "enterprise": {
+        "name": "エンタープライズ",
+        "description": "大規模組織向け",
+        "price": "カスタム",
+        "period": "お問い合わせ",
+        "feature1": "プロプランの全機能",
+        "feature2": "専任サポート",
+        "feature3": "カスタム導入"
+      },
+      "features": {
+        "title": "含まれる機能："
+      },
+      "cta": {
+        "free": "今すぐ始める",
+        "pro": "プロ版を試す",
+        "enterprise": "営業に問い合わせ"
+      }
+    }
+  },
+  "fr": {
+    "pricing": {
+      "title": "Tarification simple et transparente",
+      "subtitle": "Choisissez le plan qui vous convient",
+      "monthly": "Mensuel",
+      "yearly": "Annuel",
+      "savePercent": "Économisez {percent}%",
+      "popular": "Populaire",
+      "free": {
+        "name": "Gratuit",
+        "description": "Parfait pour commencer",
+        "price": "Gratuit",
+        "period": "pour toujours",
+        "feature1": "Fonctionnalités de base",
+        "feature2": "Support communautaire"
+      },
+      "pro": {
+        "name": "Pro",
+        "description": "Pour les entreprises en croissance",
+        "price": "${price}",
+        "period": "par mois",
+        "yearPeriod": "par an",
+        "feature1": "Toutes les fonctionnalités",
+        "feature2": "Support prioritaire"
+      },
+      "enterprise": {
+        "name": "Entreprise",
+        "description": "Pour les grandes organisations",
+        "price": "Sur mesure",
+        "period": "contactez-nous",
+        "feature1": "Tout ce qui est inclus dans Pro",
+        "feature2": "Support dédié",
+        "feature3": "Déploiement personnalisé"
+      },
+      "features": {
+        "title": "Fonctionnalités incluses :"
+      },
+      "cta": {
+        "free": "Commencer",
+        "pro": "Essayer Pro",
+        "enterprise": "Contacter les ventes"
+      }
+    }
+  }
+}

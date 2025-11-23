@@ -1,0 +1,22 @@
+{
+  "en": {
+    "localeToggler": {
+      "ariaLabel": "Change language"
+    }
+  },
+  "zh-CN": {
+    "localeToggler": {
+      "ariaLabel": "切换语言"
+    }
+  },
+  "ja": {
+    "localeToggler": {
+      "ariaLabel": "言語を変更"
+    }
+  },
+  "fr": {
+    "localeToggler": {
+      "ariaLabel": "Changer de langue"
+    }
+  }
+}

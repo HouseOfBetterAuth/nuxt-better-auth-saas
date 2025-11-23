@@ -1,0 +1,134 @@
+{
+  "en": {
+    "signUp": {
+      "pageTitle": "Sign up",
+      "title": "Create your account",
+      "or": "Or",
+      "form": {
+        "name": {
+          "label": "Name",
+          "placeholder": "Your Name",
+          "error": "Name must be at least {min} characters"
+        },
+        "email": {
+          "label": "Email",
+          "placeholder": "Email Address",
+          "error": "Invalid email address"
+        },
+        "password": {
+          "label": "Password",
+          "placeholder": "Password",
+          "error": "Password must be at least {min} characters"
+        },
+        "confirmPassword": {
+          "label": "Confirm Password",
+          "placeholder": "Confirm Password",
+          "error": "Passwords don't match"
+        }
+      },
+      "submit": "Create Account",
+      "haveAccount": "Already have an account?",
+      "signIn": "Sign in here",
+      "sendEmailSuccess": "Verification email has been sent, Please verify your email address to continue."
+    }
+  },
+  "zh-CN": {
+    "signUp": {
+      "pageTitle": "注册账号",
+      "title": "创建账号",
+      "or": "或者",
+      "form": {
+        "name": {
+          "label": "姓名",
+          "placeholder": "请输入姓名",
+          "error": "姓名至少需要{min}个字符"
+        },
+        "email": {
+          "label": "邮箱",
+          "placeholder": "请输入邮箱地址",
+          "error": "无效的邮箱地址"
+        },
+        "password": {
+          "label": "密码",
+          "placeholder": "请输入密码",
+          "error": "密码至少需要{min}个字符"
+        },
+        "confirmPassword": {
+          "label": "确认密码",
+          "placeholder": "请再次输入密码",
+          "error": "两次输入的密码不一致"
+        }
+      },
+      "submit": "创建账号",
+      "haveAccount": "已有账号？",
+      "signIn": "此处登录",
+      "sendEmailSuccess": "验证邮件已发送，请验证您的邮箱地址以继续。"
+    }
+  },
+  "ja": {
+    "signUp": {
+      "pageTitle": "新規登録",
+      "title": "アカウント作成",
+      "or": "または",
+      "form": {
+        "name": {
+          "label": "名前",
+          "placeholder": "名前を入力",
+          "error": "名前は{min}文字以上である必要があります"
+        },
+        "email": {
+          "label": "メールアドレス",
+          "placeholder": "メールアドレスを入力",
+          "error": "無効なメールアドレス"
+        },
+        "password": {
+          "label": "パスワード",
+          "placeholder": "パスワードを入力",
+          "error": "パスワードは{min}文字以上である必要があります"
+        },
+        "confirmPassword": {
+          "label": "パスワード（確認）",
+          "placeholder": "パスワードを再入力",
+          "error": "パスワードが一致しません"
+        }
+      },
+      "submit": "アカウント作成",
+      "haveAccount": "既にアカウントをお持ちですか？",
+      "signIn": "ログインする",
+      "sendEmailSuccess": "確認メールを送信しました。メールアドレスを確認して続行してください。"
+    }
+  },
+  "fr": {
+    "signUp": {
+      "pageTitle": "S'inscrire",
+      "title": "Créer votre compte",
+      "or": "Ou",
+      "form": {
+        "name": {
+          "label": "Nom",
+          "placeholder": "Votre nom",
+          "error": "Le nom doit contenir au moins {min} caractères"
+        },
+        "email": {
+          "label": "Email",
+          "placeholder": "Adresse email",
+          "error": "Adresse email invalide"
+        },
+        "password": {
+          "label": "Mot de passe",
+          "placeholder": "Mot de passe",
+          "error": "Le mot de passe doit contenir au moins {min} caractères"
+        },
+        "confirmPassword": {
+          "label": "Confirmer le mot de passe",
+          "placeholder": "Confirmer le mot de passe",
+          "error": "Les mots de passe ne correspondent pas"
+        }
+      },
+      "submit": "Créer un compte",
+      "haveAccount": "Vous avez déjà un compte ?",
+      "signIn": "Connectez-vous ici",
+      "sendEmailSuccess": "L'email de vérification a été envoyé. Veuillez vérifier votre adresse email pour continuer."
+    }
+  }
+}

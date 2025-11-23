@@ -1,0 +1,50 @@
+{
+  "en": {
+    "sortControl": {
+      "sort": "Sort",
+      "addSort": "Add sort",
+      "resetSorting": "Reset sorting",
+      "asc": "Asc",
+      "desc": "Desc",
+      "sortBy": "Sort By",
+      "noSorting": "No sorting applied",
+      "addSortingHint": "Add sorting to organize your rows."
+    }
+  },
+  "zh-CN": {
+    "sortControl": {
+      "sort": "排序",
+      "addSort": "添加排序",
+      "resetSorting": "重置排序",
+      "asc": "升序",
+      "desc": "降序",
+      "sortBy": "排序方式",
+      "noSorting": "未应用排序",
+      "addSortingHint": "添加排序以组织您的行。"
+    }
+  },
+  "ja": {
+    "sortControl": {
+      "sort": "並べ替え",
+      "addSort": "並べ替えを追加",
+      "resetSorting": "並べ替えをリセット",
+      "asc": "昇順",
+      "desc": "降順",
+      "sortBy": "並べ替え基準",
+      "noSorting": "並べ替えが適用されていません",
+      "addSortingHint": "行を整理するために並べ替えを追加してください。"
+    }
+  },
+  "fr": {
+    "sortControl": {
+      "sort": "Trier",
+      "addSort": "Ajouter un tri",
+      "resetSorting": "Réinitialiser le tri",
+      "asc": "Ascendant",
+      "desc": "Descendant",
+      "sortBy": "Trier par",
+      "noSorting": "Aucun tri appliqué",
+      "addSortingHint": "Ajoutez un tri pour organiser vos lignes."
+    }
+  }
+}

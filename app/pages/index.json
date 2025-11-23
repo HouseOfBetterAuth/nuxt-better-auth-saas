@@ -1,0 +1,350 @@
+{
+  "en": {
+    "home": {
+      "slogan": "Nuxt.js Full-Stack SaaS Starter Kit - Free & Open Source",
+      "getStarted": "Get Started",
+      "viewOnGithub": "View on GitHub",
+      "features": {
+        "title": "Solid Foundation for Your SaaS Success",
+        "categories": {
+          "foundation": "Foundation",
+          "integration": "Integration",
+          "admin": "Admin",
+          "experience": "Experience",
+          "developer": "Developer"
+        },
+        "items": {
+          "modernTechStack": {
+            "title": "Modern Tech Stack",
+            "description": "Built with Nuxt, ready for Nuxt v4, TypeScript and Vue 3 Composition API"
+          },
+          "secureAuth": {
+            "title": "Secure Auth",
+            "description": "A robust authentication system powered by Better Auth, providing OAuth2 social logins (Google, GitHub, etc.), sign-in/up, and email-based password reset capabilities."
+          },
+          "enterpriseDatabase": {
+            "title": "Enterprise Database",
+            "description": "PostgreSQL with Drizzle ORM for type-safe operations"
+          },
+          "emailIntegration": {
+            "title": "Email Integration",
+            "description": "Built-in Resend integration for transactional emails"
+          },
+          "paymentReady": {
+            "title": "Payment Ready",
+            "description": "Stripe/Polar integration for subscription management"
+          },
+          "noVendorLockIn": {
+            "title": "No Vendor Lock-in",
+            "description": "Modular architecture with swappable components"
+          },
+          "dashboard": {
+            "title": "Dashboard",
+            "description": "A powerful admin dashboard with beautiful charts"
+          },
+          "advancedTables": {
+            "title": "Advanced Tables",
+            "description": "Notion/Airtable like advanced filtering, sorting, and pagination, and built-in generic list api out of the box"
+          },
+          "userSubscriptionManagement": {
+            "title": "User/Subscription Management",
+            "description": "Ready to use User/Subscription management page"
+          },
+          "modernUIDesign": {
+            "title": "Modern UI Design",
+            "description": "Beautiful components with Nuxt UI and TailwindCSS"
+          },
+          "i18nReady": {
+            "title": "I18n Ready",
+            "description": "Built-in support for multiple languages"
+          },
+          "responsiveLayout": {
+            "title": "Responsive Layout",
+            "description": "Optimized for all devices and screen sizes"
+          },
+          "developerFriendly": {
+            "title": "Developer Friendly",
+            "description": "ESLint + TypeScript for better development"
+          },
+          "quickSetup": {
+            "title": "Quick Setup",
+            "description": "Start developing in minutes"
+          },
+          "customizable": {
+            "title": "Customizable",
+            "description": "Easily extend and customize components"
+          }
+        }
+      },
+      "screenshots": {
+        "title": "Screenshots",
+        "dashboard": "Dashboard",
+        "users": "User Management",
+        "pricing": "Pricing Plans",
+        "subscription": "Subscription Management",
+        "signin": "Sign In"
+      }
+    }
+  },
+  "zh-CN": {
+    "home": {
+      "slogan": "Nuxt.js 全栈 SaaS 起步工具包 - 免费开源",
+      "getStarted": "开始使用",
+      "viewOnGithub": "在 GitHub 上查看",
+      "features": {
+        "title": "为您的 SaaS 成功打造坚实基础",
+        "categories": {
+          "foundation": "基础架构",
+          "integration": "集成功能",
+          "admin": "管理功能",
+          "experience": "用户体验",
+          "developer": "开发者友好"
+        },
+        "items": {
+          "modernTechStack": {
+            "title": "现代技术栈",
+            "description": "使用 Nuxt 构建，支持 Nuxt v4、TypeScript 和 Vue 3 组合式 API"
+          },
+          "secureAuth": {
+            "title": "安全认证",
+            "description": "由 Better Auth 提供支持的强大身份验证系统，支持 OAuth2 社交登录（Google、GitHub 等）、登录/注册和基于邮件的密码重置功能。"
+          },
+          "enterpriseDatabase": {
+            "title": "企业级数据库",
+            "description": "使用 PostgreSQL 和 Drizzle ORM 实现类型安全的数据操作"
+          },
+          "emailIntegration": {
+            "title": "邮件集成",
+            "description": "内置 Resend 集成用于发送交易邮件"
+          },
+          "paymentReady": {
+            "title": "支付就绪",
+            "description": "集成 Stripe/Polar 实现订阅管理"
+          },
+          "noVendorLockIn": {
+            "title": "无供应商锁定",
+            "description": "模块化架构，组件可互换"
+          },
+          "dashboard": {
+            "title": "仪表盘",
+            "description": "功能强大的管理仪表盘，配备精美图表"
+          },
+          "advancedTables": {
+            "title": "高级表格",
+            "description": "类似 Notion/Airtable 的高级筛选、排序和分页功能，内置通用列表 API"
+          },
+          "userSubscriptionManagement": {
+            "title": "用户/订阅管理",
+            "description": "即用型的用户和订阅管理页面"
+          },
+          "modernUIDesign": {
+            "title": "现代化界面设计",
+            "description": "使用 Nuxt UI 和 TailwindCSS 构建的精美组件"
+          },
+          "i18nReady": {
+            "title": "多语言支持",
+            "description": "内置多语言支持功能"
+          },
+          "responsiveLayout": {
+            "title": "响应式布局",
+            "description": "针对所有设备和屏幕尺寸优化"
+          },
+          "developerFriendly": {
+            "title": "开发者友好",
+            "description": "使用 ESLint + TypeScript 提供更好的开发体验"
+          },
+          "quickSetup": {
+            "title": "快速搭建",
+            "description": "几分钟内即可开始开发"
+          },
+          "customizable": {
+            "title": "易于定制",
+            "description": "轻松扩展和自定义组件"
+          }
+        }
+      },
+      "screenshots": {
+        "title": "截图",
+        "dashboard": "仪表盘",
+        "users": "用户管理",
+        "pricing": "价格方案",
+        "subscription": "订阅管理",
+        "signin": "登录"
+      }
+    }
+  },
+  "ja": {
+    "home": {
+      "slogan": "Nuxt.js フルスタック SaaS スターターキット - 無料＆オープンソース",
+      "getStarted": "始めましょう",
+      "viewOnGithub": "GitHub で見る",
+      "features": {
+        "title": "SaaS の成功のための堅固な基盤",
+        "categories": {
+          "foundation": "基盤",
+          "integration": "統合機能",
+          "admin": "管理機能",
+          "experience": "ユーザー体験",
+          "developer": "開発者向け"
+        },
+        "items": {
+          "modernTechStack": {
+            "title": "モダン技術スタック",
+            "description": "Nuxt で構築され、Nuxt v4、TypeScript、Vue 3 Composition API に対応"
+          },
+          "secureAuth": {
+            "title": "セキュア認証",
+            "description": "Better Auth による堅牢な認証システム。OAuth2 ソーシャルログイン（Google、GitHub など）、サインイン/アップ、メールベースのパスワードリセット機能を提供。"
+          },
+          "enterpriseDatabase": {
+            "title": "エンタープライズデータベース",
+            "description": "PostgreSQL と Drizzle ORM による型安全な操作"
+          },
+          "emailIntegration": {
+            "title": "メール統合",
+            "description": "トランザクションメール用の Resend 統合機能搭載"
+          },
+          "paymentReady": {
+            "title": "決済対応",
+            "description": "サブスクリプション管理用の Stripe/Polar 統合"
+          },
+          "noVendorLockIn": {
+            "title": "ベンダーロックインなし",
+            "description": "交換可能なコンポーネントによるモジュラーアーキテクチャ"
+          },
+          "dashboard": {
+            "title": "ダッシュボード",
+            "description": "美しいチャートを備えた強力な管理ダッシュボード"
+          },
+          "advancedTables": {
+            "title": "高度なテーブル",
+            "description": "Notion/Airtable のような高度なフィルタリング、ソート、ページネーション機能とすぐに使える汎用リスト API"
+          },
+          "userSubscriptionManagement": {
+            "title": "ユーザー/サブスクリプション管理",
+            "description": "すぐに使えるユーザーとサブスクリプション管理ページ"
+          },
+          "modernUIDesign": {
+            "title": "モダンな UI デザイン",
+            "description": "Nuxt UI と TailwindCSS による美しいコンポーネント"
+          },
+          "i18nReady": {
+            "title": "多言語対応",
+            "description": "複数言語のサポートを標準搭載"
+          },
+          "responsiveLayout": {
+            "title": "レスポンシブレイアウト",
+            "description": "すべてのデバイスと画面サイズに最適化"
+          },
+          "developerFriendly": {
+            "title": "開発者フレンドリー",
+            "description": "ESLint + TypeScript でより良い開発体験"
+          },
+          "quickSetup": {
+            "title": "クイックセットアップ",
+            "description": "数分で開発を開始可能"
+          },
+          "customizable": {
+            "title": "カスタマイズ可能",
+            "description": "コンポーネントの拡張とカスタマイズが容易"
+          }
+        }
+      },
+      "screenshots": {
+        "title": "スクリーンショット",
+        "dashboard": "ダッシュボード",
+        "users": "ユーザー管理",
+        "pricing": "価格プラン",
+        "subscription": "サブスクリプション管理",
+        "signin": "ログイン"
+      }
+    }
+  },
+  "fr": {
+    "home": {
+      "slogan": "Kit de Démarrage SaaS Full-Stack Nuxt.js - Gratuit et Open Source",
+      "getStarted": "Commencer",
+      "viewOnGithub": "Voir sur GitHub",
+      "features": {
+        "title": "Base solide pour votre succès SaaS",
+        "categories": {
+          "foundation": "Fondation",
+          "integration": "Intégration",
+          "admin": "Administration",
+          "experience": "Expérience",
+          "developer": "Développeur"
+        },
+        "items": {
+          "modernTechStack": {
+            "title": "Stack Technologique Moderne",
+            "description": "Construit avec Nuxt, prêt pour Nuxt v4, TypeScript et Vue 3 Composition API"
+          },
+          "secureAuth": {
+            "title": "Authentification Sécurisée",
+            "description": "Un système d'authentification robuste propulsé par Better Auth, offrant des connexions sociales OAuth2 (Google, GitHub, etc.), connexion/inscription, et réinitialisation de mot de passe par email."
+          },
+          "enterpriseDatabase": {
+            "title": "Base de Données Enterprise",
+            "description": "PostgreSQL avec Drizzle ORM pour des opérations sûres"
+          },
+          "emailIntegration": {
+            "title": "Intégration Email",
+            "description": "Intégration Resend intégrée pour les emails transactionnels"
+          },
+          "paymentReady": {
+            "title": "Prêt pour le Paiement",
+            "description": "Intégration Stripe/Polar pour la gestion des abonnements"
+          },
+          "noVendorLockIn": {
+            "title": "Pas de Dépendance Fournisseur",
+            "description": "Architecture modulaire avec composants interchangeables"
+          },
+          "dashboard": {
+            "title": "Tableau de Bord",
+            "description": "Un tableau de bord d'administration puissant avec de beaux graphiques"
+          },
+          "advancedTables": {
+            "title": "Tables Avancées",
+            "description": "Filtrage avancé, tri et pagination comme Notion/Airtable, avec API de liste générique intégrée"
+          },
+          "userSubscriptionManagement": {
+            "title": "Gestion Utilisateurs/Abonnements",
+            "description": "Page de gestion des utilisateurs et des abonnements prête à l'emploi"
+          },
+          "modernUIDesign": {
+            "title": "Design UI Moderne",
+            "description": "Beaux composants avec Nuxt UI et TailwindCSS"
+          },
+          "i18nReady": {
+            "title": "Prêt pour l'I18n",
+            "description": "Support intégré pour plusieurs langues"
+          },
+          "responsiveLayout": {
+            "title": "Mise en Page Responsive",
+            "description": "Optimisé pour tous les appareils et tailles d'écran"
+          },
+          "developerFriendly": {
+            "title": "Adapté aux Développeurs",
+            "description": "ESLint + TypeScript pour un meilleur développement"
+          },
+          "quickSetup": {
+            "title": "Configuration Rapide",
+            "description": "Commencez à développer en quelques minutes"
+          },
+          "customizable": {
+            "title": "Personnalisable",
+            "description": "Étendez et personnalisez facilement les composants"
+          }
+        }
+      },
+      "screenshots": {
+        "title": "Captures d'écran",
+        "dashboard": "Tableau de bord",
+        "users": "Gestion des utilisateurs",
+        "pricing": "Plans tarifaires",
+        "subscription": "Gestion des abonnements",
+        "signin": "Connexion"
+      }
+    }
+  }
+}

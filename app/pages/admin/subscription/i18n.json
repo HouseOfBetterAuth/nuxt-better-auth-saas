@@ -1,0 +1,78 @@
+{
+  "en": {
+    "subscription": {
+      "title": "Subscription Management",
+      "plan": "Plan",
+      "stripeCustomerId": "Customer ID",
+      "status": {
+        "incomplete": "Incomplete",
+        "incomplete_expired": "Incomplete Expired",
+        "trialing": "Trial",
+        "active": "Active",
+        "paused": "Paused",
+        "canceled": "Canceled",
+        "pastDue": "Past Due",
+        "unpaid": "Unpaid"
+      },
+      "period": "Billing Period",
+      "seats": "Seats"
+    }
+  },
+  "zh-CN": {
+    "subscription": {
+      "title": "订阅管理",
+      "plan": "套餐",
+      "stripeCustomerId": "客户 ID",
+      "status": {
+        "incomplete": "未完成",
+        "incomplete_expired": "未完成已过期",
+        "trialing": "试用中",
+        "active": "有效",
+        "paused": "已暂停",
+        "canceled": "已取消",
+        "pastDue": "已逾期",
+        "unpaid": "未支付"
+      },
+      "period": "计费周期",
+      "seats": "席位数"
+    }
+  },
+  "ja": {
+    "subscription": {
+      "title": "サブスクリプション管理",
+      "plan": "プラン",
+      "stripeCustomerId": "顧客 ID",
+      "status": {
+        "incomplete": "不完全",
+        "incomplete_expired": "不完全期限切れ",
+        "trialing": "試用中",
+        "active": "有効",
+        "paused": "一時停止",
+        "canceled": "キャンセル",
+        "pastDue": "期限切れ",
+        "unpaid": "未払い"
+      },
+      "period": "課金期間",
+      "seats": "シート数"
+    }
+  },
+  "fr": {
+    "subscription": {
+      "title": "Gestion des abonnements",
+      "plan": "Plan",
+      "stripeCustomerId": "ID Client",
+      "status": {
+        "incomplete": "Incomplet",
+        "incomplete_expired": "Incomplet expiré",
+        "trialing": "Essai",
+        "active": "Actif",
+        "paused": "En pause",
+        "canceled": "Annulé",
+        "pastDue": "En retard",
+        "unpaid": "Non payé"
+      },
+      "period": "Période de facturation",
+      "seats": "Sièges"
+    }
+  }
+}
