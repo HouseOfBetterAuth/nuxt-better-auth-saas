@@ -1,3 +1,4 @@
+import { APIError } from 'better-auth/api'
 import { and, eq } from 'drizzle-orm'
 import { member } from '~~/server/database/schema'
 import * as schema from '~~/server/database/schema'
@@ -91,7 +92,12 @@ async function hardUnlinkAccount(
     })
   } catch (error: any) {
     // Fallback: manually delete if Better Auth API fails
-    if (error?.statusCode === 404 || error?.message?.includes('not found')) {
+    // Use Better Auth's status field for reliable error detection
+    const isNotFound = error instanceof APIError
+      ? error.status === 'NOT_FOUND' || error.statusCode === 404
+      : error?.statusCode === 404 || error?.status === 'NOT_FOUND'
+
+    if (isNotFound) {
       const db = getDB()
       await db.delete(schema.account).where(eq(schema.account.id, targetAccount.id))
     } else {
@@ -150,21 +156,20 @@ export default defineEventHandler(async (event) => {
 
     // Determine disconnect strategy based on scope composition
     const accountHasOnlyYouTubeScopes = hasOnlyYouTubeScopes(youtubeAccount.scope)
-    const hasOtherGoogleAccounts = accounts.some(acc => acc.id !== youtubeAccount.id)
 
-    // Use soft disconnect if:
-    // - Account has other scopes (email, profile) that are needed for sign-in
-    // - User has multiple Google accounts (can preserve one for sign-in)
-    // Use hard unlink if:
-    // - Account has ONLY YouTube scopes (safe to remove completely)
-    // - User has other Google accounts (sign-in preserved elsewhere)
+    // Strategy:
+    // - Hard unlink: ONLY if account has YouTube scopes and NO other scopes
+    //   (Safe to remove completely - no sign-in impact)
+    // - Soft disconnect: If account has YouTube + other scopes (email, profile, etc.)
+    //   (Preserve sign-in by keeping account linked, just revoke YouTube tokens)
 
-    if (accountHasOnlyYouTubeScopes || hasOtherGoogleAccounts) {
-      // Safe to hard unlink - YouTube-only account or other accounts exist
+    if (accountHasOnlyYouTubeScopes) {
+      // Safe to hard unlink - account has ONLY YouTube scopes
+      // No sign-in impact since there are no email/profile scopes
       await hardUnlinkAccount(auth, event.headers, accounts, youtubeAccount)
     } else {
-      // Use soft disconnect - preserve sign-in by keeping account linked
-      // but revoke YouTube tokens and remove YouTube scopes
+      // Use soft disconnect - account has YouTube + other scopes
+      // Preserve sign-in by keeping account linked, just revoke YouTube tokens
       await softDisconnectYouTube(db, youtubeAccount)
     }
 
@@ -195,7 +200,12 @@ export default defineEventHandler(async (event) => {
       })
     } catch (error: any) {
       // Fallback: manually delete if Better Auth API fails
-      if (error?.statusCode === 404 || error?.message?.includes('not found')) {
+      // Use Better Auth's status field for reliable error detection
+      const isNotFound = error instanceof APIError
+        ? error.status === 'NOT_FOUND' || error.statusCode === 404
+        : error?.statusCode === 404 || error?.status === 'NOT_FOUND'
+
+      if (isNotFound) {
         await db.delete(schema.account).where(eq(schema.account.id, accounts[0].id))
       } else {
         throw error
