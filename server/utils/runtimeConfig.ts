@@ -15,6 +15,7 @@ export const generateRuntimeConfig = () => ({
   betterAuthSecret: process.env.NUXT_BETTER_AUTH_SECRET,
   // LLM / Cloudflare AI Gateway
   cfAiGatewayToken: process.env.NUXT_CF_AI_GATEWAY_TOKEN,
+  openAiApiKey: process.env.NUXT_OPENAI_API_KEY,
   openAiBlogModel: process.env.NUXT_OPENAI_BLOG_MODEL,
   openAiBlogTemperature: (() => {
     const parsed = Number.parseFloat(process.env.NUXT_OPENAI_BLOG_TEMPERATURE ?? '')

@@ -1,5 +1,6 @@
 import { generateContentDraft } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
+import { ingestYouTubeSource } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
@@ -70,7 +71,7 @@ export default defineEventHandler(async (event) => {
       continue
     }
 
-    const record = await upsertSourceContent(db, {
+    let record = await upsertSourceContent(db, {
       organizationId,
       userId: user.id,
       sourceType: classification.sourceType,
@@ -79,6 +80,23 @@ export default defineEventHandler(async (event) => {
       title: null,
       sourceText: null
     })
+
+    if (classification.sourceType === 'youtube' && classification.externalId) {
+      try {
+        record = await ingestYouTubeSource({
+          db,
+          sourceContentId: record.id,
+          organizationId,
+          userId: user.id,
+          videoId: classification.externalId
+        })
+      } catch (error) {
+        console.error('YouTube ingest failed', {
+          sourceContentId: record.id,
+          error
+        })
+      }
+    }
 
     processedSources.push({
       source: record,
