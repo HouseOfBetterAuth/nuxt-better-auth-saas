@@ -1,9 +1,7 @@
-import { upsertSourceContent } from '~~/server/services/sourceContent'
+import { INGEST_STATUSES, upsertSourceContent } from '~~/server/services/sourceContent'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
-
-const ALLOWED_INGEST_STATUSES = ['pending', 'ingested', 'failed'] as const
 
 interface SourceContentRequestBody {
   sourceType: string
@@ -38,7 +36,7 @@ export default defineEventHandler(async (event) => {
   let ingestStatus: SourceContentRequestBody['ingestStatus']
 
   if (body.ingestStatus !== undefined && body.ingestStatus !== null) {
-    if (!ALLOWED_INGEST_STATUSES.includes(body.ingestStatus)) {
+    if (!INGEST_STATUSES.includes(body.ingestStatus)) {
       throw createError({
         statusCode: 400,
         statusMessage: 'ingestStatus must be pending, ingested, or failed'
@@ -51,11 +49,11 @@ export default defineEventHandler(async (event) => {
     organizationId,
     userId: user.id,
     sourceType: body.sourceType,
-    externalId: typeof body.externalId === 'string' ? body.externalId : null,
-    title: typeof body.title === 'string' ? body.title : null,
-    sourceText: typeof body.sourceText === 'string' ? body.sourceText : null,
-    metadata: typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : null,
-    ingestStatus
+    ...(Object.prototype.hasOwnProperty.call(body, 'externalId') ? { externalId: body.externalId } : {}),
+    ...(Object.prototype.hasOwnProperty.call(body, 'title') ? { title: body.title } : {}),
+    ...(Object.prototype.hasOwnProperty.call(body, 'sourceText') ? { sourceText: body.sourceText } : {}),
+    ...(Object.prototype.hasOwnProperty.call(body, 'metadata') ? { metadata: body.metadata } : {}),
+    ...(ingestStatus !== undefined ? { ingestStatus } : {})
   })
 
   return record
