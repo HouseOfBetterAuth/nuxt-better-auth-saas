@@ -1,22 +1,23 @@
 import { eq } from 'drizzle-orm'
 import { organization } from '../../database/schema'
-import { getDB } from '../../utils/db'
 import { requireAuth } from '../../utils/auth'
+import { getDB } from '../../utils/db'
 
 export default defineEventHandler(async (event) => {
   await requireAuth(event)
-  
+
   const { slug } = getQuery(event)
-  if (!slug || typeof slug !== 'string') return { available: false }
-  
+  if (!slug || typeof slug !== 'string')
+    return { available: false }
+
   const db = getDB()
   // Check if slug is reserved or taken
   const reservedSlugs = ['admin', 'dashboard', 'login', 'register', 'settings', 'api', 'auth']
   if (reservedSlugs.includes(slug.toLowerCase())) {
-      return { available: false }
+    return { available: false }
   }
 
   const existing = await db.select({ id: organization.id }).from(organization).where(eq(organization.slug, slug)).limit(1)
-  
+
   return { available: existing.length === 0 }
 })

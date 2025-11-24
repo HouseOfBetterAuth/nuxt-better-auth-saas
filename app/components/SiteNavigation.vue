@@ -10,7 +10,7 @@ const navigation = [
   { label: t('global.nav.features'), to: localePath('/#features') },
   { label: t('global.nav.pricing'), to: localePath('/pricing') },
   { label: t('global.nav.docs'), to: 'https://docs.nuxsaas.com/', external: true },
-  { label: t('global.nav.dashboard'), to: localePath('/dashboard') },
+  { label: t('global.nav.dashboard'), to: localePath('/dashboard') }
 ]
 </script>
 

@@ -10,30 +10,30 @@ import type { Refund } from '@polar-sh/sdk/models/components/refund.js'
 import type { Subscription } from '@polar-sh/sdk/models/components/subscription.js'
 import { checkout, polar, portal, usage, webhooks } from '@polar-sh/better-auth'
 import { Polar } from '@polar-sh/sdk'
-import { eq, and } from 'drizzle-orm'
-import { organization as organizationTable, member as memberTable } from '../database/schema'
-import { runtimeConfig } from './runtimeConfig'
-import { useDB } from './db'
+import { and, eq } from 'drizzle-orm'
+import { member as memberTable, organization as organizationTable } from '../database/schema'
 import { logAuditEvent } from './auditLogger'
+import { useDB } from './db'
+import { runtimeConfig } from './runtimeConfig'
 
 /**
  * POLAR ORGANIZATION BILLING IMPLEMENTATION
- * 
+ *
  * 1. Customer Creation:
  *    - Customers are created for ORGANIZATIONS, not Users.
  *    - `ensurePolarCustomer(organizationId)` is called when a billing action is initiated.
  *    - It fetches the Organization and its Owner (for email).
  *    - It creates a Polar Customer with `externalId` = `organizationId`.
  *    - The Polar Customer ID is stored in `organization.polarCustomerId`.
- * 
+ *
  * 2. Webhook Handling:
  *    - Webhooks are handled by Better Auth's `polar` plugin via `webhooks.onPayload`.
  *    - The `addPaymentLog` function processes these events.
  *    - It links events back to the Organization using `customer.externalId` (which is the Org ID).
  *    - If `customer.created` event fires with an `externalId`, we ensure the DB is synced.
- * 
+ *
  * 3. Metadata:
- *    - `ownerUserId` is stored in metadata to track WHO initiated the subscription, 
+ *    - `ownerUserId` is stored in metadata to track WHO initiated the subscription,
  *      but the billing entity remains the Organization.
  */
 
@@ -47,7 +47,7 @@ const createPolarClient = () => {
 export const ensurePolarCustomer = async (organizationId: string) => {
   const client = createPolarClient()
   const db = await useDB()
-  
+
   const org = await db.query.organization.findFirst({
     where: eq(organizationTable.id, organizationId)
   })
@@ -65,18 +65,19 @@ export const ensurePolarCustomer = async (organizationId: string) => {
   // Fetch Owner for email
   const member = await db.query.member.findFirst({
     where: and(
-      eq(memberTable.organizationId, organizationId), 
+      eq(memberTable.organizationId, organizationId),
       eq(memberTable.role, 'owner')
     ),
     with: { user: true }
   })
-  
+
   const email = member?.user.email
-  if (!email) throw new Error("Organization owner email not found")
+  if (!email)
+    throw new Error('Organization owner email not found')
 
   // Create Customer
   const customer = await client.customers.create({
-    email: email,
+    email,
     name: org.name,
     externalId: org.id,
     metadata: {

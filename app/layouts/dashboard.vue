@@ -1,9 +1,9 @@
 <i18n src="./menu/i18n.json"></i18n>
 
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
 import SearchPalette from './components/SearchPalette.vue'
 import { getUserMenus } from './menu'
-import { useDebounceFn } from '@vueuse/core'
 
 const { user, signOut, organization, useActiveOrganization, session, fetchSession } = useAuth()
 const activeOrg = useActiveOrganization()
@@ -41,14 +41,14 @@ onUnmounted(() => {
 
 watch(isCreateTeamModalOpen, async (isOpen) => {
   if (isOpen) {
-     // Reset state
-     newTeamName.value = ''
-     newTeamSlug.value = ''
-     slugError.value = ''
-     isSlugManuallyEdited.value = false
-     
-     // Re-fetch to ensure fresh data
-     await fetchOwnedCount()
+    // Reset state
+    newTeamName.value = ''
+    newTeamSlug.value = ''
+    slugError.value = ''
+    isSlugManuallyEdited.value = false
+
+    // Re-fetch to ensure fresh data
+    await fetchOwnedCount()
   }
 })
 
@@ -56,23 +56,23 @@ const showBilling = computed(() => ownedTeamsCount.value > 0)
 
 const checkSlug = useDebounceFn(async (slug: string) => {
   if (!slug || slug.length < 3) {
-      return
+    return
   }
   isCheckingSlug.value = true
   try {
     const { available } = await $fetch('/api/organization/check-slug', {
-        query: { slug },
-        headers: useRequestHeaders(['cookie'])
+      query: { slug },
+      headers: useRequestHeaders(['cookie'])
     })
     if (!available) {
-        slugError.value = 'Slug is already taken'
+      slugError.value = 'Slug is already taken'
     } else {
-        slugError.value = ''
+      slugError.value = ''
     }
   } catch (e) {
-      console.error(e)
+    console.error(e)
   } finally {
-      isCheckingSlug.value = false
+    isCheckingSlug.value = false
   }
 }, 500)
 
@@ -85,10 +85,10 @@ watch(newTeamName, (newName) => {
 })
 
 watch(newTeamSlug, (newSlug) => {
-    slugError.value = ''
-    if (isSlugManuallyEdited.value) {
-        checkSlug(newSlug)
-    }
+  slugError.value = ''
+  if (isSlugManuallyEdited.value) {
+    checkSlug(newSlug)
+  }
 })
 
 const handleOpenCreateModal = () => {
@@ -98,15 +98,16 @@ const handleOpenCreateModal = () => {
 // Check for active organization and redirect if needed
 onMounted(async () => {
   window.addEventListener('open-create-team-modal', handleOpenCreateModal)
-  
+
   // Prefetch owned count for smoother UI
   fetchOwnedCount()
 
-  if (!organization) return
-  
+  if (!organization)
+    return
+
   const { data: orgs } = await organization.list()
   const routeSlug = route.params.slug as string
-  
+
   if (!orgs || orgs.length === 0) {
     navigateTo('/onboarding')
     return
@@ -123,12 +124,12 @@ onMounted(async () => {
       // Invalid slug, redirect to first available org
       navigateTo(`/${orgs[0].slug}/dashboard`)
     }
-  } 
+  }
   // If generic URL or no active org, ensure one is active and redirect to its slug
   else {
     const activeId = (session.value as any)?.activeOrganizationId
     const activeOrg = activeId ? orgs.find(o => o.id === activeId) : orgs[0]
-    
+
     if (activeOrg) {
       if (activeOrg.id !== activeId) {
         await organization.setActive({ organizationId: activeOrg.id })
@@ -145,7 +146,8 @@ onMounted(async () => {
 
 // Check if current user is owner or admin
 const canManageTeam = computed(() => {
-  if (!activeOrg.value?.data?.members || !user.value?.id) return false
+  if (!activeOrg.value?.data?.members || !user.value?.id)
+    return false
   const userId = user.value.id
   const member = activeOrg.value.data.members.find(m => m.userId === userId)
   return member?.role === 'owner' || member?.role === 'admin'
@@ -185,13 +187,13 @@ watchEffect(() => {
   }
 })
 
-
 const clickSignOut = () => {
   signOut({ redirectTo: localePath('/signin') })
 }
 
 async function createTeam() {
-  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value) return
+  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value)
+    return
   creatingTeam.value = true
 
   try {
@@ -200,7 +202,8 @@ async function createTeam() {
       slug: newTeamSlug.value
     })
 
-    if (error) throw error
+    if (error)
+      throw error
 
     if (data) {
       await organization.setActive({ organizationId: data.id })
@@ -265,8 +268,7 @@ async function createTeam() {
         <div class="flex flex-col pl-2 pr-2">
           <USeparator class="mb-2" />
           <!-- Team Settings (Owner only) or Create Team -->
-          <template v-if="!isCollapsed">
-          </template>
+          <template v-if="!isCollapsed" />
           <UTooltip
             :ui="{ content: 'w-54 flex flex-col h-auto p-0 gap-0' }"
             :delay-duration="100"
@@ -327,7 +329,7 @@ async function createTeam() {
               class="w-8 h-8"
               color="neutral"
               variant="ghost"
-              />
+            />
             <template #content>
               <div class="w-[60vw] p-4">
                 <div class="mb-4">
@@ -369,24 +371,31 @@ async function createTeam() {
     </div>
 
     <!-- Create Team Modal -->
-    <UModal 
-      v-model:open="isCreateTeamModalOpen" 
-      title="Create New Team" 
+    <UModal
+      v-model:open="isCreateTeamModalOpen"
+      title="Create New Team"
       description="Create a new team to collaborate with others."
     >
       <template #body>
         <div class="space-y-4">
-          <UFormField label="Team Name" required>
-            <UInput 
-              v-model="newTeamName" 
-              placeholder="Acme Inc" 
+          <UFormField
+            label="Team Name"
+            required
+          >
+            <UInput
+              v-model="newTeamName"
+              placeholder="Acme Inc"
               icon="i-lucide-building-2"
             />
           </UFormField>
-          <UFormField label="Team URL (Slug)" required :error="slugError || undefined">
-            <UInput 
-              v-model="newTeamSlug" 
-              placeholder="acme-inc" 
+          <UFormField
+            label="Team URL (Slug)"
+            required
+            :error="slugError || undefined"
+          >
+            <UInput
+              v-model="newTeamSlug"
+              placeholder="acme-inc"
               icon="i-lucide-link"
               :loading="isCheckingSlug"
               @input="isSlugManuallyEdited = true"
@@ -397,68 +406,131 @@ async function createTeam() {
             </p>
           </UFormField>
 
-          <div v-if="showBilling" class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
-             <label class="block text-sm font-medium mb-3">Select plan</label>
-             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div 
-                 class="border rounded-lg p-4 cursor-pointer transition-all"
-                 :class="selectedPlan === 'launch' ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
-                 @click="selectedPlan = 'launch'"
-               >
-                 <div class="flex justify-between items-start mb-2">
-                   <h3 class="font-semibold">Launch</h3>
-                   <UIcon v-if="selectedPlan === 'launch'" name="i-lucide-check-circle" class="w-5 h-5 text-primary" />
-                   <div v-else class="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600"></div>
-                 </div>
-                 <div class="text-2xl font-bold mb-1">$5 <span class="text-sm font-normal text-muted-foreground">/ month</span></div>
-                 <p class="text-xs text-muted-foreground mb-3">minimum spend</p>
-                 
-                 <div class="space-y-2">
-                    <p class="text-xs font-medium">Included:</p>
-                    <ul class="text-xs space-y-1.5 text-muted-foreground">
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Free limits removed</li>
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Autoscale to 16 CU</li>
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Scale to zero after 5m</li>
-                    </ul>
-                 </div>
-               </div>
+          <div
+            v-if="showBilling"
+            class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800"
+          >
+            <label class="block text-sm font-medium mb-3">Select plan</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                class="border rounded-lg p-4 cursor-pointer transition-all"
+                :class="selectedPlan === 'launch' ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
+                @click="selectedPlan = 'launch'"
+              >
+                <div class="flex justify-between items-start mb-2">
+                  <h3 class="font-semibold">
+                    Launch
+                  </h3>
+                  <UIcon
+                    v-if="selectedPlan === 'launch'"
+                    name="i-lucide-check-circle"
+                    class="w-5 h-5 text-primary"
+                  />
+                  <div
+                    v-else
+                    class="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600"
+                  />
+                </div>
+                <div class="text-2xl font-bold mb-1">
+                  $5 <span class="text-sm font-normal text-muted-foreground">/ month</span>
+                </div>
+                <p class="text-xs text-muted-foreground mb-3">
+                  minimum spend
+                </p>
 
-               <div 
-                 class="border rounded-lg p-4 cursor-pointer transition-all"
-                 :class="selectedPlan === 'scale' ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
-                 @click="selectedPlan = 'scale'"
-               >
-                 <div class="flex justify-between items-start mb-2">
-                   <h3 class="font-semibold">Scale</h3>
-                   <UIcon v-if="selectedPlan === 'scale'" name="i-lucide-check-circle" class="w-5 h-5 text-primary" />
-                   <div v-else class="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600"></div>
-                 </div>
-                 <div class="text-2xl font-bold mb-1">$5 <span class="text-sm font-normal text-muted-foreground">/ month</span></div>
-                 <p class="text-xs text-muted-foreground mb-3">minimum spend</p>
-                 
-                 <div class="space-y-2">
-                    <p class="text-xs font-medium">Included:</p>
-                    <ul class="text-xs space-y-1.5 text-muted-foreground">
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Compute sizes up to 56 CU</li>
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Configurable scale to zero</li>
-                      <li class="flex items-center gap-2"><UIcon name="i-lucide-check" class="w-3 h-3 text-green-500" /> Up to 1000 projects</li>
-                    </ul>
-                 </div>
-               </div>
-             </div>
+                <div class="space-y-2">
+                  <p class="text-xs font-medium">
+                    Included:
+                  </p>
+                  <ul class="text-xs space-y-1.5 text-muted-foreground">
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Free limits removed
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Autoscale to 16 CU
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Scale to zero after 5m
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div
+                class="border rounded-lg p-4 cursor-pointer transition-all"
+                :class="selectedPlan === 'scale' ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
+                @click="selectedPlan = 'scale'"
+              >
+                <div class="flex justify-between items-start mb-2">
+                  <h3 class="font-semibold">
+                    Scale
+                  </h3>
+                  <UIcon
+                    v-if="selectedPlan === 'scale'"
+                    name="i-lucide-check-circle"
+                    class="w-5 h-5 text-primary"
+                  />
+                  <div
+                    v-else
+                    class="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600"
+                  />
+                </div>
+                <div class="text-2xl font-bold mb-1">
+                  $5 <span class="text-sm font-normal text-muted-foreground">/ month</span>
+                </div>
+                <p class="text-xs text-muted-foreground mb-3">
+                  minimum spend
+                </p>
+
+                <div class="space-y-2">
+                  <p class="text-xs font-medium">
+                    Included:
+                  </p>
+                  <ul class="text-xs space-y-1.5 text-muted-foreground">
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Compute sizes up to 56 CU
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Configurable scale to zero
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-green-500"
+                      /> Up to 1000 projects
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </template>
 
       <template #footer>
-        <UButton 
-          color="neutral" 
-          variant="outline" 
+        <UButton
+          color="neutral"
+          variant="outline"
           label="Cancel"
           @click="isCreateTeamModalOpen = false"
         />
-        <UButton 
-          :loading="creatingTeam" 
+        <UButton
+          :loading="creatingTeam"
           :disabled="!newTeamName.trim() || !newTeamSlug.trim()"
           label="Create Team"
           icon="i-lucide-plus-circle"

@@ -21,9 +21,13 @@ onMounted(() => {
   <div class="flex flex-col gap-4">
     <UCard>
       <template #header>
-        <h3 class="text-lg font-semibold">Welcome back, {{ user?.name }}!</h3>
+        <h3 class="text-lg font-semibold">
+          Welcome back, {{ user?.name }}!
+        </h3>
       </template>
-      <p class="text-neutral-500">This is your personal dashboard.</p>
+      <p class="text-neutral-500">
+        This is your personal dashboard.
+      </p>
     </UCard>
   </div>
 </template>

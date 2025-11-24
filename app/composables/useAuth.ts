@@ -48,7 +48,7 @@ export function useAuth() {
       return
     }
     sessionFetching.value = true
-    
+
     // Use useFetch for better SSR support and hydration
     const { data: sessionData } = await useFetch('/api/auth/get-session', {
       headers: import.meta.server ? useRequestHeaders() : undefined,

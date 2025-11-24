@@ -63,13 +63,15 @@ export default defineEventHandler(async (event) => {
   ))
 
   // Filter by YouTube scopes and transform to integration format
+  const now = new Date()
+
   const integrations = accounts
     .filter(acc => hasYouTubeScopes(acc.scope))
     .map(acc => ({
       id: acc.id,
       provider: 'youtube', // Map Google provider to YouTube integration
       type: 'oauth',
-      status: 'connected',
+      status: acc.accessTokenExpiresAt && new Date(acc.accessTokenExpiresAt) > now ? 'connected' : 'expired',
       accessToken: acc.accessToken,
       refreshToken: acc.refreshToken,
       expiresAt: acc.accessTokenExpiresAt,
