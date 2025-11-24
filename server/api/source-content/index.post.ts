@@ -45,6 +45,35 @@ export default defineEventHandler(async (event) => {
     ingestStatus = body.ingestStatus
   }
 
+  // Validate optional field types when present
+  if (Object.prototype.hasOwnProperty.call(body, 'externalId') && body.externalId !== null && typeof body.externalId !== 'string') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'externalId must be a string or null'
+    })
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'title') && body.title !== null && typeof body.title !== 'string') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'title must be a string or null'
+    })
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'sourceText') && body.sourceText !== null && typeof body.sourceText !== 'string') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'sourceText must be a string or null'
+    })
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'metadata') && body.metadata !== null && typeof body.metadata !== 'object') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'metadata must be an object or null'
+    })
+  }
+
   const record = await upsertSourceContent(db, {
     organizationId,
     userId: user.id,
