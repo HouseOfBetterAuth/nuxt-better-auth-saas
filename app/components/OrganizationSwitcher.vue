@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { client, organization, session, useActiveOrganization, fetchSession, user } = useAuth()
+const { organization, session, useActiveOrganization, fetchSession } = useAuth()
 
 // Use useAsyncData for SSR prefetching
 const { data: organizations, status } = await useAsyncData('user-organizations', async () => {
@@ -9,15 +9,6 @@ const { data: organizations, status } = await useAsyncData('user-organizations',
 
 const isPending = computed(() => status.value === 'pending')
 const activeOrg = useActiveOrganization()
-const router = useRouter()
-
-// Check if current user is owner or admin
-const canManageTeam = computed(() => {
-  if (!activeOrg.value?.data?.members || !user.value?.id)
-    return false
-  const member = activeOrg.value.data.members.find(m => m.userId === user.value!.id)
-  return member?.role === 'owner' || member?.role === 'admin'
-})
 
 // Get active organization ID from session
 const activeOrgId = computed(() => session.value?.activeOrganizationId)

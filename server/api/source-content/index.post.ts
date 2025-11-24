@@ -1,7 +1,9 @@
+import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
-import { upsertSourceContent } from '~~/server/services/sourceContent'
+
+const ALLOWED_INGEST_STATUSES = ['pending', 'ingested', 'failed'] as const
 
 interface SourceContentRequestBody {
   sourceType: string
@@ -33,6 +35,18 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let ingestStatus: SourceContentRequestBody['ingestStatus']
+
+  if (body.ingestStatus !== undefined && body.ingestStatus !== null) {
+    if (!ALLOWED_INGEST_STATUSES.includes(body.ingestStatus)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'ingestStatus must be pending, ingested, or failed'
+      })
+    }
+    ingestStatus = body.ingestStatus
+  }
+
   const record = await upsertSourceContent(db, {
     organizationId,
     userId: user.id,
@@ -41,7 +55,7 @@ export default defineEventHandler(async (event) => {
     title: typeof body.title === 'string' ? body.title : null,
     sourceText: typeof body.sourceText === 'string' ? body.sourceText : null,
     metadata: typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : null,
-    ingestStatus: body.ingestStatus
+    ingestStatus
   })
 
   return record

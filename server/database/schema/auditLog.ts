@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
 import { user } from './auth'
 
 export const auditLog = pgTable('audit_log', {

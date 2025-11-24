@@ -5,8 +5,7 @@ import {
   integer,
   pgTable,
   text,
-  timestamp,
-  uniqueIndex
+  timestamp
 } from 'drizzle-orm/pg-core'
 
 export const user = pgTable('user', {

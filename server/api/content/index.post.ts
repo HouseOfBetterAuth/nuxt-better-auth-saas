@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
+import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
+import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, isContentSlugConstraintError, slugifyTitle } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
-import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 import { requireActiveOrganization } from '~~/server/utils/organization'
-import { v7 as uuidv7 } from 'uuid'
 
 interface CreateContentBody {
   title: string
@@ -59,28 +59,53 @@ export default defineEventHandler(async (event) => {
     ? slugifyTitle(body.slug)
     : slugifyTitle(body.title)
 
-  const slug = await ensureUniqueContentSlug(db, organizationId, baseSlug)
+  let slug = await ensureUniqueContentSlug(db, organizationId, baseSlug)
   const status = body.status && CONTENT_STATUSES.includes(body.status) ? body.status : 'draft'
   const contentType = body.contentType && CONTENT_TYPES.includes(body.contentType)
     ? body.contentType
     : 'blog_post'
 
-  const [created] = await db
-    .insert(schema.content)
-    .values({
-      id: uuidv7(),
-      organizationId,
-      createdByUserId: user.id,
-      sourceContentId,
-      title: body.title,
-      slug,
-      status,
-      primaryKeyword: typeof body.primaryKeyword === 'string' ? body.primaryKeyword : null,
-      targetLocale: typeof body.targetLocale === 'string' ? body.targetLocale : null,
-      contentType,
-      currentVersionId: null
-    })
-    .returning()
+  let createdRecord: typeof schema.content.$inferSelect | null = null
+  let attempt = 0
+  const maxAttempts = 5
 
-  return created
+  while (!createdRecord && attempt < maxAttempts) {
+    try {
+      const [created] = await db
+        .insert(schema.content)
+        .values({
+          id: uuidv7(),
+          organizationId,
+          createdByUserId: user.id,
+          sourceContentId,
+          title: body.title,
+          slug,
+          status,
+          primaryKeyword: typeof body.primaryKeyword === 'string' ? body.primaryKeyword : null,
+          targetLocale: typeof body.targetLocale === 'string' ? body.targetLocale : null,
+          contentType,
+          currentVersionId: null
+        })
+        .returning()
+
+      createdRecord = created
+    } catch (error: any) {
+      if (isContentSlugConstraintError(error)) {
+        attempt += 1
+        const fallbackCandidate = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
+        slug = await ensureUniqueContentSlug(db, organizationId, fallbackCandidate)
+        continue
+      }
+      throw error
+    }
+  }
+
+  if (!createdRecord) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Unable to allocate unique slug'
+    })
+  }
+
+  return createdRecord
 })

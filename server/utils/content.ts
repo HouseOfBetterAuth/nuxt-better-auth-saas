@@ -5,12 +5,32 @@ import * as schema from '../database/schema'
 export const CONTENT_STATUSES = ['draft', 'in_review', 'ready_for_publish', 'published', 'archived'] as const
 export const CONTENT_TYPES = ['blog_post', 'landing_page', 'docs_article', 'social_thread'] as const
 
-export const slugifyTitle = (input: string) => {
+const FALLBACK_SLUG = 'untitled'
+const UNIQUE_SLUG_CONSTRAINTS = ['content_org_slug_idx']
+
+const normalizeToSlug = (input: string) => {
+  if (!input) {
+    return ''
+  }
+
   return input
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+export const slugifyTitle = (input: string) => {
+  const normalized = normalizeToSlug(input || '')
+  return normalized || FALLBACK_SLUG
+}
+
+const withFallbackSlug = (value: string) => {
+  const normalized = normalizeToSlug(value)
+  return normalized || `${FALLBACK_SLUG}-${Date.now()}`
 }
 
 export const ensureUniqueContentSlug = async (
@@ -18,7 +38,7 @@ export const ensureUniqueContentSlug = async (
   organizationId: string,
   candidate: string
 ) => {
-  let slug = candidate || 'content'
+  let slug = slugifyTitle(candidate)
   let attempt = 0
 
   while (attempt < 5) {
@@ -36,8 +56,16 @@ export const ensureUniqueContentSlug = async (
     }
 
     attempt += 1
-    slug = `${candidate || 'content'}-${Math.random().toString(36).slice(2, 6)}`
+    slug = withFallbackSlug(`${candidate}-${Math.random().toString(36).slice(2, 6)}`)
   }
 
-  return `${candidate || 'content'}-${Date.now()}`
+  return withFallbackSlug(`${candidate}-${Date.now()}`)
+}
+
+export const isContentSlugConstraintError = (error: any) => {
+  return Boolean(
+    error &&
+    error.code === '23505' &&
+    (!error.constraint || UNIQUE_SLUG_CONSTRAINTS.includes(error.constraint))
+  )
 }

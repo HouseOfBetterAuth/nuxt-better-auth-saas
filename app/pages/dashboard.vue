@@ -1,7 +1,6 @@
 <script setup lang="ts">
-const { organization, session, useActiveOrganization, fetchSession } = useAuth()
+const { organization, session, fetchSession } = useAuth()
 const router = useRouter()
-const activeOrg = useActiveOrganization()
 
 definePageMeta({
   layout: false

@@ -10,9 +10,7 @@ import * as schema from '../database/schema'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
 import { cacheClient, resendInstance } from './drivers'
-import { setupPolar } from './polar'
 import { runtimeConfig } from './runtimeConfig'
-import { setupStripe } from './stripe'
 
 console.log(`Base URL is ${runtimeConfig.public.baseURL}`)
 

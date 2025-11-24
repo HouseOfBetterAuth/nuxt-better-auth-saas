@@ -5,7 +5,7 @@ import { useDebounceFn } from '@vueuse/core'
 import SearchPalette from './components/SearchPalette.vue'
 import { getUserMenus } from './menu'
 
-const { user, signOut, organization, useActiveOrganization, session, fetchSession } = useAuth()
+const { user, signOut, organization, useActiveOrganization, session } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 
@@ -33,6 +33,10 @@ const fetchOwnedCount = async () => {
   } catch (e) {
     console.error('Failed to fetch owned teams count', e)
   }
+}
+
+const handleOpenCreateModal = () => {
+  isCreateTeamModalOpen.value = true
 }
 
 onUnmounted(() => {
@@ -90,10 +94,6 @@ watch(newTeamSlug, (newSlug) => {
     checkSlug(newSlug)
   }
 })
-
-const handleOpenCreateModal = () => {
-  isCreateTeamModalOpen.value = true
-}
 
 // Check for active organization and redirect if needed
 onMounted(async () => {

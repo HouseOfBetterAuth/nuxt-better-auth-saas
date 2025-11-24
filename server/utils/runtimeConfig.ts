@@ -16,8 +16,14 @@ export const generateRuntimeConfig = () => ({
   // LLM / Cloudflare AI Gateway
   cfAiGatewayToken: process.env.NUXT_CF_AI_GATEWAY_TOKEN,
   openAiBlogModel: process.env.NUXT_OPENAI_BLOG_MODEL,
-  openAiBlogTemperature: process.env.NUXT_OPENAI_BLOG_TEMPERATURE,
-  openAiBlogMaxOutputTokens: process.env.NUXT_OPENAI_BLOG_MAX_OUTPUT_TOKENS,
+  openAiBlogTemperature: (() => {
+    const parsed = parseFloat(process.env.NUXT_OPENAI_BLOG_TEMPERATURE ?? '')
+    return Number.isFinite(parsed) ? parsed : 0.7
+  })(),
+  openAiBlogMaxOutputTokens: (() => {
+    const parsed = parseInt(process.env.NUXT_OPENAI_BLOG_MAX_OUTPUT_TOKENS ?? '', 10)
+    return Number.isFinite(parsed) ? parsed : 1000
+  })(),
   // Stripe
   stripeSecretKey: process.env.NUXT_STRIPE_SECRET_KEY,
   stripeWebhookSecret: process.env.NUXT_STRIPE_WEBHOOK_SECRET,

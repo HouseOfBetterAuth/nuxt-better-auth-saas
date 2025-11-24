@@ -19,7 +19,7 @@ export const content = pgTable('content', {
   primaryKeyword: text('primary_keyword'),
   targetLocale: text('target_locale'),
   contentType: text('content_type').default('blog_post').notNull(),
-  currentVersionId: text('current_version_id'),
+  currentVersionId: text('current_version_id'), // maintained via transactional logic to avoid circular FK issues
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')
     .defaultNow()

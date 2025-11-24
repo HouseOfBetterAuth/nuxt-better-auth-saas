@@ -1,9 +1,10 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { desc, eq } from 'drizzle-orm'
+import { v7 as uuidv7 } from 'uuid'
+import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { composeBlogFromText } from '~~/server/utils/aiGateway'
-import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
-import { v7 as uuidv7 } from 'uuid'
+import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, isContentSlugConstraintError, slugifyTitle } from '~~/server/utils/content'
 
 interface GenerateContentOverrides {
   title?: string | null
@@ -92,9 +93,12 @@ export const generateContentDraft = async (
     existingContent = row
   }
 
-  const inputText = typeof text === 'string' && text.trim().length > 0
-    ? text
-    : (sourceContent?.sourceText ?? null)
+  const explicitText = typeof text === 'string' && text.trim().length > 0 ? text.trim() : null
+  const sourceText = typeof sourceContent?.sourceText === 'string' && sourceContent.sourceText.trim().length > 0
+    ? sourceContent.sourceText.trim()
+    : null
+
+  const inputText = explicitText || sourceText
 
   if (!inputText) {
     throw createError({
@@ -125,10 +129,31 @@ export const generateContentDraft = async (
 
   const resolvedSourceContentId = sourceContent?.id ?? existingContent?.sourceContentId ?? null
 
-  const { markdown, meta } = await composeBlogFromText(inputText, {
-    systemPrompt,
-    temperature
-  })
+  let markdown: string
+  let meta: Record<string, any>
+
+  try {
+    const response = await composeBlogFromText(inputText, {
+      systemPrompt,
+      temperature
+    })
+    markdown = response.markdown
+    meta = response.meta
+  } catch (error: any) {
+    console.error('Failed to generate content via AI Gateway', {
+      error: error?.message || error,
+      systemPromptPreview: systemPrompt?.slice(0, 200),
+      temperature,
+      inputPreview: inputText.slice(0, 200)
+    })
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'Content generation failed',
+      data: {
+        message: error?.message || 'Unknown AI generation error'
+      }
+    })
+  }
 
   const assets = {
     generator: {
@@ -138,10 +163,10 @@ export const generateContentDraft = async (
     },
     source: sourceContent
       ? {
-        id: sourceContent.id,
-        type: sourceContent.sourceType,
-        externalId: sourceContent.externalId
-      }
+          id: sourceContent.id,
+          type: sourceContent.sourceType,
+          externalId: sourceContent.externalId
+        }
       : null
   }
 
@@ -157,29 +182,54 @@ export const generateContentDraft = async (
     let slug = existingContent?.slug
 
     if (!contentRecord) {
-      const baseSlug = overrides?.slug
-        ? slugifyTitle(overrides.slug)
-        : slugifyTitle(resolvedTitle)
+      const baseSlugInput = overrides?.slug || resolvedTitle
+      let slugCandidate = await ensureUniqueContentSlug(tx, organizationId, baseSlugInput)
+      let createdContent: typeof schema.content.$inferSelect | null = null
+      let attempt = 0
+      const maxAttempts = 5
 
-      slug = await ensureUniqueContentSlug(tx, organizationId, baseSlug)
+      while (!createdContent && attempt < maxAttempts) {
+        try {
+          const [inserted] = await tx
+            .insert(schema.content)
+            .values({
+              id: uuidv7(),
+              organizationId,
+              createdByUserId: userId,
+              sourceContentId: resolvedSourceContentId,
+              title: resolvedTitle,
+              slug: slugCandidate,
+              status: selectedStatus,
+              primaryKeyword,
+              targetLocale,
+              contentType: selectedContentType,
+              currentVersionId: null
+            })
+            .returning()
 
-      const [createdContent] = await tx
-        .insert(schema.content)
-        .values({
-          id: uuidv7(),
-          organizationId,
-          createdByUserId: userId,
-          sourceContentId: resolvedSourceContentId,
-          title: resolvedTitle,
-          slug,
-          status: selectedStatus,
-          primaryKeyword,
-          targetLocale,
-          contentType: selectedContentType,
-          currentVersionId: null
+          createdContent = inserted
+        } catch (error: any) {
+          if (isContentSlugConstraintError(error)) {
+            attempt += 1
+            slugCandidate = await ensureUniqueContentSlug(
+              tx,
+              organizationId,
+              `${baseSlugInput}-${Math.random().toString(36).slice(2, 6)}`
+            )
+            continue
+          }
+          throw error
+        }
+      }
+
+      if (!createdContent) {
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Unable to allocate a unique slug for this content'
         })
-        .returning()
+      }
 
+      slug = createdContent.slug
       contentRecord = createdContent
     } else {
       slug = contentRecord.slug
@@ -190,7 +240,8 @@ export const generateContentDraft = async (
         selectedStatus !== contentRecord.status ||
         primaryKeyword !== contentRecord.primaryKeyword ||
         targetLocale !== contentRecord.targetLocale ||
-        shouldUpdateSource
+        shouldUpdateSource ||
+        selectedContentType !== contentRecord.contentType
 
       if (shouldUpdate) {
         const [updatedContent] = await tx
@@ -201,6 +252,7 @@ export const generateContentDraft = async (
             primaryKeyword,
             targetLocale,
             sourceContentId: resolvedSourceContentId,
+            contentType: selectedContentType,
             updatedAt: new Date()
           })
           .where(eq(schema.content.id, contentRecord.id))

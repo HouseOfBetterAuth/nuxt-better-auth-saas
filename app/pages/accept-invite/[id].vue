@@ -1,6 +1,5 @@
 <script setup lang="ts">
 const route = useRoute()
-const router = useRouter()
 const localePath = useLocalePath()
 const { organization, loggedIn, fetchSession, session } = useAuth()
 const toast = useToast()
@@ -29,13 +28,13 @@ onMounted(async () => {
   }
 
   try {
-    const { data, error: apiError } = await organization.acceptInvitation({
+    const { error: apiError } = await organization.acceptInvitation({
       invitationId
     })
     if (apiError)
       throw apiError
 
-    toast.add({ title: 'Invitation accepted', color: 'green' })
+    toast.add({ title: 'Invitation accepted', color: 'success' })
     // Force full reload to ensure session and organization data is fresh
     window.location.href = '/t/dashboard'
   } catch (e: any) {

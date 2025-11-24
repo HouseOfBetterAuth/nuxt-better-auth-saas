@@ -1,10 +1,10 @@
+import { generateContentDraft } from '~~/server/services/content/generation'
+import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { requireAuth } from '~~/server/utils/auth'
+import { classifyUrl, extractUrls } from '~~/server/utils/chat'
+import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
-import { classifyUrl, extractUrls } from '~~/server/utils/chat'
-import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { generateContentDraft } from '~~/server/services/content/generation'
-import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 
 interface ChatActionGenerateContent {
   type: 'generate_content'
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
     seenKeys.add(key)
   }
 
-  const actions = processedSources.map((item) => ({
+  const actions = processedSources.map(item => ({
     type: 'suggest_generate_from_source',
     sourceContentId: item.source.id,
     sourceType: item.sourceType,
@@ -99,6 +99,36 @@ export default defineEventHandler(async (event) => {
   let generationResult: Awaited<ReturnType<typeof generateContentDraft>> | null = null
 
   if (body.action?.type === 'generate_content') {
+    let sanitizedSystemPrompt: string | undefined
+    if (body.action.systemPrompt !== undefined) {
+      if (typeof body.action.systemPrompt !== 'string') {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'systemPrompt must be a string when provided'
+        })
+      }
+      const trimmed = body.action.systemPrompt.trim()
+      if (!trimmed) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'systemPrompt cannot be empty'
+        })
+      }
+      sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
+    }
+
+    let sanitizedTemperature = 1
+    if (body.action.temperature !== undefined && body.action.temperature !== null) {
+      const parsedTemperature = Number(body.action.temperature)
+      if (!Number.isFinite(parsedTemperature) || parsedTemperature < 0 || parsedTemperature > 2) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'temperature must be a number between 0 and 2'
+        })
+      }
+      sanitizedTemperature = parsedTemperature
+    }
+
     generationResult = await generateContentDraft(db, {
       organizationId,
       userId: user.id,
@@ -113,8 +143,8 @@ export default defineEventHandler(async (event) => {
         targetLocale: typeof body.action.targetLocale === 'string' ? body.action.targetLocale : null,
         contentType: body.action.contentType && CONTENT_TYPES.includes(body.action.contentType) ? body.action.contentType : undefined
       },
-      systemPrompt: body.action.systemPrompt,
-      temperature: body.action.temperature
+      systemPrompt: sanitizedSystemPrompt,
+      temperature: sanitizedTemperature
     })
   }
 
@@ -141,11 +171,11 @@ export default defineEventHandler(async (event) => {
     })),
     generation: generationResult
       ? {
-        content: generationResult.content,
-        version: generationResult.version,
-        markdown: generationResult.markdown,
-        meta: generationResult.meta
-      }
+          content: generationResult.content,
+          version: generationResult.version,
+          markdown: generationResult.markdown,
+          meta: generationResult.meta
+        }
       : null
   }
 })

@@ -56,7 +56,9 @@ export const classifyUrl = (rawUrl: string): ParsedUrlResult | null => {
     }
 
     if (GOOGLE_DOCS_HOSTS.includes(hostname) && url.pathname.includes('/document/')) {
-      const docId = url.pathname.split('/').filter(Boolean).pop()
+      const segments = url.pathname.split('/').filter(Boolean)
+      const docIndex = segments.indexOf('d')
+      const docId = docIndex !== -1 ? segments[docIndex + 1] : undefined
       if (docId) {
         return {
           url: rawUrl,

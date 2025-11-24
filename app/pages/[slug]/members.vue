@@ -5,7 +5,7 @@ definePageMeta({
   layout: 'dashboard'
 })
 
-const { organization, useActiveOrganization, session, user, client, fetchSession } = useAuth()
+const { organization, useActiveOrganization, session, user, fetchSession } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 const { copy } = useClipboard()
@@ -13,12 +13,10 @@ const { copy } = useClipboard()
 const inviteEmail = ref('')
 const inviteRole = ref('member')
 const loading = ref(false)
-const isCheckingOrg = ref(true)
-const refreshKey = ref(0)
 
 // SSR: Prefetch session and organization data
 const { data: preloadedOrg } = await useAsyncData('members-page-data', async () => {
-  const [sessionRes, orgRes] = await Promise.all([
+  const [, orgRes] = await Promise.all([
     $fetch('/api/auth/get-session', { headers: useRequestHeaders(['cookie']) }),
     $fetch('/api/auth/organization/get-full-organization', { headers: useRequestHeaders(['cookie']) })
   ])
@@ -73,26 +71,6 @@ const roles = [
   { label: 'Owner', value: 'owner' }
 ]
 
-const memberColumns = [
-  {
-    id: 'user',
-    key: 'user',
-    label: 'User'
-  },
-  {
-    id: 'role',
-    key: 'role',
-    label: 'Role',
-    class: 'w-32'
-  },
-  {
-    id: 'actions',
-    key: 'actions',
-    label: '',
-    class: 'w-16'
-  }
-]
-
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -106,27 +84,7 @@ async function copyLink(invitationId: string) {
   const link = getInviteLink(invitationId)
   if (link) {
     await copy(link)
-    toast.add({ title: 'Link copied to clipboard', color: 'green' })
-  }
-}
-
-async function refreshPage() {
-  loading.value = true
-  try {
-    await fetchSession()
-    // Fetch fresh organization data
-    const orgData = await $fetch('/api/auth/organization/get-full-organization')
-
-    // Manually update the activeOrg state with fresh data
-    if (orgData && activeOrg.value) {
-      activeOrg.value.data = orgData as any
-    }
-
-    toast.add({ title: 'Data refreshed', color: 'success' })
-  } catch (e) {
-    toast.add({ title: 'Error refreshing data', color: 'error' })
-  } finally {
-    loading.value = false
+    toast.add({ title: 'Link copied to clipboard', color: 'success' })
   }
 }
 
@@ -169,11 +127,6 @@ async function removeMember(memberId: string) {
   if (!activeOrg.value?.data?.id)
     return
 
-  // Confirm before removing
-  if (!confirm('Are you sure you want to remove this member from the team?')) {
-    return
-  }
-
   loading.value = true
 
   try {
@@ -211,7 +164,7 @@ async function inviteMember() {
   loading.value = true
 
   try {
-    const { data, error } = await organization.inviteMember({
+    const { error } = await organization.inviteMember({
       email: inviteEmail.value,
       role: inviteRole.value,
       organizationId: activeOrg.value.data.id
@@ -231,7 +184,7 @@ async function inviteMember() {
     toast.add({
       title: 'Error inviting member',
       description: e.message,
-      color: 'red'
+      color: 'error'
     })
   } finally {
     loading.value = false
@@ -240,8 +193,6 @@ async function inviteMember() {
 
 async function revokeInvitation(invitationId: string) {
   if (!activeOrg.value?.data?.id)
-    return
-  if (!confirm('Are you sure you want to revoke this invitation?'))
     return
 
   loading.value = true
@@ -458,7 +409,7 @@ async function revokeInvitation(invitationId: string) {
               <UButton
                 v-if="canManageMembers"
                 icon="i-lucide-x"
-                color="red"
+                color="error"
                 variant="ghost"
                 size="xs"
                 class="cursor-pointer"

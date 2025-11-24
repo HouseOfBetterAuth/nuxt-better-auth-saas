@@ -1,7 +1,6 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, eq } from 'drizzle-orm'
-import * as schema from '~~/server/database/schema'
 import { v7 as uuidv7 } from 'uuid'
+import * as schema from '~~/server/database/schema'
 
 export const INGEST_STATUSES = ['pending', 'ingested', 'failed'] as const
 
@@ -31,43 +30,14 @@ export const upsertSourceContent = async (
     ? input.ingestStatus
     : 'pending'
 
-  let existing: typeof schema.sourceContent.$inferSelect | undefined
-
-  if (input.externalId) {
-    const matches = await db
-      .select()
-      .from(schema.sourceContent)
-      .where(and(
-        eq(schema.sourceContent.organizationId, input.organizationId),
-        eq(schema.sourceContent.sourceType, input.sourceType),
-        eq(schema.sourceContent.externalId, input.externalId)
-      ))
-      .limit(1)
-
-    existing = matches[0]
-  }
-
   const payload = {
-    title: typeof input.title === 'string' ? input.title : existing?.title ?? null,
-    sourceText: typeof input.sourceText === 'string' ? input.sourceText : existing?.sourceText ?? null,
-    metadata: input.metadata ?? existing?.metadata ?? null,
+    title: typeof input.title === 'string' ? input.title : null,
+    sourceText: typeof input.sourceText === 'string' ? input.sourceText : null,
+    metadata: typeof input.metadata === 'object' && input.metadata !== null ? input.metadata : null,
     ingestStatus
   }
 
-  if (existing) {
-    const [updated] = await db
-      .update(schema.sourceContent)
-      .set({
-        ...payload,
-        updatedAt: new Date()
-      })
-      .where(eq(schema.sourceContent.id, existing.id))
-      .returning()
-
-    return updated
-  }
-
-  const [created] = await db
+  const [result] = await db
     .insert(schema.sourceContent)
     .values({
       id: uuidv7(),
@@ -77,7 +47,18 @@ export const upsertSourceContent = async (
       externalId: input.externalId ?? null,
       ...payload
     })
+    .onConflictDoUpdate({
+      target: [
+        schema.sourceContent.organizationId,
+        schema.sourceContent.sourceType,
+        schema.sourceContent.externalId
+      ],
+      set: {
+        ...payload,
+        updatedAt: new Date()
+      }
+    })
     .returning()
 
-  return created
+  return result
 }
