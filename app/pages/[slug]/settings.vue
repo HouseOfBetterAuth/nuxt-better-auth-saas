@@ -16,7 +16,7 @@ onMounted(() => {
     if (activeOrg.value?.data?.members && user.value?.id) {
       const member = activeOrg.value.data.members.find(m => m.userId === user.value!.id)
       if (member?.role !== 'owner' && member?.role !== 'admin') {
-         navigateTo(`/${activeOrg.value.data.slug}/dashboard`)
+        navigateTo(`/${activeOrg.value.data.slug}/dashboard`)
       }
     }
   })
@@ -24,7 +24,7 @@ onMounted(() => {
 
 // SSR: Prefetch session and full organization data
 const { data: preloadedOrg } = await useAsyncData('settings-page-data', async () => {
-  const [sessionRes, orgRes] = await Promise.all([
+  const [_, orgRes] = await Promise.all([
     $fetch('/api/auth/get-session', { headers: useRequestHeaders(['cookie']) }),
     $fetch('/api/auth/organization/get-full-organization', { headers: useRequestHeaders(['cookie']) })
   ])
@@ -36,7 +36,8 @@ const { data: preloadedOrg } = await useAsyncData('settings-page-data', async ()
 
 // Initialize activeOrg with preloaded data if available
 if (preloadedOrg.value && activeOrg.value) {
-  activeOrg.value.data = preloadedOrg.value as any
+  // @ts-expect-error - forcing update for hydration
+  activeOrg.value.data = preloadedOrg.value
 }
 
 const loading = ref(false)
@@ -55,8 +56,8 @@ watch(() => activeOrg.value?.data, (newData) => {
     // Only update if values match the PREVIOUS org (meaning we switched)
     // Or if we're initializing. We don't want to overwrite user typing.
     // Simplest strategy: If ID changes, update.
-    if (newData.name !== teamName.value && newData.id !== activeOrg.value?.data?.id) { 
-       // This logic is tricky. Let's stick to the previous safe watcher.
+    if (newData.name !== teamName.value && newData.id !== activeOrg.value?.data?.id) {
+      // This logic is tricky. Let's stick to the previous safe watcher.
     }
   }
 }, { deep: true })
@@ -69,8 +70,72 @@ watch(() => activeOrg.value?.data?.id, (newId) => {
   }
 }, { immediate: true })
 
+const { data: integrations, refresh: refreshIntegrations } = await useFetch('/api/organization/integrations', {
+  query: computed(() => {
+    // Ensure activeOrg.value is defined before accessing data
+    if (!activeOrg.value || !activeOrg.value.data) {
+      return { organizationId: undefined }
+    }
+    return { organizationId: activeOrg.value.data.id }
+  }),
+  immediate: false, // Wait for ID to be available
+  watch: [() => activeOrg.value?.data?.id]
+})
+
+// Trigger initial fetch when ID is available
+watch(() => activeOrg.value?.data?.id, (newId) => {
+  if (newId) {
+    refreshIntegrations()
+  }
+}, { immediate: true })
+
+const route = useRoute()
+onMounted(() => {
+  if (route.query.integration === 'success') {
+    toast.add({ title: 'Integration connected successfully', color: 'success' })
+    const query = { ...route.query }
+    delete query.integration
+    navigateTo({ query }, { replace: true })
+    refreshIntegrations()
+  }
+})
+
+const connectGoogle = () => {
+  if (!activeOrg.value?.data?.id)
+    return
+  window.location.href = `/api/organization/google/authorize?organizationId=${activeOrg.value.data.id}`
+}
+
+const disconnectLoading = ref(false)
+const disconnectIntegration = async (provider: string) => {
+  if (!activeOrg.value?.data?.id)
+    return
+
+  // eslint-disable-next-line no-alert
+  if (!confirm('Are you sure you want to disconnect this integration?'))
+    return
+
+  disconnectLoading.value = true
+  try {
+    await $fetch('/api/organization/integration/disconnect', {
+      method: 'DELETE',
+      query: {
+        organizationId: activeOrg.value.data.id,
+        provider
+      }
+    })
+    toast.add({ title: 'Integration disconnected', color: 'success' })
+    refreshIntegrations()
+  } catch (e: any) {
+    toast.add({ title: 'Error disconnecting integration', description: e.message, color: 'error' })
+  } finally {
+    disconnectLoading.value = false
+  }
+}
+
 async function updateTeam() {
-  if (!activeOrg.value?.data?.id) return
+  if (!activeOrg.value?.data?.id)
+    return
   loading.value = true
 
   try {
@@ -82,12 +147,13 @@ async function updateTeam() {
       }
     })
 
-    if (error) throw error
+    if (error)
+      throw error
 
     toast.add({ title: 'Team updated successfully', color: 'success' })
     // Refresh data
     await useAuth().fetchSession()
-    
+
     // If slug changed, we must redirect to new URL
     // Otherwise reload is fine, but redirection is safer
     window.location.href = `/${teamSlug.value}/settings`
@@ -105,19 +171,20 @@ async function updateTeam() {
 const copied = ref(false)
 
 const copyId = () => {
-   if (activeOrg.value?.data?.id) {
-      copy(activeOrg.value.data.id)
-      copied.value = true
-      setTimeout(() => {
-        copied.value = false
-      }, 2000)
-      toast.add({ title: 'Copied to clipboard' })
-   }
+  if (activeOrg.value?.data?.id) {
+    copy(activeOrg.value.data.id)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+    toast.add({ title: 'Copied to clipboard' })
+  }
 }
 
 // Check if user can delete this team (owner only)
 const canDeleteTeam = computed(() => {
-  if (!activeOrg.value?.data?.members || !user.value?.id) return false
+  if (!activeOrg.value?.data?.members || !user.value?.id)
+    return false
   const member = activeOrg.value.data.members.find(m => m.userId === user.value!.id)
   return member?.role === 'owner'
 })
@@ -125,37 +192,41 @@ const canDeleteTeam = computed(() => {
 const deleteLoading = ref(false)
 
 async function deleteTeam() {
-  if (!activeOrg.value?.data?.id) return
-  
+  if (!activeOrg.value?.data?.id)
+    return
+
   const name = activeOrg.value.data.name
+  // eslint-disable-next-line no-alert
   const confirmed = confirm(
     `Are you sure you want to delete "${name}"? This action cannot be undone and will remove all members and data.`
   )
-  
-  if (!confirmed) return
-  
+
+  if (!confirmed)
+    return
+
   deleteLoading.value = true
-  
+
   try {
     const { error } = await organization.delete({
       organizationId: activeOrg.value.data.id
     })
-    
-    if (error) throw error
-    
+
+    if (error)
+      throw error
+
     toast.add({ title: 'Team deleted successfully', color: 'success' })
-    
+
     // Fetch remaining teams to determine where to redirect
     const { data: orgs } = await organization.list()
 
-    if (orgs && orgs.length > 0) {
-       // Switch to first available team
-       await organization.setActive({ organizationId: orgs[0].id })
-       await fetchSession()
-       window.location.href = `/${orgs[0].slug}/dashboard`
+    if (orgs && orgs.length > 0 && orgs[0]) {
+      // Switch to first available team
+      await organization.setActive({ organizationId: orgs[0].id })
+      await fetchSession()
+      window.location.href = `/${orgs[0].slug}/dashboard`
     } else {
-       // No teams left
-       window.location.href = '/onboarding'
+      // No teams left
+      window.location.href = '/onboarding'
     }
   } catch (e: any) {
     toast.add({
@@ -171,44 +242,128 @@ async function deleteTeam() {
 
 <template>
   <div class="max-w-4xl mx-auto py-8 px-4">
-    <h1 class="text-3xl font-semibold mb-8">Organization settings</h1>
-    
+    <h1 class="text-3xl font-semibold mb-8">
+      Organization settings
+    </h1>
+
     <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8">
-       <h2 class="text-xl font-semibold mb-4">General information</h2>
-       <p class="text-sm text-gray-500 mb-6">For billing purposes you can use the organization ID below.</p>
-       
-       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-         <UFormField label="Organization name">
-            <UInput v-model="teamName" />
-         </UFormField>
-         
-         <UFormField label="Organization ID">
-            <div class="flex gap-2">
-               <UInput :model-value="activeOrg?.data?.id" readonly class="flex-1 font-mono text-sm bg-gray-50 dark:bg-gray-800" />
-               <UButton :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'" color="gray" variant="ghost" @click="copyId" />
-            </div>
-         </UFormField>
-       </div>
-       
-       <UButton label="Save" color="black" :loading="loading" @click="updateTeam" />
+      <h2 class="text-xl font-semibold mb-4">
+        General information
+      </h2>
+      <p class="text-sm text-gray-500 mb-6">
+        For billing purposes you can use the organization ID below.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <UFormField label="Organization name">
+          <UInput v-model="teamName" />
+        </UFormField>
+
+        <UFormField label="Organization ID">
+          <div class="flex gap-2">
+            <UInput
+              :model-value="activeOrg?.data?.id"
+              readonly
+              class="flex-1 font-mono text-sm bg-gray-50 dark:bg-gray-800"
+            />
+            <UButton
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+              color="gray"
+              variant="ghost"
+              @click="copyId"
+            />
+          </div>
+        </UFormField>
+      </div>
+
+      <UButton
+        label="Save"
+        color="black"
+        :loading="loading"
+        @click="updateTeam"
+      />
     </div>
 
-    <div v-if="canDeleteTeam" class="border border-red-200 dark:border-red-900/50 rounded-lg p-6 bg-red-50/50 dark:bg-red-900/10">
-       <h2 class="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">Delete organization</h2>
-       <p class="text-sm text-gray-500 mb-6">
-         Once you delete a team, there is no going back. Please be certain.
-       </p>
-       
-       <UButton 
-         color="red" 
-         variant="outline" 
-         icon="i-lucide-trash-2"
-         :loading="deleteLoading"
-         @click="deleteTeam"
-         class="cursor-pointer"
-       >
-         Delete Team
-       </UButton>
+    <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8">
+      <h2 class="text-xl font-semibold mb-4">
+        Integrations
+      </h2>
+      <p class="text-sm text-gray-500 mb-6">
+        Connect your organization with third-party services.
+      </p>
+
+      <div class="space-y-4">
+        <div class="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-800 rounded-lg">
+          <div class="flex items-center gap-3">
+            <Icon
+              name="simple-icons:google"
+              class="w-6 h-6"
+            />
+            <div>
+              <div class="font-medium">
+                Google
+              </div>
+              <div class="text-sm text-gray-500">
+                Connect your Google account
+              </div>
+            </div>
+          </div>
+          <div>
+            <UButton
+              v-if="!integrations?.find((i: any) => i?.provider === 'google' && i?.status === 'connected')"
+              label="Connect"
+              color="white"
+              class="cursor-pointer"
+              @click="connectGoogle"
+            />
+            <div
+              v-else
+              class="flex items-center gap-2"
+            >
+              <UButton
+                color="success"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-check-circle"
+                label="Connected"
+                class="cursor-default opacity-100"
+              />
+              <UButton
+                color="error"
+                variant="ghost"
+                icon="i-lucide-trash-2"
+                size="sm"
+                :loading="disconnectLoading"
+                class="cursor-pointer"
+                @click="disconnectIntegration('google')"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="canDeleteTeam"
+      class="border border-red-200 dark:border-red-900/50 rounded-lg p-6 bg-red-50/50 dark:bg-red-900/10"
+    >
+      <h2 class="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">
+        Delete organization
+      </h2>
+      <p class="text-sm text-gray-500 mb-6">
+        Once you delete a team, there is no going back. Please be certain.
+      </p>
+
+      <UButton
+        color="red"
+        variant="outline"
+        icon="i-lucide-trash-2"
+        :loading="deleteLoading"
+        class="cursor-pointer"
+        @click="deleteTeam"
+      >
+        Delete Team
+      </UButton>
     </div>
   </div>
 </template>

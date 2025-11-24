@@ -6,6 +6,7 @@ import {
   boolean,
   integer,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
@@ -78,6 +79,39 @@ export const organization = pgTable("organization", {
   stripeCustomerId: text("stripe_customer_id"),
   polarCustomerId: text("polar_customer_id"),
 });
+
+export const integration = pgTable(
+  "integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider").default("google").notNull(),
+    type: text("type").default("oauth").notNull(),
+    status: text("status").default("disconnected").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    expiresAt: timestamp("expires_at"),
+    scopes: text("scopes"),
+    metadata: text("metadata"),
+    connectedByUserId: text("connected_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("integration_organizationId_idx").on(table.organizationId),
+    uniqueIndex("integration_org_provider_unique").on(
+      table.organizationId,
+      table.provider,
+    ),
+  ],
+);
 
 export const member = pgTable(
   "member",
@@ -173,6 +207,7 @@ export const accountRelations = relations(account, ({ one }) => ({
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
   invitations: many(invitation),
+  integrations: many(integration),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -193,6 +228,17 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
   }),
   user: one(user, {
     fields: [invitation.inviterId],
+    references: [user.id],
+  }),
+}));
+
+export const integrationRelations = relations(integration, ({ one }) => ({
+  organization: one(organization, {
+    fields: [integration.organizationId],
+    references: [organization.id],
+  }),
+  connectedBy: one(user, {
+    fields: [integration.connectedByUserId],
     references: [user.id],
   }),
 }));

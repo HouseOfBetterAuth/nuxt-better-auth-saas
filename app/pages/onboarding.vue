@@ -2,16 +2,15 @@
 import { useDebounceFn } from '@vueuse/core'
 
 definePageMeta({
-  layout: 'simple' 
+  layout: 'simple' as any
 })
 
 const { user, organization, fetchSession } = useAuth()
-const router = useRouter()
 const toast = useToast()
 
 const { data: invitations } = await useAsyncData('user-invitations', async () => {
   return await $fetch('/api/auth/user/invitations', {
-      headers: useRequestHeaders(['cookie'])
+    headers: useRequestHeaders(['cookie'])
   })
 })
 
@@ -24,23 +23,23 @@ const isCheckingSlug = ref(false)
 
 const checkSlug = useDebounceFn(async (slug: string) => {
   if (!slug || slug.length < 3) {
-      return
+    return
   }
   isCheckingSlug.value = true
   try {
     const { available } = await $fetch('/api/organization/check-slug', {
-        query: { slug },
-        headers: useRequestHeaders(['cookie'])
+      query: { slug },
+      headers: useRequestHeaders(['cookie'])
     })
     if (!available) {
-        slugError.value = 'Slug is already taken'
+      slugError.value = 'Slug is already taken'
     } else {
-        slugError.value = ''
+      slugError.value = ''
     }
   } catch (e) {
-      console.error(e)
+    console.error(e)
   } finally {
-      isCheckingSlug.value = false
+    isCheckingSlug.value = false
   }
 }, 500)
 
@@ -53,14 +52,15 @@ watch(newTeamName, (newName) => {
 })
 
 watch(newTeamSlug, (newSlug) => {
-    slugError.value = ''
-    if (isSlugManuallyEdited.value) {
-        checkSlug(newSlug)
-    }
+  slugError.value = ''
+  if (isSlugManuallyEdited.value) {
+    checkSlug(newSlug)
+  }
 })
 
 async function createTeam() {
-  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value) return
+  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value)
+    return
   creating.value = true
 
   try {
@@ -69,13 +69,14 @@ async function createTeam() {
       slug: newTeamSlug.value
     })
 
-    if (error) throw error
+    if (error)
+      throw error
 
     if (data) {
       await organization.setActive({ organizationId: data.id })
       await fetchSession()
       toast.add({ title: 'Team created successfully', color: 'success' })
-      router.push(`/${data.slug}/dashboard`)
+      window.location.href = `/${data.slug}/dashboard`
     }
   } catch (e: any) {
     toast.add({
@@ -91,13 +92,14 @@ async function createTeam() {
 async function acceptInvite(inviteId: string, orgId?: string) {
   try {
     const { error } = await organization.acceptInvitation({
-        invitationId: inviteId
+      invitationId: inviteId
     })
-    
-    if (error) throw error
+
+    if (error)
+      throw error
 
     toast.add({ title: 'Invitation accepted', color: 'success' })
-    
+
     // If orgId is provided, set it active immediately
     if (orgId) {
       await organization.setActive({ organizationId: orgId })
@@ -106,12 +108,18 @@ async function acceptInvite(inviteId: string, orgId?: string) {
     // Refresh session to update active org
     await fetchSession()
     // Get active org to find slug
-    const { data: activeOrg } = await organization.get()
-    if (activeOrg) {
-      router.push(`/${activeOrg.slug}/dashboard`)
+    const { data: activeOrg } = await organization.list()
+    if (activeOrg && activeOrg.length > 0) {
+      // Since we set it active, it should be the first one or we can find it
+      const targetOrg = activeOrg.find(o => o.id === orgId) || activeOrg[0]
+      if (targetOrg) {
+        window.location.href = `/${targetOrg.slug}/dashboard`
+      } else {
+        window.location.href = '/t/dashboard'
+      }
     } else {
       // Fallback: Go to generic dashboard and let layout handle activation
-      router.push('/t/dashboard')
+      window.location.href = '/t/dashboard'
     }
   } catch (e: any) {
     toast.add({
@@ -128,67 +136,92 @@ async function acceptInvite(inviteId: string, orgId?: string) {
     <UCard class="max-w-md w-full">
       <div class="text-center mb-8">
         <div class="mx-auto bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center mb-4">
-          <UIcon name="i-lucide-users" class="w-6 h-6 text-primary" />
+          <UIcon
+            name="i-lucide-users"
+            class="w-6 h-6 text-primary"
+          />
         </div>
-        <h1 class="text-2xl font-bold mb-2">Welcome, {{ user?.name }}!</h1>
-        <p class="text-muted-foreground">To get started, create a new team or join one you've been invited to.</p>
+        <h1 class="text-2xl font-bold mb-2">
+          Welcome, {{ user?.name }}!
+        </h1>
+        <p class="text-muted-foreground">
+          To get started, create a new team or join one you've been invited to.
+        </p>
       </div>
 
       <div class="space-y-6">
         <!-- Create Team Section -->
         <div>
           <h2 class="font-semibold mb-4 flex items-center gap-2">
-            <UIcon name="i-lucide-plus-circle" class="w-4 h-4" />
+            <UIcon
+              name="i-lucide-plus-circle"
+              class="w-4 h-4"
+            />
             Create a new team
           </h2>
           <div class="flex flex-col gap-2">
-            <UInput 
-              v-model="newTeamName" 
-              placeholder="Team Name (e.g. Acme Inc)" 
+            <UInput
+              v-model="newTeamName"
+              placeholder="Team Name (e.g. Acme Inc)"
               @keyup.enter="createTeam"
             />
-            <UInput 
-              v-model="newTeamSlug" 
-              placeholder="acme-inc" 
+            <UInput
+              v-model="newTeamSlug"
+              placeholder="acme-inc"
               icon="i-lucide-link"
               :loading="isCheckingSlug"
               :error="!!slugError"
               @input="isSlugManuallyEdited = true"
               @keyup.enter="createTeam"
             />
-            <p v-if="slugError" class="text-xs text-red-500">{{ slugError }}</p>
-            <UButton 
-              :loading="creating" 
+            <p
+              v-if="slugError"
+              class="text-xs text-red-500"
+            >
+              {{ slugError }}
+            </p>
+            <UButton
+              :loading="creating"
               :disabled="!newTeamName.trim() || !newTeamSlug.trim()"
-              @click="createTeam"
               block
+              @click="createTeam"
             >
               Create Team
             </UButton>
           </div>
         </div>
 
-        <USeparator v-if="invitations && invitations.length > 0" label="OR" />
+        <USeparator
+          v-if="invitations && invitations.length > 0"
+          label="OR"
+        />
 
         <!-- Invitations Section -->
         <div v-if="invitations && invitations.length > 0">
           <h2 class="font-semibold mb-4 flex items-center gap-2">
-            <UIcon name="i-lucide-mail" class="w-4 h-4" />
+            <UIcon
+              name="i-lucide-mail"
+              class="w-4 h-4"
+            />
             Accept an invitation
           </h2>
           <div class="space-y-3">
-            <div 
-              v-for="invite in invitations" 
+            <div
+              v-for="invite in invitations"
               :key="invite.id"
               class="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900"
             >
               <div class="text-sm">
-                <div class="font-medium">{{ invite.organizationName }}</div> 
-                <div class="text-xs text-muted-foreground">Invited as {{ invite.role }}</div>
+                <div class="font-medium">
+                  {{ invite.organizationName }}
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  Invited as {{ invite.role }}
+                </div>
               </div>
-              <UButton 
-                size="xs" 
-                variant="solid" 
+              <UButton
+                size="xs"
+                variant="solid"
                 color="primary"
                 @click="acceptInvite(invite.id, invite.organizationId)"
               >
