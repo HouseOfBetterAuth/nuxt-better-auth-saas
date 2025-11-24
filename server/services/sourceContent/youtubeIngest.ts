@@ -1,0 +1,269 @@
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { FetchError } from 'ofetch'
+import { and, eq, like } from 'drizzle-orm'
+import { createError } from 'h3'
+import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import * as schema from '../../database/schema'
+
+const YOUTUBE_SCOPE_KEYWORDS = ['youtube', 'youtube.force-ssl']
+
+interface IngestYouTubeOptions {
+  db: NodePgDatabase<typeof schema>
+  sourceContentId: string
+  organizationId: string
+  userId: string
+  videoId: string
+}
+
+function hasYouTubeScopes(scope: string | null | undefined) {
+  if (!scope) {
+    return false
+  }
+  return YOUTUBE_SCOPE_KEYWORDS.some(keyword => scope.includes(keyword))
+}
+
+function stripVttToPlainText(vtt: string) {
+  return vtt
+    .split(/\r?\n+/)
+    .filter((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed === 'WEBVTT') {
+        return false
+      }
+      if (/^\d+$/.test(trimmed)) {
+        return false
+      }
+      if (trimmed.includes('-->')) {
+        return false
+      }
+      return true
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getBaseMetadata(metadata: any) {
+  return metadata && typeof metadata === 'object' ? { ...metadata } : {}
+}
+
+function getBaseYoutubeMetadata(metadata: any) {
+  if (metadata && typeof metadata === 'object' && metadata.youtube && typeof metadata.youtube === 'object') {
+    return { ...metadata.youtube }
+  }
+  return {}
+}
+
+async function refreshGoogleAccessToken(db: NodePgDatabase<typeof schema>, account: typeof schema.account.$inferSelect) {
+  if (!account.refreshToken) {
+    throw new Error('Google account is missing a refresh token.')
+  }
+  const params = new URLSearchParams({
+    client_id: runtimeConfig.googleClientId!,
+    client_secret: runtimeConfig.googleClientSecret!,
+    refresh_token: account.refreshToken,
+    grant_type: 'refresh_token'
+  })
+
+  const response = await $fetch<{
+    access_token: string
+    expires_in: number
+    refresh_token?: string
+  }>('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    body: params.toString(),
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  })
+
+  const expiresAt = new Date(Date.now() + (response.expires_in || 3600) * 1000)
+
+  const [updated] = await db
+    .update(schema.account)
+    .set({
+      accessToken: response.access_token,
+      refreshToken: response.refresh_token || account.refreshToken,
+      accessTokenExpiresAt: expiresAt,
+      updatedAt: new Date()
+    })
+    .where(eq(schema.account.id, account.id))
+    .returning()
+
+  return updated
+}
+
+async function ensureAccessToken(db: NodePgDatabase<typeof schema>, account: typeof schema.account.$inferSelect) {
+  if (
+    account.accessToken &&
+    account.accessTokenExpiresAt &&
+    new Date(account.accessTokenExpiresAt).getTime() > Date.now() + 60_000
+  ) {
+    return account.accessToken
+  }
+  const refreshed = await refreshGoogleAccessToken(db, account)
+  return refreshed.accessToken!
+}
+
+async function downloadCaption(accessToken: string, captionId: string) {
+  return await $fetch<string>(`https://youtube.googleapis.com/youtube/v3/captions/${captionId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'text/plain'
+    },
+    query: {
+      tfmt: 'vtt',
+      alt: 'media'
+    },
+    responseType: 'text'
+  })
+}
+
+async function fetchCaptionMetadata(accessToken: string, videoId: string) {
+  const response = await $fetch<any>('https://youtube.googleapis.com/youtube/v3/captions', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    },
+    query: {
+      part: 'id,snippet',
+      videoId
+    }
+  })
+
+  const items = response?.items || []
+  if (!items.length) {
+    throw new Error('No captions available for this video. Ensure the video has public captions.')
+  }
+
+  const preferred = items.find((item: any) => item?.snippet?.language?.startsWith('en') && item?.snippet?.trackKind !== 'ASR')
+    || items.find((item: any) => item?.snippet?.trackKind !== 'ASR')
+    || items[0]
+
+  return preferred
+}
+
+async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, organizationId: string, userId: string) {
+  const [userAccount] = await db
+    .select()
+    .from(schema.account)
+    .where(and(
+      eq(schema.account.userId, userId),
+      eq(schema.account.providerId, 'google')
+    ))
+    .limit(1)
+
+  if (userAccount && hasYouTubeScopes(userAccount.scope)) {
+    return userAccount
+  }
+
+  const orgAccounts = await db
+    .select({
+      account: schema.account
+    })
+    .from(schema.account)
+    .innerJoin(schema.member, eq(schema.member.userId, schema.account.userId))
+    .where(and(
+      eq(schema.member.organizationId, organizationId),
+      eq(schema.account.providerId, 'google'),
+      like(schema.account.scope, '%youtube%')
+    ))
+
+  const fallback = orgAccounts.find(entry => hasYouTubeScopes(entry.account.scope))
+  return fallback?.account
+}
+
+export async function ingestYouTubeSource(options: IngestYouTubeOptions) {
+  const { db, sourceContentId, organizationId, userId, videoId } = options
+
+  const [source] = await db
+    .select()
+    .from(schema.sourceContent)
+    .where(eq(schema.sourceContent.id, sourceContentId))
+    .limit(1)
+
+  if (!source) {
+    throw createError({ statusCode: 404, statusMessage: 'Source content not found for ingest' })
+  }
+
+  if (source.ingestStatus === 'ingested') {
+    return source
+  }
+
+  const account = await findYouTubeAccount(db, organizationId, userId)
+
+  if (!account) {
+    const baseMetadata = getBaseMetadata(source.metadata)
+    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
+    await db
+      .update(schema.sourceContent)
+      .set({
+        ingestStatus: 'failed',
+        metadata: {
+          ...baseMetadata,
+          youtube: {
+            ...existingYoutubeMetadata,
+            lastError: 'No connected YouTube integration available.'
+          }
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(schema.sourceContent.id, sourceContentId))
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'No YouTube integration available for this organization.'
+    })
+  }
+
+  try {
+    const accessToken = await ensureAccessToken(db, account)
+    const caption = await fetchCaptionMetadata(accessToken, videoId)
+    const vttContent = await downloadCaption(accessToken, caption.id)
+    const text = stripVttToPlainText(vttContent)
+
+    const baseMetadata = getBaseMetadata(source.metadata)
+    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
+    const metadata = {
+      ...baseMetadata,
+      youtube: {
+        ...existingYoutubeMetadata,
+        captionId: caption.id,
+        language: caption?.snippet?.language,
+        lastIngestedAt: new Date().toISOString()
+      }
+    }
+
+    const [updated] = await db
+      .update(schema.sourceContent)
+      .set({
+        sourceText: text,
+        ingestStatus: 'ingested',
+        metadata,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.sourceContent.id, sourceContentId))
+      .returning()
+
+    return updated
+  } catch (error) {
+    const baseMetadata = getBaseMetadata(source.metadata)
+    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
+    const errorMessage = (error as FetchError)?.data?.error?.message || (error as Error).message || 'Unknown ingest error'
+    await db
+      .update(schema.sourceContent)
+      .set({
+        ingestStatus: 'failed',
+        metadata: {
+          ...baseMetadata,
+          youtube: {
+            ...existingYoutubeMetadata,
+            lastError: errorMessage,
+            lastIngestedAt: new Date().toISOString()
+          }
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(schema.sourceContent.id, sourceContentId))
+
+    throw error
+  }
+}
