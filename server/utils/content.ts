@@ -1,9 +1,10 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { and, eq } from 'drizzle-orm'
+import { CONTENT_TYPES } from '~~/shared/constants/contentTypes'
 import * as schema from '../database/schema'
 
 export const CONTENT_STATUSES = ['draft', 'in_review', 'ready_for_publish', 'published', 'archived'] as const
-export const CONTENT_TYPES = ['blog_post', 'landing_page', 'docs_article', 'social_thread'] as const
+export { CONTENT_TYPES }
 
 const FALLBACK_SLUG = 'untitled'
 const UNIQUE_SLUG_CONSTRAINTS = ['content_org_slug_idx']

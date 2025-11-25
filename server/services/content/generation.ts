@@ -107,9 +107,11 @@ export const generateContentDraft = async (
     })
   }
 
-  const resolvedTitle = typeof overrides?.title === 'string' && overrides.title.trim().length > 0
+  // Extract title from markdown if not provided
+  // We'll parse it after generation
+  let resolvedTitle = typeof overrides?.title === 'string' && overrides.title.trim().length > 0
     ? overrides.title
-    : (existingContent?.title ?? sourceContent?.title ?? 'New Codex Draft')
+    : (existingContent?.title ?? sourceContent?.title ?? null)
 
   const selectedContentType = overrides?.contentType && CONTENT_TYPES.includes(overrides.contentType)
     ? overrides.contentType
@@ -139,6 +141,19 @@ export const generateContentDraft = async (
     })
     markdown = response.markdown
     meta = response.meta
+    
+    // Extract title from markdown if not already resolved
+    // Look for first H1 (# Title) or use first line as fallback
+    if (!resolvedTitle) {
+      const h1Match = markdown.match(/^#\s+(.+)$/m)
+      if (h1Match && h1Match[1]) {
+        resolvedTitle = h1Match[1].trim()
+      } else {
+        // Use first non-empty line as title
+        const firstLine = markdown.split('\n').find(line => line.trim().length > 0)
+        resolvedTitle = firstLine ? firstLine.replace(/^#+\s*/, '').trim().slice(0, 100) : 'New Codex Draft'
+      }
+    }
   } catch (error: any) {
     console.error('Failed to generate content via AI Gateway', {
       error: error?.message || error,
@@ -177,12 +192,88 @@ export const generateContentDraft = async (
     contentType: selectedContentType
   }
 
+  // Parse sections from markdown
+  const parseSectionsFromMarkdown = (mdx: string): Array<{
+    id: string
+    index: number
+    type: string
+    level?: number
+    title: string
+    startOffset: number
+    endOffset: number
+    anchor: string
+    wordCount: number
+    meta?: Record<string, any>
+  }> => {
+    const sections: Array<{
+      id: string
+      index: number
+      type: string
+      level?: number
+      title: string
+      startOffset: number
+      endOffset: number
+      anchor: string
+      wordCount: number
+      meta?: Record<string, any>
+    }> = []
+    
+    // Match headings: # Title, ## Title, ### Title, etc.
+    const headingRegex = /^(#{1,6})\s+(.+)$/gm
+    const matches: Array<{ level: number; title: string; index: number }> = []
+    let match
+    
+    // Collect all heading matches first
+    while ((match = headingRegex.exec(mdx)) !== null) {
+      matches.push({
+        level: match[1].length,
+        title: match[2].trim(),
+        index: match.index
+      })
+    }
+    
+    // Process each heading to create sections
+    matches.forEach((heading, idx) => {
+      const startOffset = heading.index
+      const endOffset = idx < matches.length - 1 ? matches[idx + 1].index : mdx.length
+      
+      // Extract section content
+      const sectionContent = mdx.slice(startOffset, endOffset).trim()
+      const wordCount = sectionContent.split(/\s+/).filter(w => w.length > 0).length
+      
+      // Generate anchor from title
+      const anchor = heading.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+      
+      sections.push({
+        id: `sec_${idx}`,
+        index: idx,
+        type: heading.level === 1 ? 'h1_block' : heading.level === 2 ? 'heading_block' : 'subheading_block',
+        level: heading.level,
+        title: heading.title,
+        startOffset,
+        endOffset,
+        anchor,
+        wordCount,
+        meta: {
+          isKeySection: heading.level <= 2
+        }
+      })
+    })
+    
+    return sections
+  }
+
+  const parsedSections = parseSectionsFromMarkdown(markdown)
+
   const result = await db.transaction(async (tx) => {
     let contentRecord = existingContent
     let slug = existingContent?.slug
 
     if (!contentRecord) {
-      const baseSlugInput = overrides?.slug || resolvedTitle
+      const baseSlugInput = overrides?.slug || resolvedTitle || 'new-draft'
       let slugCandidate = await ensureUniqueContentSlug(tx, organizationId, baseSlugInput)
       let createdContent: typeof schema.content.$inferSelect | null = null
       let attempt = 0
@@ -197,7 +288,7 @@ export const generateContentDraft = async (
               organizationId,
               createdByUserId: userId,
               sourceContentId: resolvedSourceContentId,
-              title: resolvedTitle,
+              title: resolvedTitle || 'New Codex Draft',
               slug: slugCandidate,
               status: selectedStatus,
               primaryKeyword,
@@ -278,7 +369,7 @@ export const generateContentDraft = async (
         version: nextVersionNumber,
         createdByUserId: userId,
         frontmatter: {
-          title: resolvedTitle,
+          title: resolvedTitle || 'New Codex Draft',
           slug,
           status: selectedStatus,
           contentType: selectedContentType,
@@ -286,7 +377,7 @@ export const generateContentDraft = async (
         },
         bodyMdx: markdown,
         bodyHtml: null,
-        sections: null,
+        sections: parsedSections.length > 0 ? parsedSections : null,
         assets,
         seoSnapshot
       })

@@ -1,4 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import { sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
@@ -64,25 +65,42 @@ export const upsertSourceContent = async (
     ...insertPayload
   }
 
-  const onConflictTarget = input.externalId
-    ? [
-        schema.sourceContent.organizationId,
-        schema.sourceContent.sourceType,
-        schema.sourceContent.externalId
-      ]
-    : [
-        schema.sourceContent.organizationId,
-        schema.sourceContent.sourceType
+  // Partial unique indexes with WHERE clauses can't be used directly in ON CONFLICT
+  // We need to check if a record exists first, then update or insert
+  const existing = await db.query.sourceContent.findFirst({
+    where: (sourceContent, { eq, and, isNull, isNotNull }) => {
+      const conditions = [
+        eq(sourceContent.organizationId, input.organizationId),
+        eq(sourceContent.sourceType, input.sourceType)
       ]
 
-  const [result] = await db
-    .insert(schema.sourceContent)
-    .values(insertValues)
-    .onConflictDoUpdate({
-      target: onConflictTarget,
-      set: updatePayload
-    })
-    .returning()
+      if (input.externalId) {
+        conditions.push(eq(sourceContent.externalId, input.externalId))
+        conditions.push(isNotNull(sourceContent.externalId))
+      } else {
+        conditions.push(isNull(sourceContent.externalId))
+      }
 
-  return result
+      return and(...conditions)
+    }
+  })
+
+  if (existing) {
+    // Update existing record
+    const [updated] = await db
+      .update(schema.sourceContent)
+      .set(updatePayload)
+      .where(sql`${schema.sourceContent.id} = ${existing.id}`)
+      .returning()
+
+    return updated
+  } else {
+    // Insert new record
+    const [inserted] = await db
+      .insert(schema.sourceContent)
+      .values(insertValues)
+      .returning()
+
+    return inserted
+  }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatActionSuggestion, ChatMessage } from '~/shared/utils/types'
+import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
 import { computed, ref } from 'vue'
 import ChatMessagesList from './ChatMessagesList.vue'
 
