@@ -66,7 +66,7 @@ export const upsertSourceContent = async (
   }
 
   // Use a single atomic INSERT ... ON CONFLICT DO UPDATE to avoid race conditions
-  if (input.externalId) {
+  if (input.externalId != null) {
     const [row] = await db
       .insert(schema.sourceContent)
       .values(insertValues)

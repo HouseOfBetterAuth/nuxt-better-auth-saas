@@ -45,9 +45,10 @@ We keep the existing entities from the prior plan but focus on how they support 
   - The logical article/post.
   - Fields: `id`, `organization_id`, `source_content_id`, `slug`, `title`, `status`, `content_type`, `primary_keyword`, `target_locale`, `current_version_id`, timestamps.
 
-- **`content_version`**
+  - **`content_version`**
   - Immutable snapshot of a draft or edit.
   - Fields: `id`, `content_id`, `version`, `created_by_user_id`, timestamps.
+    - `version: number` — monotonically incrementing integer starting at 1 (e.g. 1, 2, 3…).
   - Content fields:
     - `frontmatter` JSON (SEO+metadata).
     - `body_mdx` (full MDX).
@@ -384,12 +385,12 @@ This keeps conversation natural while still using the reusable pipeline.
   - `server/database/schema/sourceContent.ts`, `content.ts`, `chunk.ts` (and exports in `index.ts`).
   - Migrations create `source_content`, `chunk`, `content`, `content_version`, `publication`.
 
--- **AI Gateway helper**
+- **AI Gateway helper**
   - `server/utils/aiGateway.ts`:
     - `callChatCompletions` (wraps CF AI Gateway `/chat/completions`).
     - Higher‑level helpers for section‑level writing/editing.
 
--- **Reuse from existing backend**
+- **Reuse from existing backend**
   - Ingest, chunking, embeddings: behaviour and prompt patterns.
   - Section patching prompts and context assembly.
   - SEO analyser logic, either ported or called remotely.
