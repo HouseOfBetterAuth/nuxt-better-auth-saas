@@ -105,7 +105,10 @@ watch(() => contentId.value, async () => {
         </h1>
       </div>
 
-      <div v-if="error && !content" class="rounded-md border border-dashed p-6 text-sm text-muted-foreground text-center">
+      <div
+        v-if="error && !content"
+        class="rounded-md border border-dashed p-6 text-sm text-muted-foreground text-center"
+      >
         Content not found or you don't have access to this draft.
       </div>
 
@@ -124,7 +127,9 @@ watch(() => contentId.value, async () => {
         class="rounded-xl border border-dashed bg-muted/50 p-4 text-xs"
       >
         <details>
-          <summary class="cursor-pointer font-medium mb-2">Debug: Raw API Data</summary>
+          <summary class="cursor-pointer font-medium mb-2">
+            Debug: Raw API Data
+          </summary>
           <pre class="whitespace-pre-wrap overflow-x-auto">{{ JSON.stringify(content, null, 2) }}</pre>
         </details>
       </div>
@@ -136,7 +141,9 @@ watch(() => contentId.value, async () => {
       >
         <!-- MDX Content -->
         <div class="rounded-xl border bg-background p-6">
-          <h2 class="text-lg font-semibold mb-4">Generated Content (MDX)</h2>
+          <h2 class="text-lg font-semibold mb-4">
+            Generated Content (MDX)
+          </h2>
           <div class="prose prose-sm dark:prose-invert max-w-none">
             <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ content?.currentVersion?.bodyMdx }}</pre>
           </div>
@@ -147,7 +154,9 @@ watch(() => contentId.value, async () => {
           v-if="sections.length > 0"
           class="rounded-xl border bg-background p-6"
         >
-          <h2 class="text-lg font-semibold mb-4">Sections ({{ sections.length }})</h2>
+          <h2 class="text-lg font-semibold mb-4">
+            Sections ({{ sections.length }})
+          </h2>
           <div class="space-y-3">
             <div
               v-for="(section, idx) in sections"
@@ -195,7 +204,9 @@ watch(() => contentId.value, async () => {
           v-if="frontmatter"
           class="rounded-xl border bg-background p-6"
         >
-          <h2 class="text-lg font-semibold mb-4">Frontmatter</h2>
+          <h2 class="text-lg font-semibold mb-4">
+            Frontmatter
+          </h2>
           <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(frontmatter, null, 2) }}</pre>
         </div>
 
@@ -204,7 +215,9 @@ watch(() => contentId.value, async () => {
           v-if="assets"
           class="rounded-xl border bg-background p-6"
         >
-          <h2 class="text-lg font-semibold mb-4">Assets</h2>
+          <h2 class="text-lg font-semibold mb-4">
+            Assets
+          </h2>
           <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(assets, null, 2) }}</pre>
         </div>
 
@@ -213,15 +226,23 @@ watch(() => contentId.value, async () => {
           v-if="seoSnapshot"
           class="rounded-xl border bg-background p-6"
         >
-          <h2 class="text-lg font-semibold mb-4">SEO Snapshot</h2>
+          <h2 class="text-lg font-semibold mb-4">
+            SEO Snapshot
+          </h2>
           <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(seoSnapshot, null, 2) }}</pre>
         </div>
       </div>
 
       <!-- Chat Interface for Editing -->
       <div class="space-y-4">
-        <div v-if="messages.length > 0" class="rounded-xl border bg-background p-4">
-          <ChatMessagesList :messages="messages" :status="status" />
+        <div
+          v-if="messages.length > 0"
+          class="rounded-xl border bg-background p-4"
+        >
+          <ChatMessagesList
+            :messages="messages"
+            :status="status"
+          />
         </div>
 
         <UChatPrompt

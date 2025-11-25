@@ -1,12 +1,12 @@
+import type { ContentType } from '#shared/constants/contentTypes'
 import type {
   ChatActionSuggestion,
   ChatGenerationResult,
   ChatMessage,
   ChatSourceSnapshot
 } from '#shared/utils/types'
-import type { ContentType } from '#shared/constants/contentTypes'
-import { DEFAULT_CONTENT_TYPE } from '#shared/constants/contentTypes'
 import { useState } from '#app'
+import { DEFAULT_CONTENT_TYPE } from '#shared/constants/contentTypes'
 import { computed } from 'vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'

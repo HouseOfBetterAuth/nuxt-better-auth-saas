@@ -23,9 +23,11 @@ const uiMessages = computed(() => props.messages.map(message => ({
       text: message.content
     }
   ],
-  ...(message.role === 'assistant' && message.createdAt ? {
-    metadata: { createdAt: message.createdAt }
-  } : {})
+  ...(message.role === 'assistant' && message.createdAt
+    ? {
+        metadata: { createdAt: message.createdAt }
+      }
+    : {})
 })))
 </script>
 

@@ -141,11 +141,11 @@ export const generateContentDraft = async (
     })
     markdown = response.markdown
     meta = response.meta
-    
+
     // Extract title from markdown if not already resolved
     // Look for first H1 (# Title) or use first line as fallback
     if (!resolvedTitle) {
-      const h1Match = markdown.match(/^#\s+(.+)$/m)
+      const h1Match = markdown.match(/^# ([^\r\n]*)$/m)
       if (h1Match && h1Match[1]) {
         resolvedTitle = h1Match[1].trim()
       } else {
@@ -217,36 +217,35 @@ export const generateContentDraft = async (
       wordCount: number
       meta?: Record<string, any>
     }> = []
-    
+
     // Match headings: # Title, ## Title, ### Title, etc.
-    const headingRegex = /^(#{1,6})\s+(.+)$/gm
-    const matches: Array<{ level: number; title: string; index: number }> = []
-    let match
-    
+    const headingRegex = /^(#{1,6}) ([^\r\n]*)$/gm
+    const matches: Array<{ level: number, title: string, index: number }> = []
+
     // Collect all heading matches first
-    while ((match = headingRegex.exec(mdx)) !== null) {
+    for (const match of mdx.matchAll(headingRegex)) {
       matches.push({
         level: match[1].length,
         title: match[2].trim(),
-        index: match.index
+        index: match.index ?? 0
       })
     }
-    
+
     // Process each heading to create sections
     matches.forEach((heading, idx) => {
       const startOffset = heading.index
       const endOffset = idx < matches.length - 1 ? matches[idx + 1].index : mdx.length
-      
+
       // Extract section content
       const sectionContent = mdx.slice(startOffset, endOffset).trim()
       const wordCount = sectionContent.split(/\s+/).filter(w => w.length > 0).length
-      
+
       // Generate anchor from title
       const anchor = heading.title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
-      
+
       sections.push({
         id: `sec_${idx}`,
         index: idx,
@@ -262,7 +261,7 @@ export const generateContentDraft = async (
         }
       })
     })
-    
+
     return sections
   }
 

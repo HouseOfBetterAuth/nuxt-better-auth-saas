@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { ChatActionSuggestion } from '#shared/utils/types'
 import type { ContentType, ContentTypeOption } from '#shared/constants/contentTypes'
+import type { ChatActionSuggestion } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { computed, ref, watch } from 'vue'
 
