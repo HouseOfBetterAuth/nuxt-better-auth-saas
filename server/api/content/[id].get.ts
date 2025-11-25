@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm'
+import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
@@ -11,6 +12,13 @@ export default defineEventHandler(async (event) => {
 
   const { id } = getRouterParams(event)
 
+  if (!id || typeof id !== 'string' || id.trim().length === 0) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'A valid content id is required'
+    })
+  }
+
   const rows = await db
     .select({
       content: schema.content,
@@ -22,7 +30,7 @@ export default defineEventHandler(async (event) => {
     .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
     .where(and(
       eq(schema.content.organizationId, organizationId),
-      eq(schema.content.id, id as string)
+      eq(schema.content.id, id)
     ))
     .limit(1)
 

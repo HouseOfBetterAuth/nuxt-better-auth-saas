@@ -1,551 +1,371 @@
-# LLM Codex Workspace & Source Content Plan
+# LLM Codex Pipeline Plan (Nuxt + Python)
 
-## Goals
+This document describes a **reusable, staged pipeline** for long-form sources (e.g. 30‑minute YouTube cooking videos) that turns transcripts into SEO‑ready MDX blogs with section‑level editing.
 
-- Integrate a "codex"-style LLM content system into the existing Nuxt SaaS backend.
-- Reuse current auth/org/membership/integration patterns.
-- Keep v1 **simple and organization-scoped** (no separate `workspace` table yet).
-- Introduce clear, well-named domain entities:
-  - `source_content` (ingested material from YouTube, Google Docs, raw text, etc.)
-  - `content` (the article/post entity) with a `status` field
-  - `content_version` / `content_section`
-  - `publication` (to WordPress, Google Docs, etc.).
+It is the source of truth for the Nuxt implementation and is grounded in what already exists in the current Python backend.
 
 ---
 
-## Existing Foundations (Nuxt SaaS)
+## 1. Goals
 
-Already present in `server/database/schema/auth.ts` and migrations:
+- **Codex‑style flow** for long videos:
+  - Transcribing → reading → planning → writing sections → assembling → SEO → ready to publish.
+- **Section‑first architecture**:
+  - Outline + sections are first‑class, not an afterthought.
+- **Reusability**:
+  - Same pipeline works for any long `source_content` (YouTube today, Docs later).
+- **Org‑scoped, Nuxt‑native**:
+  - Reuse existing `organization` / better‑auth patterns and Drizzle ORM.
 
-- `user`, `organization`, `member`, `session`, `invitation`, `subscription`.
-- `integration` (per-organization OAuth-style integrations).
-- `audit_log`, `file`.
-
-We will **attach all new entities to `organization.id`** and often to `user.id` for authorship.
-
----
-
-## New Core Entities (v1)
-
-### 1. `source_content`
-
-**Purpose**: The original material the LLM works from (YouTube, Google Docs, pasted text, etc.).
-
-**Suggested columns:**
-
-- `id` (text/uuid, PK)
-- `organization_id` (FK → `organization.id`, not null)
-- `created_by_user_id` (FK → `user.id`, not null)
-
-- `source_type` (text, not null)  
-  Examples: `"youtube"`, `"google_doc"`, `"raw_text"`, `"url"`, `"file_upload"`.
-- `external_id` (text, nullable)  
-  - YouTube: video ID  
-  - Google Docs: doc ID  
-  - WordPress: post ID (if reverse-ingesting)
-- `title` (text, nullable)
-- `source_text` (text, nullable) — normalized text transcript/body the LLM will consume.
-- `metadata` (json/text, nullable) — provider-specific metadata.
-- `ingest_status` (text, not null, default `'pending'`)  
-  Values: `pending | ingested | failed`.
-
-- `created_at` (timestamp, default now, not null)
-- `updated_at` (timestamp, default now, on update, not null)
+We intentionally avoid job/queue plumbing and extra SEO UI in v1; those can be layered on later.
 
 ---
 
-### 2. `content`
+## 2. Core Data Model (Summary)
 
-**Purpose**: The main article/post object users work on. Represents a logical piece of content; `draft` is a **status**, not a separate entity.
+We keep the existing entities from the prior plan but focus on how they support the pipeline.
 
-**Suggested columns:**
+- **`source_content`**
+  - Where material comes from.
+  - Fields (conceptual):
+    - `id`, `organization_id`, `created_by_user_id`.
+    - `source_type` (`"youtube" | "raw_text" | "google_doc" | ...`).
+    - `external_id` (e.g. YouTube video ID).
+    - `title`.
+    - `source_text` (full transcript / body the LLM reads).
+    - `metadata` JSON (provider‑specific).
+    - `ingest_status` (`pending | ingested | failed`).
 
-- `id` (text/uuid, PK)
-- `organization_id` (FK → `organization.id`, not null)
-- `workspace_id` (FK → `workspace.id`, nullable)
-- `source_content_id` (FK → `source_content.id`, nullable)
-- `created_by_user_id` (FK → `user.id`, not null)
+- **`chunk`** (required v1)
+  - Transcript segments used for RAG.
+  - Per‑chunk: `id`, `organization_id`, `source_content_id`, `chunk_index`, `start_char`, `end_char`, `text_preview`, timestamps, etc.
+  - Embeddings stored in vector store keyed by `organization_id + source_content_id + chunk_index`.
 
-- `slug` (text, not null) — internal slug within organization or workspace.
-- `title` (text, not null)
-- `status` (text, not null, default `'draft'`)  
-  Values: `draft | in_review | ready_for_publish | published | archived`.
-- `primary_keyword` (text, nullable)
-- `target_locale` (text, nullable, e.g. `"en-US"`).
-- `content_type` (text, not null, default `'blog_post'`)  
-  Examples: `blog_post | landing_page | docs_article | social_thread`.
+- **`content`**
+  - The logical article/post.
+  - Fields: `id`, `organization_id`, `source_content_id`, `slug`, `title`, `status`, `content_type`, `primary_keyword`, `target_locale`, `current_version_id`, timestamps.
 
-- `current_version_id` (FK → `content_version.id`, nullable)
+- **`content_version`**
+  - Immutable snapshot of a draft or edit.
+  - Fields: `id`, `content_id`, `version`, `created_by_user_id`, timestamps.
+  - Content fields:
+    - `frontmatter` JSON (SEO+metadata).
+    - `body_mdx` (full MDX).
+    - `body_html` (rendered for preview/publish).
+    - `sections` JSON (see section 4).
+    - `assets` JSON (including `{ generator: { source, model } }`).
+    - `seo_snapshot` JSON (optional v1).
 
-- `created_at` (timestamp, default now, not null)
-- `updated_at` (timestamp, default now, on update, not null)
-- `published_at` (timestamp, nullable)
+- **`publication`**
+  - Links `content_version` → external systems via `integration`.
+  - Used later for WordPress / Docs publishing.
 
----
-
-### 3. `content_version`
-
-**Purpose**: Immutable snapshot of a draft produced by the LLM or manual edits.
-
-**Suggested columns:**
-
-- `id` (text/uuid, PK)
-- `content_draft_id` (FK → `content_draft.id`, not null)
-- `version` (integer, not null) — monotonically increasing per draft.
-- `created_by_user_id` (FK → `user.id`, nullable if system-generated)
-- `created_at` (timestamp, default now, not null)
-
-- `frontmatter` (json/text, nullable)  
-  - title, description, tags, categories, canonical URL, etc.
-- `body_mdx` (text, not null)
-- `body_html` (text, nullable) — pre-rendered HTML for previews/publishing.
-- `sections` (json/text, nullable)  
-  - serialized representation of sections; can be expanded into a table later.
-- `assets` (json/text, nullable)  
-  - images, tables, generator metadata:
-    - e.g. `{ "generator": { "source": "blog_from_youtube", "model": "gpt-4.1" } }`.
-
-- `seo_snapshot` (json/text, nullable)  
-  - snapshot of SEO configuration and analysis at time of generation.
-
-**Notes:**
-
-- `content_draft.current_version_id` always points to the latest accepted version.
+All new tables are **org‑scoped** and follow existing Nuxt SaaS conventions.
 
 ---
 
-### 4. `content_section` (optional, can be added later)
+## 3. End‑to‑End Pipeline Stages
 
-**Purpose**: Fine-grained editing of specific sections (e.g. H2 blocks, FAQs).
+For a YouTube video, the pipeline is:
 
-**Suggested columns:**
+1. **Ingest + transcript + chunks**
+2. **Plan / outline (content plan)**
+3. **Frontmatter generation**
+4. **Section generation (per‑section writing, RAG‑aware)**
+5. **Assemble full version from sections**
+6. **SEO analysis**
+7. **Section patching (chat‑driven editing)**
 
-- `id` (text/uuid, PK)
-- `content_version_id` (FK → `content_version.id`, not null)
-- `index` (integer, not null) — order within the version.
-- `type` (text, nullable)  
-  Examples: `heading | paragraph | list | faq | cta | code_block`.
-- `title` (text, nullable) — for headings.
-- `body_mdx` (text, not null)
-- `word_count` (integer, not null, default 0)
-- `metadata` (json/text, nullable) — e.g. heading level, anchors.
-
-This table can be populated by a Node equivalent of `extract_sections_from_mdx`.
+Each stage has a conceptual API and a note on current **Python parity**.
 
 ---
 
-### 5. `publication`
+## 3.1 Ingest + Transcript + Chunks
 
-**Purpose**: Track publishing events from drafts to external systems.
+**Conceptual endpoint**
 
-**Suggested columns:**
+- `POST /api/source-content/youtube`
 
-- `id` (text/uuid, PK)
-- `organization_id` (FK → `organization.id`, not null)
-- `content_draft_id` (FK → `content_draft.id`, not null)
-- `content_version_id` (FK → `content_version.id`, not null)
-- `integration_id` (FK → `integration.id`, not null)
+- **Request**
+  - `youtubeUrl: string`
+  - `titleHint?: string`
 
-- `external_id` (text, nullable) — remote post/doc ID.
-- `status` (text, not null, default `'pending'`)  
-  Values: `pending | success | failed`.
-- `published_at` (timestamp, nullable)
-- `payload_snapshot` (json/text, nullable) — what we sent to the remote system.
-- `response_snapshot` (json/text, nullable) — remote response.
-- `error_message` (text, nullable)
+- **Response**
+  - `sourceContentId: string`
+  - `status: "transcribing" | "ready"`
+  - `metadata: { videoId, durationSeconds?, channel?, thumbnailUrl? }`
 
-- `created_at` (timestamp, default now, not null)
+**Behaviour**
 
----
+- Parse YouTube URL → video ID.
+- Upsert `source_content` for the org.
+- Fetch transcript → normalize to `source_text`.
+- Update `ingest_status = 'ingested'`.
+- Chunk `source_text` into overlapping segments and write `chunk` rows.
+- Compute embeddings and index them in vector store.
 
-## Alignment With Existing Conventions
+**Python parity**: **YES**
 
-- Table names: snake_case, singular (`source_content`, `content`, etc.), matching `user`, `organization`, `integration`, `file`.
-- ID types: text/uuid PKs generated via `uuidv7` (same pattern as `file.id`).
-- Org scoping: all new tables carry `organization_id` and often `workspace_id`.
-- Auth: access control mirrors `organization/integrations.get.ts`:
-  - `requireAuth(event)` → `user`.
-  - Resolve `organization_id` via `user.lastActiveOrganizationId` or session.
-  - Check `member` table for membership/role.
+- Python already ingests transcripts, creates chunk rows, and indexes embeddings.
+- Python uses these chunks for section patching via `_gather_transcript_context`.
 
 ---
 
-## Chat-First Flow (High-Level)
+## 3.2 Plan / Outline (Content Plan)
 
-The LLM will commonly be driven from a chat interface where users paste YouTube or Google Docs links.
+**Conceptual endpoint**
 
-Typical flow:
+- `POST /api/content/{contentId}/plan`
 
-1. **User sends a chat message** that may contain URLs.
-2. **System parses URLs** in the message content.
-   - For YouTube / Google Docs / other supported providers, either:
-     - Find an existing `source_content` row by (`organization_id`, `source_type`, `external_id`), or
-     - Create a new `source_content` row with `source_type`, `external_id`, and `ingest_status = 'pending'`.
-3. **Ingest pipeline** resolves `source_text` for new `source_content` records (e.g. YouTube transcripts, Google Docs body) and sets `ingest_status = 'ingested'`.
-4. When the user or system issues an instruction like *"turn this into an SEO blog post"*:
-   - Create a new `content` row tied to:
-     - `organization_id`
-     - `created_by_user_id`
-     - optional `source_content_id` (the primary source for this article).
-   - Run the LLM using `source_text` + chat history + SEO settings to produce an initial `content_version` (version `1`).
-   - Set `content.current_version_id` to this new version and leave `status = 'draft'`.
-5. Subsequent chat interactions like *"rewrite the intro"* or *"optimize for keyword XYZ"*:
-   - Create new `content_version` rows (version `2`, `3`, ...), potentially updating sections.
-   - Optionally update `content.status` to `ready_for_publish` when the user is satisfied.
+- **Request**
+  - `instructions?: string` (brand voice, audience, constraints).
+  - `targetKeywords?: string[]`.
+  - `schemaHint?: string` (e.g. `"recipe" | "course" | "how_to"`).
 
-This design keeps `source_content` focused on **where the material came from and how it was ingested**, while `content` models the **SEO-ready MDX article** with `draft` as just one of several states.
+- **Response**
+  - `planId: string`.
+  - `outline: Array<{ id: string; index: number; title: string; type: string; notes?: string }>`.
+  - `seo: { title: string; description: string; keywords: string[]; schemaType: string; slugSuggestion: string }`.
 
-## Chat API & Conversation Behavior
+**Behaviour**
 
-To support "normal" conversation while still discovering sources and generating content, we separate **chat handling** from **generation triggers**.
+- LLM reads:
+  - Summarised transcript and/or key chunks.
+  - Org SEO profile.
+  - `instructions`, `targetKeywords`, `schemaHint`.
+- Produces a structured outline + initial SEO plan but **no full article yet**.
 
-### Chat endpoint
+**Python parity**: **PARTIAL**
 
-- `POST /api/chat` (example path)
-  - Body:
-    - `message: string`
-    - optional `contentId` or `sourceContentId`
-  - Response:
-    - `assistantMessage: string`
-    - optional `actions: Array<{ type: string; payload: any }>` (e.g. suggestions like `suggest_generate`).
-
-Behavior:
-
-- Use `requireAuth(event)` and org membership checks.
-- Resolve `organization_id` from the session (same pattern as integrations).
-- Optionally persist chat history in `chat_session` / `chat_message` tables later.
-
-### URL detection during normal conversation
-
-Within the chat handler:
-
-1. Parse URLs from `message` (simple URL regex / parser).
-2. For each URL:
-   - Classify type: YouTube, Google Docs, generic article, etc.
-   - **Upsert** a `source_content` row scoped to the organization:
-     - `organization_id`, `created_by_user_id`
-     - `source_type`, `external_id`, optional `title`
-     - `ingest_status = 'pending'` initially
-3. Optionally trigger background ingest to populate `source_text` for new `source_content` records.
-
-This runs for all chat messages so the system quietly accumulates sources, but it does **not** auto-generate content.
-
-### Confirmation-driven generation (LLM asks first)
-
-Typical LLM pattern:
-
-- Step 1: Detect URLs and upsert `source_content` as above.
-- Step 2: Have the LLM respond with a natural question, for example:
-  - "I found a YouTube link in your message – would you like me to start an SEO blog draft based on it?"
-  - "I see a Google Doc link; should I create an article outline from that document?"
-- Step 3: On the **next user message** ("yes", "go ahead", etc.), the chat handler treats this as confirmation and triggers generation.
-
-Implementation sketch:
-
-- `/api/chat` remains the single entry point for conversation.
-- URL detection and `source_content` upsert occur whenever messages are received.
-- The LLM response decides whether to *offer* an action ("start a draft") based on context.
-- When the user confirms, `/api/chat` can:
-  - Internally call the content generation logic (equivalent to `POST /api/content/generate`), or
-  - Expose this as an explicit front-end call while still reflecting the intent in `actions`.
-
-Dedicated content endpoints still perform the heavy work:
-
-- `POST /api/content/generate`
-  - Uses `source_content.source_text` and SEO options + AI Gateway to create an initial `content_version` and update `content.current_version_id`.
-- `POST /api/content/[contentId]/sections/patch`
-  - Uses the AI Gateway to patch sections and create new `content_version` rows.
-
-This keeps **conversation** natural, with the LLM first asking permission to start a draft, and only generating content after explicit confirmation within the same conversational flow.
-
-## YouTube Ingest, Chunking & Embeddings (v1)
-
-For v1 we will support **YouTube-only ingest** for long-form source content; Google Docs and other rich sources are explicitly deferred.
-
-### YouTube ingest
-
-- When a YouTube URL is detected and confirmed by the user ("yes, start a draft"):
-  - Upsert a `source_content` row with:
-    - `source_type = 'youtube'`
-    - `external_id` = YouTube video ID
-    - `metadata` containing basic video metadata (title, channel, duration) when available.
-  - Run a YouTube ingest helper (Node equivalent of current Python logic) that:
-    - Fetches or receives the transcript.
-    - Normalizes it into `source_text`.
-    - Updates `source_content.source_text` and `ingest_status = 'ingested'`.
-
-### Chunking & embeddings (required v1)
-
-- Long 20–30 minute transcripts **must** be handled via chunks and embeddings so the LLM can work with manageable context:
-- V1 will define a concrete `chunk` concept:
-  - Each chunk belongs to an `organization_id` and a `source_content_id`.
-  - Chunk metadata includes at least: `index`, `start_char`, `end_char`, and a short `text_preview`.
-  - Implementation detail:
-    - Initial implementation may store chunk metadata in `content_version.sections` / `assets`.
-    - A dedicated `chunk` table can be introduced (or generated via migration) without changing the external API.
-  - Chunk `source_text` into overlapping segments with indices and character ranges.
-  - Compute and store embeddings in the chosen vector store keyed by organization + source/video and chunk index.
-- Content generation and later edits will:
-  - Pull relevant transcript chunks/snippets based on the current section / instructions and similarity search.
-  - Feed only those chunks plus high-level summary into the AI Gateway calls so that long videos are handled reliably.
-
-This ensures the system can handle long videos in a codex-like fashion without hitting model context limits.
-
-## Migration Plan (High-Level)
-
-1. **Add new Drizzle schema files**
-   - `server/database/schema/sourceContent.ts`
-   - `server/database/schema/content.ts` (for `content`, `content_version`, `content_section`, `publication`).
-   - Export them from `server/database/schema/index.ts`.
-
-2. **Generate and run migrations**
-   - Use Drizzle migration tooling from `drizzle.config.ts`.
-   - Validate against existing migrations `0000`–`0002` to avoid conflicts.
-
-3. **Add basic API routes**
-   - `server/api/workspaces/*.ts`  
-     - Create/list workspaces in an org.
-   - `server/api/source-content/*.ts`  
-     - Create/list `source_content` records (e.g. from YouTube, pasted text).
-   - `server/api/content-drafts/*.ts`  
-     - CRUD for `content_draft` and attach to `workspace` + `source_content`.
-   - `server/api/content/*.ts`  
-      - CRUD for `content` and attach to `source_content`.
-
-4. **Wire in LLM operations via Cloudflare AI Gateway (Option 2)** ✅
-
-   Reuse the existing, working AI Gateway pattern directly from the Nuxt/Node backend.
-
-   **Config / environment (Nuxt runtimeConfig):**
-
-   - Reuse `NUXT_CF_ACCOUNT_ID` (already used for R2) as the Cloudflare account ID for AI Gateway.
-   - `NUXT_CF_AI_GATEWAY_TOKEN`
-   - `NUXT_OPENAI_BLOG_MODEL` (default: `gpt-5.1` or `gpt-4.1-mini`)
-   - `NUXT_OPENAI_BLOG_TEMPERATURE` (default: `0.6`)
-   - `NUXT_OPENAI_BLOG_MAX_OUTPUT_TOKENS` (default: `2200`)
-
-   **Shared helper:** `server/utils/aiGateway.ts`
-
-   - Build `gatewayBase = https://gateway.ai.cloudflare.com/v1/${NUXT_CF_ACCOUNT_ID}/quill/openai`.
-   - Implement `callChatCompletions({ model, systemPrompt, userPrompt, temperature, maxTokens })`:
-     - `POST /chat/completions`
-     - Headers:
-       - `Content-Type: application/json`
-       - `cf-aig-authorization: Bearer ${NUXT_CF_AI_GATEWAY_TOKEN}`
-     - Body mirrors Python implementation:
-       - `model`
-       - `messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }]`
-       - `temperature`
-       - optional `max_completion_tokens`.
-     - Parse `choices[0].message.content` (string or list of segments) into a single string.
-
-   **High-level AI functions (Node equivalents of Python helpers):**
-
-   - `composeBlogFromText(text, options)`
-     - Port logic from `compose_blog_from_text` (Python):
-       - Clean/validate `text`.
-       - Generate SEO metadata and build system/user prompts.
-       - Call `callChatCompletions`.
-       - Return `{ markdown, meta }` (markdown body + metadata: word count, engine, model, SEO fields).
-   - `callAiGatewayForSection(systemPrompt, userPrompt)`
-     - Port `_call_ai_gateway_for_section` behavior:
-       - Use `OPENAI_BLOG_MODEL` + `OPENAI_BLOG_TEMPERATURE`.
-       - Call `callChatCompletions`.
-       - Extract and trim the new section body from `choices[0].message.content`.
-
-   **API usage:**
-
-   - `POST /api/content/generate` (or similar):
-     - Resolve `source_content.source_text` for the org.
-     - Call `composeBlogFromText` to get MDX.
-     - Create `content_version` (version `1`) and set `content.current_version_id`.
-   - `POST /api/content/[contentId]/sections/patch`:
-     - Load current `content_version` and extract the target section.
-     - Build prompts equivalent to `_build_section_patch_prompts` in Python.
-     - Call `callAiGatewayForSection`.
-     - Create a new `content_version` with the patched section and update `content.current_version_id`.
-
-5. **Publishing flows**
-   - Endpoints to publish a `content_version` through an `integration` to:
-     - WordPress
-     - Google Docs
-     - Other channels
-   - Record a `publication` row per publish attempt.
-
-6. **Progressive enhancement**
-   - Later, introduce `seo_profile` and `generation_job` tables if needed.
-   - Add analytics and activity feeds tying into `audit_log`.
+- Python currently derives heading structure after full article generation (`extract_sections_from_version`).
+- No explicit standalone "plan first" step; this is **new work** for Nuxt.
 
 ---
 
-## SEO-aware Generation (v1)
+## 3.3 Frontmatter Generation
 
-We will not ship a separate SEO analyzer UI in v1, but the generation pipeline must still produce **SEO-ready, branded articles**.
+**Conceptual endpoint**
 
-### Org-level SEO & branding config
+- `POST /api/content/{contentId}/frontmatter`
 
-- Store simple org-level SEO/brand settings in a JSON field (either on `organization.metadata` or a future `seo_profile` table), for example:
-  - Preferred tone (e.g. "authoritative but friendly").
-  - Target audience/persona description.
-  - Default content types (blog, docs, landing pages).
-  - Brand voice guidelines and style notes.
+- **Request**
+  - `planId: string`.
+  - `overrides?: { title?: string; description?: string; slug?: string; tags?: string[] }`.
 
-### Prompting for SEO-quality output
+- **Response**
+  - `frontmatter: { title, description, slug, tags?, hero_image?, schema_type?, canonical_url?, locale? }`.
 
-- `composeBlogFromText` will:
-  - Pull org-level SEO/brand config.
-  - Compute lightweight SEO metadata (title hint, keywords) from `source_text`.
-  - Build system + user prompts that include:
-    - Brand voice and tone.
-    - Target keywords and meta description guidance.
-    - Requirements for headings, structure, CTAs, and internal linking suggestions.
+**Behaviour**
 
-### Frontmatter and sections
+- Takes outline + SEO hints from plan.
+- Applies org‑level branding (tone, persona, etc.).
+- Emits a stable `frontmatter` object persisted on `content_version`.
 
-- Each `content_version` should:
-  - Populate `frontmatter` with SEO-friendly fields:
-    - `title`, `description`, `slug`, `tags/categories`, canonical URL placeholder.
-  - Use sections/headings that map cleanly to:
-    - H1 title.
-    - H2/H3 subsections organized around search intent.
-  - Optionally store a `seo_snapshot` JSON block with:
-    - Chosen keywords.
-    - Content type hints.
-    - Any scores or heuristics we compute later.
+**Python parity**: **PARTIAL**
 
-#### Sections JSON shape
-
-- `sections` on `content_version` will be a structured index over `body_mdx`, for example:
-
-  ```json
-  [
-    {
-      "id": "sec_01_intro",
-      "index": 0,
-      "type": "heading_block",
-      "level": 2,
-      "title": "Introduction",
-      "startOffset": 0,
-      "endOffset": 512,
-      "anchor": "introduction",
-      "wordCount": 120,
-      "meta": {
-        "isSummary": false,
-        "isKeySection": true
-      }
-    }
-  ]
-  ```
-
-- Recommended fields per section:
-  - `id`: stable identifier (e.g. `sec_${versionId}_${index}` or UUID).
-  - `index`: numeric order within the article.
-  - `type`: e.g. `heading_block`, `faq_block`, `cta_block`, etc.
-  - `level`: heading level (2 for H2, 3 for H3), if applicable.
-  - `title`: heading text for that section.
-  - `startOffset` / `endOffset`: 0-based character indices into `body_mdx` (end exclusive).
-  - `anchor`: slug/anchor used for TOC or deep links.
-  - `wordCount`: precomputed word count for the section.
-  - `meta`: freeform JSON for additional flags/SEO hints.
-
-- Section patching flow:
-  - Load current `content_version` (`body_mdx`, `sections`).
-  - Find target section by `id` or `index`.
-  - Extract the current section body via `body_mdx.slice(startOffset, endOffset)`.
-  - Build prompts using this text + instructions + relevant transcript chunks.
-  - Replace that slice in `body_mdx` with the new section body.
-  - Re-run the section extractor (`extract_sections_from_mdx` equivalent) to regenerate `sections`.
-  - Persist a new `content_version` row and update `content.current_version_id`.
-
-### Content type and schema.org behavior
-
-- We distinguish between:
-  - `content_type`: internal category used for prompt guidance (often `blog_post` in v1, but may include values like `recipe`, `course`, `faq_page`).
-  - `schema_type`: the schema.org type that should be reflected in JSON-LD (e.g. `Article`, `BlogPosting`, `Recipe`, `FAQPage`, `HowTo`, `Course`).
-- In v1, most flows will use `content_type = 'blog_post'` with `schema_type = 'Article'` or `BlogPosting`, but when the user or org configuration indicates a more specific pattern (e.g. recipe, course, FAQ), prompts and frontmatter/JSON-LD should:
-  - Switch to the appropriate `schema_type`.
-  - Encourage the LLM to produce the extra structure those schemas expect (ingredients/steps for `Recipe`, questions/answers for `FAQPage`, etc.).
-
-
-This makes the articles SEO-aware from the first generation, and keeps the underlying data model ready for a more advanced analyzer or additional SEO tooling in a later phase.
-
-## Directory & File Structure (Nuxt Repo)
-
-## Directory & File Structure (Nuxt Repo)
-
-Given the current layout of `nuxt-saas-v1`, we will follow existing conventions.
-
-### Database schema & migrations
-
-- `server/database/schema/`
-  - `auth.ts` (existing)
-  - `file.ts` (existing)
-  - `auditLog.ts` (existing)
-  - **New:** `sourceContent.ts`
-  - **New:** `content.ts`
-  - **Future (but recommended early):** `chunk.ts`
-  - `index.ts` should export everything:
-    - `export * from './auditLog'`
-    - `export * from './auth'`
-    - `export * from './file'`
-    - `export * from './sourceContent'`
-    - `export * from './content'`
-
-- `server/database/migrations/`
-  - Existing `0000`, `0001`, `0002` migrations remain.
-  - New migrations generated by Drizzle to create:
-    - `source_content`
-    - `content`
-    - `content_version`
-    - optional `content_section`
-    - optional `chunk`
-    - `publication`
-
-### Backend utilities
-
-- `server/utils/`
-  - `auth.ts` (existing, better-auth)
-  - `db.ts` (existing, Drizzle Postgres helper)
-  - **New:** `aiGateway.ts`
-    - Implements `callChatCompletions` and higher-level helpers:
-      - `composeBlogFromText`
-      - `callAiGatewayForSection`
-  - Optional future utilities:
-    - `seo.ts` (SEO helpers for computing title/slug/keywords, building JSON-LD blocks, and normalizing `frontmatter` / `seo_snapshot` fields.)
-    - `chatRouter.ts` (chat-specific helpers for URL parsing, light intent/command detection such as recognizing "start a draft" or "edit intro" requests.)
-
-### API routes
-
-- `server/api/`
-  - `organization/integrations.get.ts` (existing pattern for org-scoped routes)
-  - **Chat:**
-    - `chat.post.ts` or `chat/index.post.ts`
-      - Uses `requireAuth`, resolves `organization_id`, handles chat + URL detection.
-  - **Source content:**
-    - `source-content/index.get.ts` / `index.post.ts` (optional admin listing/creation APIs).
-  - **Content & versions:**
-    - `content/index.post.ts` (manual content creation if needed).
-    - `content/generate.post.ts` or `content/[contentId]/generate.post.ts` (wire into AI Gateway).
-    - `content/[contentId]/sections/patch.post.ts` (section editing via AI Gateway).
-  - **Publishing:**
-    - `content/[contentId]/publish.post.ts` or
-    - `content/[contentId]/publish/[integrationId].post.ts`
-      - Uses existing `integration` table.
-
-All routes should:
-
-- Call `requireAuth(event)` from `server/utils/auth.ts`.
-- Use `getDB()` / `useDB()` from `server/utils/db.ts`.
-- Scope queries by `organization_id` using the same pattern as `organization/integrations.get.ts`.
+- Python fills frontmatter and SEO hints as part of `compose_blog_from_text` + `analyze_seo_document`.
+- There is no separated frontmatter‑only step; this is a **refactor/port**.
 
 ---
 
-## Next Steps
+## 3.4 Section Generation (Per‑Section, RAG‑Aware)
 
-- Implement Drizzle schema definitions for `source_content`, `content`, `content_version`, `content_section`, `publication` following this plan.
-- Generate and apply migrations.
-- Implement `server/utils/aiGateway.ts` and the high-level helpers `composeBlogFromText` and `callAiGatewayForSection`.
-- Scaffold Nuxt server routes that:
-  - Use `requireAuth` and org membership checks.
-  - Operate at the `organization` level.
-  - Return consistent JSON shapes for the front-end codex UI.
+**Conceptual endpoint**
+
+- `POST /api/content/{contentId}/sections/generate`
+
+- **Request**
+  - `planId: string`.
+  - `mode: "all" | "missing"` (generate all sections, or only those without content yet).
+
+- **Response**
+  - `sections: Section[]` (see section 4 for shape; includes `body_mdx`).
+  - `status: "in_progress" | "completed"`.
+
+**Behaviour**
+
+For each planned section:
+
+- Build a retrieval query based on section title/type/notes.
+- Query chunk embeddings for most relevant transcript `chunk` previews (RAG), similar to `_gather_transcript_context`.
+- LLM call for **only that section**:
+  - System: "You are writing ONE section of a blog post…".
+  - User: section description + RAG snippets + global instructions.
+- Produce `body_mdx` for that section.
+- Save/update corresponding section entry.
+
+**Python parity**: **PARTIAL**
+
+- You already:
+  - Chunk + embed transcripts.
+  - Use `_gather_transcript_context` + `_call_ai_gateway_for_section` for **patching** existing sections.
+- New in this plan:
+  - Drive **initial** article creation via section‑by‑section generation instead of a monolithic `compose_blog_from_text` call.
+
+---
+
+## 3.5 Assemble Full Version From Sections
+
+**Conceptual endpoint**
+
+- `POST /api/content/{contentId}/assemble`
+
+- **Request**
+  - `frontmatter: object`.
+  - `sections: Section[]`.
+
+- **Response**
+  - `versionId: string`.
+  - `body_mdx: string`.
+  - `body_html: string`.
+  - `sections: Section[]` (canonical form saved on `content_version`).
+  - `assets: { generator: { source: string; model?: string } }`.
+
+**Behaviour**
+
+- Build `body_mdx` as:
+  - `# {frontmatter.title}`.
+  - For each section `s` in order:
+    - `## {s.title}\n\n{s.body_mdx}\n` (or level 3+ as needed).
+- Render MDX → HTML for previews/publishing.
+- Persist new `content_version` row and update `content.current_version_id`.
+
+**Python parity**: **YES (building block)**
+
+- Nuxt should implement a general `assembleFromSections` helper, and call it for both initial generation and patching.
+
+---
+
+## 3.6 SEO Analysis
+
+**Conceptual endpoint**
+
+- `POST /api/content/{contentId}/versions/{versionId}/seo`
+
+- **Request**
+  - (optional) `focusKeyword?: string`.
+
+- **Response**
+  - SEO payload: `{ seo, scores, suggestions, structured_content, schema_type, word_count, reading_time_seconds, schema_validation }`.
+
+**Behaviour**
+
+- Use `frontmatter`, `body_mdx`, `sections`, optional `assets` to:
+  - Compute readability, keyword focus, heading structure, metadata quality, schema health.
+  - Attach `json_ld` if missing but derivable from content type / sections.
+  - Return suggestions (like the current Python SEO analyzer).
+
+**Python parity**: **YES**
+
+- Python already has `analyze_seo_document(...)` doing this work.
+- Nuxt can either:
+  - Port this logic, or
+  - Call the Python service until parity is achieved.
+
+---
+
+## 3.7 Section Patching (Chat‑Driven Edits)
+
+**Conceptual endpoint**
+
+- `POST /api/content/{contentId}/sections/{sectionId}/patch`
+
+- **Request**
+  - `instructions: string`.
+
+- **Response**
+  - `versionId: string` (new version).
+  - `section: { sectionId, index, title, body_mdx }`.
+
+**Behaviour**
+
+- Load latest `content_version` for `contentId`.
+- Find target section by `sectionId`.
+- Build `current_text` from that section.
+- Use embeddings to gather relevant transcript `chunk` previews (RAG), similar to `_gather_transcript_context`.
+- Build prompts and call AI Gateway to rewrite only that section.
+- Replace that section’s body, rebuild `body_mdx` via `assembleFromSections`, and write a new `content_version`.
+
+**Python parity**: **YES**
+
+- Implemented today as `patch_project_blog_section` with:
+  - `_gather_transcript_context` (RAG).
+  - `_build_section_patch_prompts`.
+  - `_call_ai_gateway_for_section`.
+  - `_rebuild_body_with_patched_section` + new version write.
+
+Nuxt’s implementation should mirror this behaviour, scoped by `organization_id`.
+
+---
+
+## 4. Sections JSON Shape (On `content_version.sections`)
+
+Sections are the structured index over `body_mdx` used for:
+
+- Rendering a TOC.
+- Section‑level generation and patching.
+- SEO and schema‑aware enrichment.
+
+**Canonical shape** (conceptual):
+
+- Each section object:
+  - `section_id: string` — stable id (UUID or deterministic).
+  - `index: number` — 0‑based order.
+  - `type: string` — e.g. `"intro" | "body" | "faq" | "cta" | "recipe_step"`.
+  - `level?: number` — heading level (2 for H2, 3 for H3), if applicable.
+  - `title?: string` — heading text.
+  - `anchor?: string` — slug/anchor for deep links.
+  - `startOffset?: number` — optional char index into `body_mdx`.
+  - `endOffset?: number` — optional char index into `body_mdx`.
+  - `wordCount: number` — per‑section word count.
+  - `summary?: string` — optional summary.
+  - `body_mdx?: string` — body for this section (used heavily in patch flow).
+  - `meta?: Record<string, any>` — arbitrary hints (importance, SEO flags, todos, etc.).
+
+**Python parity**: **YES (conceptually)**
+
+- Python’s `extract_sections_from_version` already yields a similar structure and is used for patching and SEO.
+- Nuxt should match field names where practical (e.g. `section_id`, `index`, `title`, `body_mdx`, `summary`).
+
+---
+
+## 5. Chat‑First UX and Pipeline Triggers
+
+The pipeline is usually triggered from a chat UI rather than hard‑coded buttons.
+
+- **`POST /api/chat`**
+  - Detect URLs.
+  - Upsert `source_content` for YouTube.
+  - Ask for confirmation: e.g. "I found a YouTube link – generate an SEO blog from it?".
+  - On user "yes", call the pipeline stages internally:
+    1. Ingest + chunks (if needed).
+    2. Plan.
+    3. Frontmatter.
+    4. Generate sections.
+    5. Assemble version.
+    6. Run SEO analysis.
+  - Return progress updates + final `contentId`/`versionId`.
+
+This keeps conversation natural while still using the reusable pipeline.
+
+---
+
+## 6. Implementation Notes (Nuxt)
+
+- **Database schema**
+  - `server/database/schema/sourceContent.ts`, `content.ts`, `chunk.ts` (and exports in `index.ts`).
+  - Migrations create `source_content`, `chunk`, `content`, `content_version`, `publication`.
+
+- **AI Gateway helper**
+  - `server/utils/aiGateway.ts`:
+    - `callChatCompletions` (wraps CF AI Gateway `/chat/completions`).
+    - Higher‑level helpers:
+      - `composeBlogFromText` (optional transitional helper ported from Python).
+      - `callAiGatewayForSection` (section‑level writer/editor).
+
+- **Reuse from Python**
+  - Ingest, chunking, embeddings: behaviour and prompts.
+  - Section patching prompts and context assembly.
+  - SEO analyser logic, either ported or called remotely.
+
+This plan replaces the previous monolithic‑first description with a **pipeline‑first** view that aligns with what your Python backend already supports and what the Nuxt backend should expose.

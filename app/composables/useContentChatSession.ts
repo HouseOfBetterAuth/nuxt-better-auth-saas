@@ -3,10 +3,28 @@ import { useState } from '#app'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
-const createId = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-  ? crypto.randomUUID()
-  : Math.random().toString(36).slice(2)
-)
+let fallbackIdCounter = 0
+
+const createId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  const timestamp = Date.now()
+  const counter = fallbackIdCounter++
+
+  let randomHex = ''
+
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buffer = new Uint32Array(2)
+    crypto.getRandomValues(buffer)
+    randomHex = Array.from(buffer).map(part => part.toString(16).padStart(8, '0')).join('')
+  } else {
+    randomHex = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(16)
+  }
+
+  return `${timestamp}-${counter}-${randomHex}`
+}
 
 export function useContentChatSession(contentId: string) {
   const stateKey = (suffix: string) => `content-chat-${contentId}-${suffix}`

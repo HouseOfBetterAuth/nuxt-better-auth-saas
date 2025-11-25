@@ -65,42 +65,45 @@ export const upsertSourceContent = async (
     ...insertPayload
   }
 
-  // Partial unique indexes with WHERE clauses can't be used directly in ON CONFLICT
-  // We need to check if a record exists first, then update or insert
-  const existing = await db.query.sourceContent.findFirst({
-    where: (sourceContent, { eq, and, isNull, isNotNull }) => {
-      const conditions = [
-        eq(sourceContent.organizationId, input.organizationId),
-        eq(sourceContent.sourceType, input.sourceType)
-      ]
+  // Run select/update/insert flow inside a single transaction to reduce race conditions
+  return db.transaction(async (tx) => {
+    // Partial unique indexes with WHERE clauses can't be used directly in ON CONFLICT
+    // We need to check if a record exists first, then update or insert within the same transaction
+    const existing = await tx.query.sourceContent.findFirst({
+      where: (sourceContent, { eq, and, isNull, isNotNull }) => {
+        const conditions = [
+          eq(sourceContent.organizationId, input.organizationId),
+          eq(sourceContent.sourceType, input.sourceType)
+        ]
 
-      if (input.externalId) {
-        conditions.push(eq(sourceContent.externalId, input.externalId))
-        conditions.push(isNotNull(sourceContent.externalId))
-      } else {
-        conditions.push(isNull(sourceContent.externalId))
+        if (input.externalId) {
+          conditions.push(eq(sourceContent.externalId, input.externalId))
+          conditions.push(isNotNull(sourceContent.externalId))
+        } else {
+          conditions.push(isNull(sourceContent.externalId))
+        }
+
+        return and(...conditions)
       }
+    })
 
-      return and(...conditions)
+    if (existing) {
+      // Update existing record
+      const [updated] = await tx
+        .update(schema.sourceContent)
+        .set(updatePayload)
+        .where(sql`${schema.sourceContent.id} = ${existing.id}`)
+        .returning()
+
+      return updated
     }
-  })
 
-  if (existing) {
-    // Update existing record
-    const [updated] = await db
-      .update(schema.sourceContent)
-      .set(updatePayload)
-      .where(sql`${schema.sourceContent.id} = ${existing.id}`)
-      .returning()
-
-    return updated
-  } else {
     // Insert new record
-    const [inserted] = await db
+    const [inserted] = await tx
       .insert(schema.sourceContent)
       .values(insertValues)
       .returning()
 
     return inserted
-  }
+  })
 }

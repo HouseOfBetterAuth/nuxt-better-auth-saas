@@ -9,25 +9,31 @@ definePageMeta({
 })
 
 onMounted(async () => {
-  await fetchSession()
-
-  const activeId = session.value?.activeOrganizationId
-  if (activeId) {
-    const { data: orgs } = await organization.list()
-    const activeOrg = orgs?.find(o => o.id === activeId)
-    if (activeOrg) {
-      return router.push(`/${activeOrg.slug}/chat`)
-    }
-  }
-
-  const { data: orgs } = await organization.list()
-
-  if (orgs && orgs.length > 0) {
-    await organization.setActive({ organizationId: orgs[0].id })
+  try {
     await fetchSession()
-    router.push(`/${orgs[0].slug}/chat`)
-  } else {
-    router.push('/onboarding')
+
+    const activeId = session.value?.activeOrganizationId
+    if (activeId) {
+      const { data: orgs } = await organization.list()
+      const activeOrg = orgs?.find(o => o.id === activeId)
+      if (activeOrg) {
+        await router.push(`/${activeOrg.slug}/chat`)
+        return
+      }
+    }
+
+    const { data: orgs } = await organization.list()
+
+    if (orgs && orgs.length > 0) {
+      await organization.setActive({ organizationId: orgs[0].id })
+      await fetchSession()
+      await router.push(`/${orgs[0].slug}/chat`)
+    } else {
+      await router.push('/onboarding')
+    }
+  } catch (error) {
+    console.error('Failed to initialize chat landing page', error)
+    await router.push('/onboarding')
   }
 })
 </script>

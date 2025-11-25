@@ -23,8 +23,8 @@ const {
   selectedContentType
 } = useChatSession()
 
-const { data: contents, pending: contentsPending, refresh: refreshContents } = await useFetch('/api/content', {
-  key: `content-list-${slug.value}`
+const { data: contents, pending: contentsPending, refresh: refreshContents } = await useFetch(() => '/api/content', {
+  key: () => `content-list-${slug.value}`
 })
 
 const prompt = ref('')

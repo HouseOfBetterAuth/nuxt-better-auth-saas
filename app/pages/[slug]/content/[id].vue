@@ -21,8 +21,8 @@ const {
   resetSession
 } = useContentChatSession(contentId.value)
 
-const { data: content, pending, error, refresh } = await useFetch(`/api/content/${contentId.value}`, {
-  key: `content-${contentId.value}`,
+const { data: content, pending, error, refresh } = await useFetch(() => `/api/content/${contentId.value}`, {
+  key: () => `content-${contentId.value}`,
   default: () => null
 })
 
