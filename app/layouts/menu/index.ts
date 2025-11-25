@@ -69,6 +69,11 @@ export const getUserMenus = (t: TranFunction, localePath: LocalePathFunction, ap
       to: localePath(`/${slug}/dashboard`)
     },
     {
+      label: 'Chat',
+      icon: 'i-lucide-message-circle',
+      to: localePath(`/${slug}/chat`)
+    },
+    {
       label: 'Members',
       icon: 'i-lucide-users',
       to: localePath(`/${slug}/members`)

@@ -1,10 +1,12 @@
+import type { ContentType } from '#shared/constants/contentTypes'
 import type {
   ChatActionSuggestion,
   ChatGenerationResult,
   ChatMessage,
   ChatSourceSnapshot
-} from '~/shared/utils/types'
+} from '#shared/utils/types'
 import { useState } from '#app'
+import { DEFAULT_CONTENT_TYPE } from '#shared/constants/contentTypes'
 import { computed } from 'vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'
@@ -35,8 +37,24 @@ export function useChatSession() {
   const sources = useState<ChatSourceSnapshot[]>('chat/sources', () => [])
   const generation = useState<ChatGenerationResult | null>('chat/generation', () => null)
   const errorMessage = useState<string | null>('chat/error', () => null)
+  const selectedContentType = useState<ContentType>('chat/content-type', () => DEFAULT_CONTENT_TYPE)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
+
+  function withSelectedContentType(body: Record<string, any> = {}) {
+    const contentType = selectedContentType.value
+    const nextBody: Record<string, any> = {
+      ...body,
+      contentType
+    }
+    if (nextBody.action && typeof nextBody.action === 'object' && nextBody.action !== null) {
+      nextBody.action = {
+        ...nextBody.action,
+        contentType: nextBody.action.contentType || contentType
+      }
+    }
+    return nextBody
+  }
 
   async function callChatEndpoint(body: Record<string, any>) {
     status.value = 'submitted'
@@ -45,7 +63,7 @@ export function useChatSession() {
     try {
       const response = await $fetch<ChatResponse>('/api/chat', {
         method: 'POST',
-        body
+        body: withSelectedContentType(body)
       })
 
       if (response.assistantMessage) {
@@ -111,7 +129,8 @@ export function useChatSession() {
       const response = await $fetch<ChatGenerationResult>('/api/content/generate', {
         method: 'POST',
         body: {
-          sourceContentId: action.sourceContentId
+          sourceContentId: action.sourceContentId,
+          contentType: selectedContentType.value
         }
       })
 
@@ -157,6 +176,7 @@ export function useChatSession() {
     generation,
     errorMessage,
     isBusy,
+    selectedContentType,
     sendMessage,
     executeAction
   }

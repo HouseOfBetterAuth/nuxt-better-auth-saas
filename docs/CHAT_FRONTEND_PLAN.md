@@ -7,6 +7,12 @@
 - Keep everything **UI-only** for now: no API calls, no LLM wiring.
 - Fit naturally into existing Nuxt SaaS structure and naming.
 
+### Reference implementation
+
+- Follow the structure from [nuxt-ui-templates/chat](https://github.com/nuxt-ui-templates/chat/tree/main) as the canonical UI starting point.
+- Mirror its layout patterns (dashboard shell, prompt in footer, scrollable messages) using Nuxt UI components rather than custom wrappers.
+- When external fetching is unavailable, keep the layout aligned with the documented component examples so we can swap in the template markup once access is restored.
+
 ---
 
 ## High-Level Architecture
@@ -48,7 +54,6 @@ Create `app/components/chat/` with the following foundational components:
 - `app/components/chat/ChatMessageUser.vue`
 - `app/components/chat/ChatMessageAssistant.vue`
 - `app/components/chat/ChatMessagesList.vue`
-- `app/components/chat/ChatPromptBar.vue`
 - `app/components/chat/ChatPaletteShell.vue` (optional, but planned)
 
 ### 1. `ChatMessageUser.vue`
@@ -104,34 +109,12 @@ Create `app/components/chat/` with the following foundational components:
 - Iterates `messages` and renders the appropriate message component.
 - Can accept a `class` or `density` prop for layout tweaks.
 
-### 4. `ChatPromptBar.vue`
-
-**Purpose:**
-
-- Wraps `UChatPrompt` + `UChatPromptSubmit` into a reusable prompt bar.
-- Handles input state locally and emits submit events upward.
-
-**Key props & events:**
-
-- Props:
-  - `placeholder?: string` (defaults to something like "Ask anything…").
-  - `disabled?: boolean` (UI-only, e.g. when hypothetical request is in-flight).
-- Events:
-  - `submit(prompt: string)` — emitted when the user submits.
-
-**Internal behavior:**
-
-- Uses `UChatPrompt` as the form.
-- Uses `UChatPromptSubmit` as the submit button.
-- Manages internal `v-model` text.
-- After emit, clears the prompt by default.
-
-### 5. `ChatPaletteShell.vue` (planned)
+### 4. `ChatPaletteShell.vue` (planned)
 
 **Purpose:**
 
 - Wraps `UChatPalette` to create an overlay-style chatbot UI.
-- Composes `ChatMessagesList` in the scrollable area and `ChatPromptBar` in the footer.
+- Composes `ChatMessagesList` in the scrollable area and inline `UChatPrompt` in the footer.
 
 **Key props & events:**
 
@@ -140,13 +123,13 @@ Create `app/components/chat/` with the following foundational components:
   - `open: boolean` — whether the palette is visible.
 - Events:
   - `update:open(value: boolean)` — for controlling visibility.
-  - `submit(prompt: string)` — forwarded from `ChatPromptBar`.
+  - `submit(prompt: string)` — forwarded from inline prompt.
 
 **Internal behavior:**
 
 - Uses `UChatPalette` layout slots:
   - Main content: `ChatMessagesList`.
-  - Footer: `ChatPromptBar`.
+  - Footer: `UChatPrompt` + `UChatPromptSubmit`.
 - No business logic — merely a layout shell.
 
 ---
@@ -165,7 +148,7 @@ Create `app/pages/chat/index.vue` as a **demo playground** for the chat UI.
 **Behavior (frontend-only):**
 
 - Holds `const messages = ref<ChatMessage[]>(initialMockMessages)`.
-- Handles `submit(prompt)` from `ChatPromptBar` by:
+- Handles `submit(prompt)` from `UChatPrompt` by:
   - Pushing a `user` message into `messages`.
   - Optionally pushing a fake `assistant` message after a short timeout (mock response).
 - Uses `ChatMessagesList` to render conversation.
@@ -178,13 +161,13 @@ Create `app/pages/chat/index.vue` as a **demo playground** for the chat UI.
   - Main chat card or panel using Nuxt UI primitives (`UCard`, `UContainer`, etc.).
   - Inside the card:
     - `ChatMessagesList` (scrollable area).
-    - `ChatPromptBar` (sticky at bottom).
+    - `UChatPrompt` with `UChatPromptSubmit` (sticky at bottom).
 
 ### (Optional) `/admin/chat`
 
 Create `app/pages/admin/chat.vue` later if we need an admin/operator console.
 
-- Reuses `ChatMessagesList` and `ChatPromptBar`.
+- Reuses `ChatMessagesList` and `UChatPrompt`.
 - Can later be wired to organization-specific sessions.
 - For now, identical behavior to `/chat` but under the admin routing.
 
@@ -226,7 +209,7 @@ Create `app/pages/admin/chat.vue` later if we need an admin/operator console.
 
 Although we are **not** wiring any backend now, we define stable touchpoints:
 
-- `ChatPromptBar` `submit(prompt: string)` event is where future code will:
+- `UChatPrompt` `submit(prompt: string)` event is where future code will:
   - Call a chat API.
   - Track loading states.
   - Handle errors.
@@ -248,7 +231,7 @@ The UI contracts in this document should remain stable so that future backend/LL
    - `ChatMessageUser.vue`
    - `ChatMessageAssistant.vue`
    - `ChatMessagesList.vue`
-   - `ChatPromptBar.vue`
+   - Inline `UChatPrompt` usage
 3. Create `/chat` demo page using these components and mock data.
 4. Optionally implement `ChatPaletteShell.vue` and wire it into a test route or a temporary button.
 

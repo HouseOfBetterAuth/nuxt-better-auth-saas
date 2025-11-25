@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import type { ChatActionSuggestion, ChatMessage } from '~/shared/utils/types'
-import { computed } from 'vue'
+import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
+import { computed, ref } from 'vue'
 import ChatMessagesList from './ChatMessagesList.vue'
-import ChatPromptBar from './ChatPromptBar.vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'
 
@@ -28,6 +27,8 @@ const emit = defineEmits<{
   'action': [value: ChatActionSuggestion]
 }>()
 
+const prompt = ref('')
+
 const promptStatus = computed(() => {
   if (props.status === 'idle') {
     return 'ready'
@@ -36,7 +37,12 @@ const promptStatus = computed(() => {
 })
 
 function handleSubmit(value: string) {
-  emit('submit', value)
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return
+  }
+  emit('submit', trimmed)
+  prompt.value = ''
 }
 
 function handleAction(action: ChatActionSuggestion) {
@@ -84,12 +90,14 @@ function handleAction(action: ChatActionSuggestion) {
         </div>
 
         <template #prompt>
-          <ChatPromptBar
+          <UChatPrompt
+            v-model="prompt"
             :placeholder="placeholder"
             :disabled="disabled"
-            :status="promptStatus"
-            @submit="handleSubmit"
-          />
+            @submit="handleSubmit(prompt)"
+          >
+            <UChatPromptSubmit :status="promptStatus" />
+          </UChatPrompt>
         </template>
       </UChatPalette>
     </template>

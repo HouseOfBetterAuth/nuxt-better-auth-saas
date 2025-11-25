@@ -1,4 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import { sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
@@ -64,25 +65,37 @@ export const upsertSourceContent = async (
     ...insertPayload
   }
 
-  const onConflictTarget = input.externalId
-    ? [
-        schema.sourceContent.organizationId,
-        schema.sourceContent.sourceType,
-        schema.sourceContent.externalId
-      ]
-    : [
-        schema.sourceContent.organizationId,
-        schema.sourceContent.sourceType
-      ]
+  // Use a single atomic INSERT ... ON CONFLICT DO UPDATE to avoid race conditions
+  if (input.externalId != null) {
+    const [row] = await db
+      .insert(schema.sourceContent)
+      .values(insertValues)
+      .onConflictDoUpdate({
+        target: [
+          schema.sourceContent.organizationId,
+          schema.sourceContent.sourceType,
+          schema.sourceContent.externalId
+        ],
+        targetWhere: sql`${schema.sourceContent.externalId} is not null`,
+        set: updatePayload
+      })
+      .returning()
 
-  const [result] = await db
+    return row
+  }
+
+  const [row] = await db
     .insert(schema.sourceContent)
     .values(insertValues)
     .onConflictDoUpdate({
-      target: onConflictTarget,
+      target: [
+        schema.sourceContent.organizationId,
+        schema.sourceContent.sourceType
+      ],
+      targetWhere: sql`${schema.sourceContent.externalId} is null`,
       set: updatePayload
     })
     .returning()
 
-  return result
+  return row
 }

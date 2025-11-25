@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import type { ChatMessage } from '~/shared/utils/types'
-import { useAttrs } from 'vue'
-import ChatMessageAssistant from './ChatMessageAssistant.vue'
-import ChatMessageUser from './ChatMessageUser.vue'
+import type { ChatMessage } from '#shared/utils/types'
+import { computed } from 'vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'
 
-defineOptions({ inheritAttrs: false })
-
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   messages: ChatMessage[]
   status?: ChatStatus
   compact?: boolean
@@ -17,24 +13,33 @@ withDefaults(defineProps<{
   compact: false
 })
 
-const attrs = useAttrs()
+// Transform ChatMessage[] to format UChatMessages expects
+const uiMessages = computed(() => props.messages.map(message => ({
+  id: message.id,
+  role: message.role,
+  parts: [
+    {
+      type: 'text' as const,
+      text: message.content
+    }
+  ],
+  ...(message.role === 'assistant' && message.createdAt
+    ? {
+        metadata: { createdAt: message.createdAt }
+      }
+    : {})
+})))
 </script>
 
 <template>
   <UChatMessages
-    v-bind="attrs"
-    :messages="messages"
+    :messages="uiMessages"
     :status="status"
     :compact="compact"
+    :user="{
+      side: 'right',
+      variant: 'soft'
+    }"
     class="flex flex-col gap-4"
-  >
-    <template #default>
-      <component
-        :is="message.role === 'user' ? ChatMessageUser : ChatMessageAssistant"
-        v-for="message in messages"
-        :key="message.id"
-        :message="message"
-      />
-    </template>
-  </UChatMessages>
+  />
 </template>
