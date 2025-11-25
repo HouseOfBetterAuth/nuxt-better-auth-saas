@@ -76,7 +76,8 @@ export function canAccessFeature(
 // ============================================
 // Routes that are always accessible, even for unpaid 2nd+ orgs
 export const UNRESTRICTED_ROUTES = [
-  '/billing'
+  '/billing',
+  '/settings' // Allow access to settings so users can delete their org
 ]
 
 // Check if a route path is unrestricted
