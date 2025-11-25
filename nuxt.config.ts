@@ -139,7 +139,7 @@ export default defineNuxtConfig({
   },
   $production: {
     build: {
-      transpile: ['zod', '@polar-sh']
+      transpile: ['zod']
     }
   }
 })

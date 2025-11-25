@@ -6,16 +6,13 @@
       "operations": "Available Operations",
       "paymentCustomers": {
         "title": "Payment Customers Management",
-        "description": "Ensure all users have corresponding payment provider customer records. This operation will create missing Stripe and Polar customer records for existing users.",
+        "description": "Ensure all organizations have corresponding Stripe customer records. This operation will create missing Stripe customer records for existing organizations.",
         "execute": "Execute Ensure Payment Customers",
         "summary": "Execution Summary",
-        "totalUsers": "Total Users",
+        "totalOrganizations": "Total Organizations",
         "stripeSuccess": "Stripe Success",
         "stripeError": "Stripe Errors",
-        "polarSuccess": "Polar Success",
-        "polarError": "Polar Errors",
         "stripeResults": "Stripe Results",
-        "polarResults": "Polar Results",
         "status": {
           "success": "Success",
           "error": "Error"
@@ -38,16 +35,13 @@
       "operations": "可用操作",
       "paymentCustomers": {
         "title": "支付客户管理",
-        "description": "确保所有用户都有对应的支付提供商客户记录。此操作将为现有用户创建缺失的 Stripe 和 Polar 客户记录。",
+        "description": "确保所有组织都有对应的 Stripe 客户记录。此操作将为现有组织创建缺失的 Stripe 客户记录。",
         "execute": "执行确保支付客户",
         "summary": "执行摘要",
-        "totalUsers": "总用户数",
+        "totalOrganizations": "总组织数",
         "stripeSuccess": "Stripe 成功",
         "stripeError": "Stripe 错误",
-        "polarSuccess": "Polar 成功",
-        "polarError": "Polar 错误",
         "stripeResults": "Stripe 结果",
-        "polarResults": "Polar 结果",
         "status": {
           "success": "成功",
           "error": "错误"
@@ -70,16 +64,13 @@
       "operations": "利用可能な操作",
       "paymentCustomers": {
         "title": "支払い顧客管理",
-        "description": "すべてのユーザーが対応する支払いプロバイダーの顧客記録を持つことを確認します。この操作により、既存のユーザーに不足しているStripeとPolarの顧客記録が作成されます。",
+        "description": "すべての組織が対応する Stripe 顧客記録を持つことを確認します。この操作により、既存の組織に不足している Stripe 顧客記録が作成されます。",
         "execute": "支払い顧客確保を実行",
         "summary": "実行概要",
-        "totalUsers": "総ユーザー数",
+        "totalOrganizations": "総組織数",
         "stripeSuccess": "Stripe 成功",
         "stripeError": "Stripe エラー",
-        "polarSuccess": "Polar 成功",
-        "polarError": "Polar エラー",
         "stripeResults": "Stripe 結果",
-        "polarResults": "Polar 結果",
         "status": {
           "success": "成功",
           "error": "エラー"
@@ -102,16 +93,13 @@
       "operations": "Opérations Disponibles",
       "paymentCustomers": {
         "title": "Gestion des Clients de Paiement",
-        "description": "Assurez-vous que tous les utilisateurs ont des enregistrements de clients correspondants chez les fournisseurs de paiement. Cette opération créera les enregistrements clients Stripe et Polar manquants pour les utilisateurs existants.",
+        "description": "Assurez-vous que toutes les organisations ont des enregistrements clients Stripe correspondants. Cette opération créera les enregistrements clients Stripe manquants pour les organisations existantes.",
         "execute": "Exécuter l'Assurance des Clients de Paiement",
         "summary": "Résumé d'Exécution",
-        "totalUsers": "Total des Utilisateurs",
+        "totalOrganizations": "Total des Organisations",
         "stripeSuccess": "Stripe Succès",
         "stripeError": "Erreurs Stripe",
-        "polarSuccess": "Polar Succès",
-        "polarError": "Erreurs Polar",
         "stripeResults": "Résultats Stripe",
-        "polarResults": "Résultats Polar",
         "status": {
           "success": "Succès",
           "error": "Erreur"

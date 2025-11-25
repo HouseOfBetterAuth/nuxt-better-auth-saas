@@ -26,8 +26,6 @@
     "@nuxthub/core": "^0.9.0",
     "@nuxtjs/i18n": "^9.5.6",
     "@nuxtjs/seo": "^3.2.2",
-    "@polar-sh/better-auth": "^1.5.0",
-    "@polar-sh/sdk": "^0.34.17",
     "@vueuse/core": "13.9.0",
     "@vueuse/integrations": "^13.9.0",
     "aws4fetch": "^1.0.20",

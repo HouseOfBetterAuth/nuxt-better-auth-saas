@@ -212,13 +212,13 @@ const getCurrentOperation = () => {
               </div>
             </template>
 
-            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-3">
               <div class="text-center">
                 <div class="text-2xl font-bold">
-                  {{ result.summary.totalUsers }}
+                  {{ result.summary.totalOrganizations }}
                 </div>
                 <div class="text-sm text-neutral-500 dark:text-neutral-400">
-                  {{ t('migration.paymentCustomers.totalUsers') }}
+                  {{ t('migration.paymentCustomers.totalOrganizations') }}
                 </div>
               </div>
 
@@ -239,95 +239,41 @@ const getCurrentOperation = () => {
                   {{ t('migration.paymentCustomers.stripeError') }}
                 </div>
               </div>
-
-              <div class="text-center">
-                <div class="text-2xl font-bold text-green-600">
-                  {{ result.summary.polarSuccessCount }}
-                </div>
-                <div class="text-sm text-neutral-500 dark:text-neutral-400">
-                  {{ t('migration.paymentCustomers.polarSuccess') }}
-                </div>
-              </div>
-
-              <div class="text-center">
-                <div class="text-2xl font-bold text-red-600">
-                  {{ result.summary.polarErrorCount }}
-                </div>
-                <div class="text-sm text-neutral-500 dark:text-neutral-400">
-                  {{ t('migration.paymentCustomers.polarError') }}
-                </div>
-              </div>
             </div>
           </UCard>
 
           <!-- Detailed Results -->
-          <div class="grid gap-6 lg:grid-cols-2">
-            <!-- Stripe Results -->
-            <UCard v-if="result.data.stripeResults.length > 0">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <Icon name="simple-icons:stripe" />
-                  <span>{{ t('migration.paymentCustomers.stripeResults') }}</span>
-                </div>
-              </template>
+          <UCard v-if="result.data.stripeResults.length > 0">
+            <template #header>
+              <div class="flex items-center gap-2">
+                <Icon name="simple-icons:stripe" />
+                <span>{{ t('migration.paymentCustomers.stripeResults') }}</span>
+              </div>
+            </template>
 
-              <div class="space-y-2 max-h-96 overflow-y-auto">
-                <div
-                  v-for="item in result.data.stripeResults"
-                  :key="item.userId"
-                  class="flex items-center justify-between p-2 rounded border"
-                >
-                  <span class="text-sm font-mono">{{ item.userId }}</span>
-                  <div class="flex items-center gap-2">
-                    <UBadge
-                      :color="getStatusColor(item.status)"
-                      :label="t(`migration.paymentCustomers.status.${item.status}`)"
-                    />
-                    <span
-                      v-if="item.message"
-                      class="text-xs text-neutral-500 dark:text-neutral-400 max-w-32 truncate"
-                      :title="item.message"
-                    >
-                      {{ item.message }}
-                    </span>
-                  </div>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+              <div
+                v-for="item in result.data.stripeResults"
+                :key="item.organizationId"
+                class="flex items-center justify-between p-2 rounded border"
+              >
+                <span class="text-sm font-mono">{{ item.organizationId }}</span>
+                <div class="flex items-center gap-2">
+                  <UBadge
+                    :color="getStatusColor(item.status)"
+                    :label="t(`migration.paymentCustomers.status.${item.status}`)"
+                  />
+                  <span
+                    v-if="item.message"
+                    class="text-xs text-neutral-500 dark:text-neutral-400 max-w-32 truncate"
+                    :title="item.message"
+                  >
+                    {{ item.message }}
+                  </span>
                 </div>
               </div>
-            </UCard>
-
-            <!-- Polar Results -->
-            <UCard v-if="result.data.polarResults.length > 0">
-              <template #header>
-                <div class="flex items-center gap-2">
-                  <Icon name="lucide:zap" />
-                  <span>{{ t('migration.paymentCustomers.polarResults') }}</span>
-                </div>
-              </template>
-
-              <div class="space-y-2 max-h-96 overflow-y-auto">
-                <div
-                  v-for="item in result.data.polarResults"
-                  :key="item.userId"
-                  class="flex items-center justify-between p-2 rounded border"
-                >
-                  <span class="text-sm font-mono">{{ item.userId }}</span>
-                  <div class="flex items-center gap-2">
-                    <UBadge
-                      :color="getStatusColor(item.status)"
-                      :label="t(`migration.paymentCustomers.status.${item.status}`)"
-                    />
-                    <span
-                      v-if="item.message"
-                      class="text-xs text-neutral-500 dark:text-neutral-400 max-w-32 truncate"
-                      :title="item.message"
-                    >
-                      {{ item.message }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </UCard>
-          </div>
+            </div>
+          </UCard>
         </div>
       </div>
     </div>
