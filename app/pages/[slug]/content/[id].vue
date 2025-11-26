@@ -369,7 +369,7 @@ function _formatSourceType(type?: string | null) {
 }
 
 function _formatDuration(seconds: number) {
-  if (seconds == null || !Number.isFinite(seconds))
+  if (!seconds)
     return '—'
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.floor(seconds % 60)
@@ -474,10 +474,8 @@ async function _handleSubmit() {
       method: 'POST',
       body: {
         message: trimmed,
-        action: {
-          type: 'generate_content',
-          contentId: contentId.value
-        }
+        contentId: contentId.value,
+        sectionId: selectedSectionId.value
       }
     })
 

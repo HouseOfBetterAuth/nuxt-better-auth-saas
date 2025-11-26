@@ -187,52 +187,46 @@ export default defineEventHandler(async (event) => {
   })
 
   if (message.trim()) {
-    await db.transaction(async (tx) => {
-      await addChatMessage(tx, {
-        sessionId: session.id,
-        organizationId,
-        role: 'user',
-        content: message.trim()
-      })
-      await addChatLog(tx, {
-        sessionId: session.id,
-        organizationId,
-        type: 'user_message',
-        message: 'User sent a chat prompt'
-      })
+    await addChatMessage(db, {
+      sessionId: session.id,
+      organizationId,
+      role: 'user',
+      content: message.trim()
+    })
+    await addChatLog(db, {
+      sessionId: session.id,
+      organizationId,
+      type: 'user_message',
+      message: 'User sent a chat prompt'
     })
   }
 
   if (processedSources.length > 0) {
-    await db.transaction(async (tx) => {
-      await addChatLog(tx, {
-        sessionId: session.id,
-        organizationId,
-        type: 'source_detected',
-        message: `Detected ${processedSources.length} source link${processedSources.length > 1 ? 's' : ''}`,
-        payload: {
-          sources: processedSources.map(item => ({
-            id: item.source.id,
-            sourceType: item.sourceType,
-            url: item.url
-          }))
-        }
-      })
+    await addChatLog(db, {
+      sessionId: session.id,
+      organizationId,
+      type: 'source_detected',
+      message: `Detected ${processedSources.length} source link${processedSources.length > 1 ? 's' : ''}`,
+      payload: {
+        sources: processedSources.map(item => ({
+          id: item.source.id,
+          sourceType: item.sourceType,
+          url: item.url
+        }))
+      }
     })
   }
 
   if (generationResult) {
-    await db.transaction(async (tx) => {
-      await addChatLog(tx, {
-        sessionId: session.id,
-        organizationId,
-        type: 'generation_complete',
-        message: 'Draft generation completed',
-        payload: {
-          contentId: generationResult.content.id,
-          versionId: generationResult.version.id
-        }
-      })
+    await addChatLog(db, {
+      sessionId: session.id,
+      organizationId,
+      type: 'generation_complete',
+      message: 'Draft generation completed',
+      payload: {
+        contentId: generationResult.content.id,
+        versionId: generationResult.version.id
+      }
     })
   }
 
@@ -253,18 +247,16 @@ export default defineEventHandler(async (event) => {
   const assistantMessageBody = assistantMessages.join(' ')
 
   if (assistantMessageBody) {
-    await db.transaction(async (tx) => {
-      await addChatMessage(tx, {
-        sessionId: session.id,
-        organizationId,
-        role: 'assistant',
-        content: assistantMessageBody
-      })
+    await addChatMessage(db, {
+      sessionId: session.id,
+      organizationId,
+      role: 'assistant',
+      content: assistantMessageBody
     })
   }
 
-  const messages = await getSessionMessages(db, session.id, organizationId, { limit: 50 })
-  const logs = await getSessionLogs(db, session.id, organizationId, { limit: 100 })
+  const messages = await getSessionMessages(db, session.id, organizationId)
+  const logs = await getSessionLogs(db, session.id, organizationId)
 
   return {
     assistantMessage: assistantMessageBody,
