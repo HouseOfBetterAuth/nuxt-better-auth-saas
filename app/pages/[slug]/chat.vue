@@ -34,6 +34,7 @@ const prompt = ref('')
 const activeTab = ref('content')
 const loading = ref(false)
 const selectedContentId = ref<string | null>('new-draft')
+const isHandlingAction = ref(false)
 
 const promptStatus = computed(() => {
   if (loading.value || status.value === 'submitted' || status.value === 'streaming') {
@@ -180,16 +181,21 @@ function handleQuickChat(action: QuickChatAction) {
 }
 
 async function handleAction(action: ChatActionSuggestion) {
-  await executeAction(action)
+  isHandlingAction.value = true
+  try {
+    await executeAction(action)
 
-  const contentId = generation.value?.content?.id
-  if (contentId && activeSourceId.value) {
-    router.push({
-      path: `/${slug.value}/content/${contentId}`,
-      query: {
-        sourceId: activeSourceId.value
-      }
-    })
+    const contentId = generation.value?.content?.id
+    if (contentId && activeSourceId.value) {
+      router.push({
+        path: `/${slug.value}/content/${contentId}`,
+        query: {
+          sourceId: activeSourceId.value
+        }
+      })
+    }
+  } finally {
+    isHandlingAction.value = false
   }
 }
 
@@ -212,6 +218,9 @@ function formatDate(date: Date | null) {
 }
 
 watch(generation, (value) => {
+  if (isHandlingAction.value) {
+    return
+  }
   if (value?.content?.id) {
     refreshContents()
     router.push(`/${slug.value}/content/${value.content.id}`)

@@ -436,7 +436,7 @@ function focusSection(sectionId: string) {
   selectedSectionId.value = sectionId
 }
 
-const promptStatus = computed(() => {
+const _promptStatus = computed(() => {
   if (loading.value || chatStatus.value === 'submitted' || chatStatus.value === 'streaming') {
     return loading.value ? 'submitted' : (chatStatus.value as 'submitted' | 'streaming')
   }

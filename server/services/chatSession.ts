@@ -56,24 +56,36 @@ export async function ensureChatSession(
   db: NodePgDatabase<typeof schema>,
   input: EnsureChatSessionInput
 ) {
-  const existing = await findChatSession(db, input.organizationId, input.contentId ?? null)
-  if (existing) {
-    return existing
-  }
+  // Use transaction to handle race conditions with upsert pattern
+  return await db.transaction(async (tx) => {
+    const existing = await findChatSession(tx, input.organizationId, input.contentId ?? null)
+    if (existing) {
+      return existing
+    }
 
-  const [session] = await db
-    .insert(schema.contentChatSession)
-    .values({
-      organizationId: input.organizationId,
-      contentId: input.contentId ?? null,
-      sourceContentId: input.sourceContentId ?? null,
-      createdByUserId: input.createdByUserId ?? null,
-      status: input.status ?? 'active',
-      metadata: input.metadata ?? null
-    })
-    .returning()
+    try {
+      const [session] = await tx
+        .insert(schema.contentChatSession)
+        .values({
+          organizationId: input.organizationId,
+          contentId: input.contentId ?? null,
+          sourceContentId: input.sourceContentId ?? null,
+          createdByUserId: input.createdByUserId ?? null,
+          status: input.status ?? 'active',
+          metadata: input.metadata ?? null
+        })
+        .returning()
 
-  return session
+      return session
+    } catch (error) {
+      // If insert fails due to unique constraint, try to find existing session again
+      const existingAfterError = await findChatSession(tx, input.organizationId, input.contentId ?? null)
+      if (existingAfterError) {
+        return existingAfterError
+      }
+      throw error
+    }
+  })
 }
 
 export interface AddChatMessageInput {
@@ -92,6 +104,15 @@ export async function addChatMessage(
     throw createError({
       statusCode: 400,
       statusMessage: 'Chat message content cannot be empty'
+    })
+  }
+
+  // Verify session exists and belongs to organization
+  const session = await getChatSessionById(db, input.sessionId, input.organizationId)
+  if (!session) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Chat session not found or access denied'
     })
   }
 
@@ -128,6 +149,15 @@ export async function addChatLog(
     })
   }
 
+  // Verify session exists and belongs to organization
+  const session = await getChatSessionById(db, input.sessionId, input.organizationId)
+  if (!session) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Chat session not found or access denied'
+    })
+  }
+
   const [log] = await db
     .insert(schema.contentChatLog)
     .values({
@@ -145,8 +175,12 @@ export async function addChatLog(
 export async function getSessionMessages(
   db: NodePgDatabase<typeof schema>,
   sessionId: string,
-  organizationId: string
+  organizationId: string,
+  options?: { limit?: number, offset?: number }
 ) {
+  const limit = options?.limit ?? 50 // Default limit of 50 messages
+  const offset = options?.offset ?? 0
+
   return await db
     .select()
     .from(schema.contentChatMessage)
@@ -155,13 +189,19 @@ export async function getSessionMessages(
       eq(schema.contentChatMessage.organizationId, organizationId)
     ))
     .orderBy(schema.contentChatMessage.createdAt)
+    .limit(limit)
+    .offset(offset)
 }
 
 export async function getSessionLogs(
   db: NodePgDatabase<typeof schema>,
   sessionId: string,
-  organizationId: string
+  organizationId: string,
+  options?: { limit?: number, offset?: number }
 ) {
+  const limit = options?.limit ?? 100 // Default limit of 100 logs
+  const offset = options?.offset ?? 0
+
   return await db
     .select()
     .from(schema.contentChatLog)
@@ -170,4 +210,6 @@ export async function getSessionLogs(
       eq(schema.contentChatLog.organizationId, organizationId)
     ))
     .orderBy(schema.contentChatLog.createdAt)
+    .limit(limit)
+    .offset(offset)
 }

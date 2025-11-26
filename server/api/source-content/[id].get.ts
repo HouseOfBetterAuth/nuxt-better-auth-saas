@@ -11,8 +11,9 @@ export default defineEventHandler(async (event) => {
   const db = await useDB(event)
 
   const { id } = getRouterParams(event)
+  const trimmedId = typeof id === 'string' ? id.trim() : ''
 
-  if (!id || typeof id !== 'string' || !id.trim()) {
+  if (!id || typeof id !== 'string' || !trimmedId) {
     throw createError({
       statusCode: 400,
       statusMessage: 'A valid source content id is required'
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
     .select()
     .from(schema.sourceContent)
     .where(and(
-      eq(schema.sourceContent.id, id),
+      eq(schema.sourceContent.id, trimmedId),
       eq(schema.sourceContent.organizationId, organizationId)
     ))
     .limit(1)
