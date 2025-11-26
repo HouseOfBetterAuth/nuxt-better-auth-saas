@@ -32,6 +32,12 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
 
   console.log('[Billing Guard] to:', to.path, 'from:', from.path)
 
+  const runtimeConfig = useRuntimeConfig()
+  const failOpenFlag = runtimeConfig.public?.billingFailOpen
+  const failOpen = typeof failOpenFlag === 'string'
+    ? failOpenFlag.toLowerCase() === 'true'
+    : Boolean(failOpenFlag)
+
   // 2. Get organization from route slug
   const { loggedIn, organization } = useAuth()
   if (!loggedIn.value)
@@ -101,18 +107,21 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         subs = await $fetch('/api/auth/subscription/list', {
-          query: { referenceId: orgId }
+          query: { referenceId: orgId },
+          timeout: 10000
         })
         break
       } catch (error: any) {
         const status = error?.response?.status ?? error?.statusCode ?? error?.status
         console.error(`[Billing Guard] Subscription check failed (attempt ${attempt}/${maxAttempts}) for org ${orgId}:`, error)
 
-        if (status && status >= 400 && status < 600) {
+        // Only throw immediately on 4xx client errors (non-retryable)
+        if (status && status >= 400 && status < 500) {
           throw error
         }
 
-        if (attempt === maxAttempts) {
+        const shouldRetry = !status || status >= 500
+        if (!shouldRetry || attempt === maxAttempts) {
           subs = null
         } else {
           await delay(500)
@@ -122,8 +131,14 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
   }
 
   if (subs === null) {
-    console.warn('[Billing Guard] Allowing navigation due to transient subscription lookup failure.')
-    return
+    const message = `[Billing Guard] Subscription lookup failed for org ${orgId}. Fail-open=${failOpen}`
+    if (failOpen) {
+      console.warn(message)
+      return
+    }
+
+    console.error(`${message}. Blocking navigation.`)
+    return navigateTo(`/${routeSlug}/billing?showUpgrade=true&reason=subscription-check-failed`)
   }
 
   console.log('[Billing Guard] subs:', subs)

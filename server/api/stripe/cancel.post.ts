@@ -58,10 +58,27 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const stripe = new Stripe(runtimeConfig.stripeSecretKey!)
+  if (!runtimeConfig.stripeSecretKey) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Stripe configuration is missing'
+    })
+  }
 
-  // Verify subscription belongs to organization
-  const remoteSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const stripe = new Stripe(runtimeConfig.stripeSecretKey)
+
+  let remoteSubscription: Stripe.Subscription
+  try {
+    remoteSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+  } catch (error: any) {
+    const status = error?.statusCode || error?.status
+    console.error('[Stripe cancel] Failed to retrieve subscription', error)
+    throw createError({
+      statusCode: status === 404 ? 404 : 502,
+      statusMessage: status === 404 ? 'Subscription not found' : 'Unable to load subscription information'
+    })
+  }
+
   const subscriptionOrgId = remoteSubscription.metadata?.organizationId
   const subscriptionCustomerId = remoteSubscription.customer && typeof remoteSubscription.customer === 'object'
     ? remoteSubscription.customer.id
@@ -78,6 +95,13 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden: Subscription customer mismatch'
+    })
+  }
+
+  if (!subscriptionOrgId && !org.stripeCustomerId) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden: Unable to verify subscription ownership'
     })
   }
 

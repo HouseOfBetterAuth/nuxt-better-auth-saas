@@ -76,7 +76,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       // Prevent infinite redirect if we are already redirected
       const localePath = useLocalePath()
       const targetPath = localePath(`/${firstOrg.slug}/dashboard`)
-      if (to.fullPath !== targetPath) {
+      if (to.path !== targetPath) {
         toast?.add({
           title: 'Organization unavailable',
           description: 'Navigated to your first available team.',

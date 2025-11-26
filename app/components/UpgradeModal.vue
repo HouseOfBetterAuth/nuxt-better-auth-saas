@@ -14,6 +14,9 @@ const emit = defineEmits<{
   'upgraded': []
 }>()
 
+const { client, useActiveOrganization } = useAuth()
+const activeOrg = useActiveOrganization()
+
 const selectedInterval = ref<'month' | 'year'>('month')
 const loading = ref(false)
 const toast = useToast()
@@ -40,8 +43,6 @@ const message = computed(() => {
 })
 
 function getOrgSlug() {
-  const { useActiveOrganization } = useAuth()
-  const activeOrg = useActiveOrganization()
   return props.teamSlug || activeOrg.value?.data?.slug || null
 }
 
@@ -72,7 +73,6 @@ async function handleUpgrade() {
 
   loading.value = true
   try {
-    const { client } = useAuth()
     const orgSlug = getOrgSlug()
 
     if (!orgSlug) {

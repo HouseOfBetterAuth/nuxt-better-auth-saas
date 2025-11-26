@@ -15,11 +15,19 @@ const anonymizeId = (value?: string | null) => {
   return createHash('sha256').update(value).digest('hex').slice(0, 8)
 }
 
-const sanitizeError = (error: any) => ({
-  message: error?.message ?? 'Unknown error',
-  statusCode: error?.statusCode,
-  code: error?.code
-})
+const sanitizeError = (error: any) => {
+  const statusCode = error?.statusCode
+  const code = error?.code
+  const safeMessage = statusCode
+    ? `Error ${statusCode}${code ? ` (${code})` : ''}`
+    : 'Internal error'
+
+  return {
+    message: safeMessage,
+    statusCode,
+    code
+  }
+}
 
 export default defineEventHandler(async (event) => {
   try {
@@ -124,10 +132,11 @@ export default defineEventHandler(async (event) => {
       }
     }
   } catch (error: any) {
-    console.error('Error fetching full organization data:', sanitizeError(error))
+    const sanitized = sanitizeError(error)
+    console.error('[Organization full-data] Error:', error)
     throw createError({
       statusCode: error.statusCode || 500,
-      message: error.message || 'Failed to fetch organization data'
+      message: sanitized.statusCode ? 'Failed to fetch organization data' : 'Internal server error'
     })
   }
 })

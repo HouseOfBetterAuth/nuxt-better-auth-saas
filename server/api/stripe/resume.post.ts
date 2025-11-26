@@ -48,7 +48,10 @@ export default defineEventHandler(async (event) => {
     where: and(
       eq(memberTable.organizationId, referenceId),
       eq(memberTable.userId, session.user.id)
-    )
+    ),
+    with: {
+      organization: true
+    }
   })
 
   if (!member || member.role !== 'owner') {
@@ -67,7 +70,18 @@ export default defineEventHandler(async (event) => {
 
   const stripe = new Stripe(runtimeConfig.stripeSecretKey)
 
-  const remoteSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+  let remoteSubscription: Stripe.Subscription
+  try {
+    remoteSubscription = await stripe.subscriptions.retrieve(subscriptionId)
+  } catch (error: any) {
+    const status = error?.statusCode || error?.status
+    console.error('[Stripe resume] Failed to retrieve subscription', error)
+    throw createError({
+      statusCode: status === 404 ? 404 : 502,
+      statusMessage: status === 404 ? 'Subscription not found' : 'Unable to load subscription information'
+    })
+  }
+
   const subscriptionOrgId = remoteSubscription.metadata?.organizationId
   const subscriptionCustomerId = remoteSubscription.customer && typeof remoteSubscription.customer === 'object'
     ? remoteSubscription.customer.id
@@ -80,16 +94,20 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (!subscriptionOrgId && subscriptionCustomerId) {
-    const org = await db.query.member.findFirst({
-      where: eq(memberTable.organizationId, referenceId)
+  const orgCustomerId = member.organization?.stripeCustomerId
+
+  if (!subscriptionOrgId && subscriptionCustomerId && orgCustomerId && subscriptionCustomerId !== orgCustomerId) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden: Subscription customer mismatch'
     })
-    if (org && org.organization && org.organization.stripeCustomerId && org.organization.stripeCustomerId !== subscriptionCustomerId) {
-      throw createError({
-        statusCode: 403,
-        statusMessage: 'Forbidden: Subscription customer mismatch'
-      })
-    }
+  }
+
+  if (!subscriptionOrgId && !orgCustomerId) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden: Unable to verify subscription ownership'
+    })
   }
 
   if (!remoteSubscription.cancel_at_period_end) {
