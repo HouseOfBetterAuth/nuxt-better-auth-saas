@@ -60,29 +60,33 @@ async function handlePromptSubmit() {
   }
 }
 
-const columns = [
-  { id: 'title', key: 'title', label: 'Title' },
-  { id: 'status', key: 'status', label: 'Status' },
-  { id: 'updatedAt', key: 'updatedAt', label: 'Last updated' }
-]
-
-const allRows = computed(() => (contents.value || []).map(entry => ({
-  id: entry.content.id,
-  title: entry.content.title || 'Untitled draft',
-  status: entry.content.status,
-  updatedAt: entry.content.updatedAt ? new Date(entry.content.updatedAt) : null
-})))
+const contentEntries = computed(() => {
+  const list = Array.isArray(contents.value) ? contents.value : []
+  return list.map((entry) => {
+    const sections = Array.isArray(entry.currentVersion?.sections) ? entry.currentVersion.sections : []
+    const wordCount = sections.reduce((sum: number, section: Record<string, any>) => sum + (Number(section.wordCount) || 0), 0)
+    return {
+      id: entry.content.id,
+      title: entry.content.title || 'Untitled draft',
+      status: entry.content.status,
+      updatedAt: entry.content.updatedAt ? new Date(entry.content.updatedAt) : null,
+      contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
+      sectionsCount: sections.length,
+      wordCount,
+      sourceType: entry.sourceContent?.sourceType || null
+    }
+  })
+})
 
 const rows = computed(() => {
+  const dataset = contentEntries.value
   if (activeTab.value === 'archived') {
-    return allRows.value.filter(row => row.status === 'archived')
+    return dataset.filter(row => row.status === 'archived')
   }
-  return allRows.value.filter(row => row.status !== 'archived')
+  return dataset.filter(row => row.status !== 'archived')
 })
 
-const hasContent = computed(() => {
-  return contents.value && Array.isArray(contents.value) && contents.value.length > 0
-})
+const hasContent = computed(() => contentEntries.value.length > 0)
 
 interface ContentOption {
   label: string
@@ -95,7 +99,7 @@ const contentOptions = computed<ContentOption[]>(() => {
     { label: 'New Draft', value: 'new-draft', icon: 'i-lucide-file-plus' }
   ]
   if (hasContent.value) {
-    const existingContent = allRows.value
+    const existingContent = contentEntries.value
       .filter(row => row.status !== 'archived')
       .map(row => ({
         label: row.title,
@@ -369,29 +373,74 @@ watch(() => slug.value, () => {
       </div>
       <div
         v-else-if="rows.length"
-        class="overflow-x-auto"
+        class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
       >
-        <UTable
-          :rows="rows"
-          :columns="columns"
+        <UCard
+          v-for="row in rows"
+          :key="row.id"
+          class="flex flex-col gap-3"
         >
-          <template #title-data="{ row }">
-            <NuxtLink
-              class="text-primary hover:underline"
+          <div class="flex items-start justify-between gap-3">
+            <div class="space-y-1">
+              <NuxtLink
+                class="text-lg font-semibold text-highlighted hover:underline"
+                :to="`/${slug}/content/${row.id}`"
+              >
+                {{ row.title }}
+              </NuxtLink>
+              <p class="text-xs text-muted-500">
+                Updated {{ formatDate(row.updatedAt) }}
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-1 justify-end">
+              <UBadge :color="row.status === 'published' ? 'primary' : 'neutral'">
+                {{ row.status }}
+              </UBadge>
+              <UBadge
+                v-if="row.contentType"
+                size="xs"
+                variant="soft"
+                class="capitalize"
+              >
+                {{ row.contentType }}
+              </UBadge>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-4 text-xs text-muted-500">
+            <span>{{ row.sectionsCount }} sections</span>
+            <span v-if="row.wordCount">
+              {{ row.wordCount }} words
+            </span>
+            <span v-if="row.sourceType" class="capitalize">
+              Source: {{ row.sourceType.replace('_', ' ') }}
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              size="xs"
+              color="primary"
+              variant="soft"
               :to="`/${slug}/content/${row.id}`"
             >
-              {{ row.title }}
-            </NuxtLink>
-          </template>
-          <template #status-data="{ row }">
-            <UBadge :color="row.status === 'published' ? 'primary' : 'neutral'">
-              {{ row.status }}
-            </UBadge>
-          </template>
-          <template #updatedAt-data="{ row }">
-            {{ formatDate(row.updatedAt) }}
-          </template>
-        </UTable>
+              Open draft
+            </UButton>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :disabled="isBusy || loading"
+              @click="handleContentSelect(row.id)"
+            >
+              Continue chat
+            </UButton>
+          </div>
+        </UCard>
+      </div>
+      <div
+        v-else
+        class="rounded-xl border border-dashed border-muted-200/70 bg-muted/20 p-6 text-center text-sm text-muted-500"
+      >
+        No drafts yet. Share a source link or describe what to write to generate your first piece.
       </div>
     </UContainer>
   </div>

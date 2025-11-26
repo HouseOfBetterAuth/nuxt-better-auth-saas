@@ -4,6 +4,17 @@ import { useState } from '#app'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
+interface PatchSectionResponse {
+  content: Record<string, any>
+  version: Record<string, any>
+  markdown: string
+  section?: {
+    id: string
+    title: string
+    index: number
+  }
+}
+
 const createId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -32,46 +43,58 @@ export function useContentChatSession(contentId: string | Ref<string>) {
     {
       id: createId(),
       role: 'assistant',
-      content: 'This is your working draft. Tell me what to change and I will update it.',
+      content: 'Choose a section and describe how you want it updated. I will rewrite that section and save a new version.',
       createdAt: new Date()
     }
   ]))
   const status = useState<ChatStatus>(stateKey('status'), () => 'ready')
   const errorMessage = useState<string | null>(stateKey('error'), () => null)
 
-  async function sendMessage(prompt: string) {
+  async function sendMessage(prompt: string, options?: { sectionId?: string | null, sectionTitle?: string | null }) {
+    const trimmed = prompt.trim()
+    if (!trimmed) {
+      return
+    }
+
+    const sectionId = options?.sectionId
+
+    if (!sectionId) {
+      status.value = 'error'
+      errorMessage.value = 'Select a section before sending instructions.'
+      return
+    }
+
+    status.value = 'submitted'
+    errorMessage.value = null
+
+    messages.value.push({
+      id: createId(),
+      role: 'user',
+      content: trimmed,
+      createdAt: new Date()
+    })
+
     try {
-      const trimmed = prompt.trim()
-      if (!trimmed) {
-        return
-      }
-
-      status.value = 'submitted'
-      errorMessage.value = null
-
-      messages.value.push({
-        id: createId(),
-        role: 'user',
-        content: trimmed,
-        createdAt: new Date()
+      const response = await $fetch<PatchSectionResponse>(`/api/content/${id}/sections/${sectionId}`, {
+        method: 'POST',
+        body: {
+          instructions: trimmed
+        }
       })
 
-      await new Promise(resolve => setTimeout(resolve, 500))
-
+      const sectionLabel = response.section?.title || options?.sectionTitle || 'selected section'
       messages.value.push({
         id: createId(),
         role: 'assistant',
-        content: `(Mock) Noted. I will apply "${trimmed}" to this draft.`,
+        content: `Updated “${sectionLabel}.” Refreshing the draft now.`,
         createdAt: new Date()
       })
+
+      status.value = 'ready'
     } catch (error: any) {
-      console.error('Failed to send content chat message', error)
-      errorMessage.value = error?.message || 'Something went wrong while sending your message.'
+      console.error('Failed to patch section', error)
       status.value = 'error'
-    } finally {
-      if (status.value !== 'error') {
-        status.value = 'ready'
-      }
+      errorMessage.value = error?.data?.statusMessage || error?.message || 'Failed to update that section.'
     }
   }
 
@@ -79,7 +102,7 @@ export function useContentChatSession(contentId: string | Ref<string>) {
     messages.value = [{
       id: createId(),
       role: 'assistant',
-      content: 'This is your working draft. Tell me what to change and I will update it.',
+      content: 'Choose a section and describe how you want it updated. I will rewrite that section and save a new version.',
       createdAt: new Date()
     }]
     status.value = 'ready'

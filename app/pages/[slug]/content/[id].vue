@@ -26,17 +26,130 @@ const { data: content, pending, error, refresh } = await useFetch(() => `/api/co
   default: () => null
 })
 
-const title = computed(() => content.value?.content.title || 'Untitled draft')
-const contentStatus = computed(() => content.value?.content.status || 'draft')
-const generatedContent = computed(() => content.value?.currentVersion?.bodyMdx || content.value?.currentVersion?.bodyHtml || null)
+const contentRecord = computed(() => content.value?.content ?? null)
+const currentVersion = computed(() => content.value?.currentVersion ?? null)
+const sourceDetails = computed(() => content.value?.sourceContent ?? null)
+
+const title = computed(() => contentRecord.value?.title || 'Untitled draft')
+const contentStatus = computed(() => contentRecord.value?.status || 'draft')
+const generatedContent = computed(() => currentVersion.value?.bodyMdx || currentVersion.value?.bodyHtml || null)
 const hasGeneratedContent = computed(() => !!generatedContent.value)
+const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
+const assets = computed(() => currentVersion.value?.assets || null)
+const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
+
 const sections = computed(() => {
-  const sectionsData = content.value?.currentVersion?.sections
-  return Array.isArray(sectionsData) ? sectionsData : []
+  const sectionsData = currentVersion.value?.sections
+  if (!Array.isArray(sectionsData)) {
+    return []
+  }
+
+  return sectionsData.map((section: Record<string, any>, idx: number) => {
+    const body = typeof section.body_mdx === 'string'
+      ? section.body_mdx
+      : typeof section.body === 'string'
+        ? section.body
+        : ''
+
+    return {
+      ...section,
+      id: section.id || section.section_id || `section-${idx}`,
+      index: Number.isFinite(section.index) ? section.index : idx,
+      title: section.title || `Section ${idx + 1}`,
+      type: section.type || section.meta?.planType || 'body',
+      level: section.level || 2,
+      anchor: section.anchor || slugify(section.title || `section-${idx}`),
+      wordCount: Number.isFinite(section.wordCount)
+        ? section.wordCount
+        : body.split(/\s+/).filter(Boolean).length,
+      summary: section.summary || section.meta?.summary || null,
+      body
+    }
+  }).sort((a, b) => a.index - b.index)
 })
-const frontmatter = computed(() => content.value?.currentVersion?.frontmatter || null)
-const assets = computed(() => content.value?.currentVersion?.assets || null)
-const seoSnapshot = computed(() => content.value?.currentVersion?.seoSnapshot || null)
+
+const totalWordCount = computed(() => sections.value.reduce((sum, section) => sum + (section.wordCount || 0), 0))
+const contentUpdatedAtLabel = computed(() => {
+  const value = contentRecord.value?.updatedAt
+  return value ? formatDate(value) : '—'
+})
+
+const sourceLink = computed(() => {
+  const metadata = sourceDetails.value?.metadata as Record<string, any> | null
+  if (metadata && typeof metadata.originalUrl === 'string') {
+    return metadata.originalUrl
+  }
+  if (sourceDetails.value?.sourceType === 'youtube' && sourceDetails.value?.externalId) {
+    return `https://www.youtube.com/watch?v=${sourceDetails.value.externalId}`
+  }
+  return null
+})
+
+const seoPlan = computed(() => {
+  const snapshot = seoSnapshot.value
+  const plan = snapshot && typeof snapshot === 'object' ? snapshot.plan : null
+  return plan && typeof plan === 'object' ? plan : null
+})
+
+const seoKeywords = computed(() => {
+  const planKeywords = seoPlan.value?.keywords
+  if (Array.isArray(planKeywords)) {
+    return planKeywords.filter(keyword => typeof keyword === 'string' && keyword.trim().length > 0)
+  }
+  return []
+})
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short'
+})
+
+function formatDate(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  return dateFormatter.format(date)
+}
+
+function sectionPreview(body: string, limit = 320) {
+  if (!body) {
+    return ''
+  }
+  if (body.length <= limit) {
+    return body
+  }
+  return `${body.slice(0, limit)}…`
+}
+
+const selectedSectionId = ref<string | null>(null)
+const selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
+
+const sectionSelectOptions = computed(() => sections.value.map(section => ({
+  label: section.title,
+  value: section.id,
+  description: `${section.wordCount} words`,
+  icon: 'i-lucide-align-left'
+})))
+
+watch(sections, (list) => {
+  if (!list.length) {
+    selectedSectionId.value = null
+    return
+  }
+
+  if (!selectedSectionId.value || !list.some(section => section.id === selectedSectionId.value)) {
+    selectedSectionId.value = list[0].id
+  }
+}, { immediate: true })
+
+function focusSection(sectionId: string) {
+  selectedSectionId.value = sectionId
+}
 
 const promptStatus = computed(() => {
   if (loading.value || status.value === 'submitted' || status.value === 'streaming') {
@@ -53,9 +166,15 @@ async function handleSubmit() {
   if (!trimmed) {
     return
   }
+  if (!selectedSectionId.value) {
+    return
+  }
   loading.value = true
   try {
-    await sendMessage(trimmed)
+    await sendMessage(trimmed, {
+      sectionId: selectedSectionId.value,
+      sectionTitle: selectedSection.value?.title ?? null
+    })
     prompt.value = ''
     await refresh()
   } finally {
@@ -70,9 +189,9 @@ watch(() => contentId.value, async () => {
 </script>
 
 <template>
-  <div class="flex flex-col justify-center gap-4 sm:gap-6 py-8">
-    <UContainer class="space-y-4">
-      <div class="flex items-center justify-between">
+  <div class="flex flex-col gap-6 py-8">
+    <UContainer class="space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <UButton
             icon="i-lucide-arrow-left"
@@ -82,6 +201,9 @@ watch(() => contentId.value, async () => {
           >
             Back to chat
           </UButton>
+          <p class="text-sm text-muted-500">
+            Last updated {{ contentUpdatedAtLabel }}
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <UBadge :color="contentStatus === 'published' ? 'primary' : 'neutral'">
@@ -99,18 +221,22 @@ watch(() => contentId.value, async () => {
         </div>
       </div>
 
-      <div class="text-center">
+      <UCard class="space-y-3 text-center">
         <h1 class="text-3xl sm:text-4xl text-highlighted font-bold">
           {{ title }}
         </h1>
-      </div>
-
-      <div
-        v-if="error && !content"
-        class="rounded-md border border-dashed p-6 text-sm text-muted-foreground text-center"
-      >
-        Content not found or you don't have access to this draft.
-      </div>
+        <p
+          v-if="frontmatter?.description"
+          class="text-muted-500 max-w-4xl mx-auto leading-relaxed"
+        >
+          {{ frontmatter.description }}
+        </p>
+        <div class="flex flex-wrap justify-center gap-3 text-xs text-muted-500">
+          <span>Content type: <strong class="capitalize">{{ frontmatter?.contentType || 'n/a' }}</strong></span>
+          <span>Primary keyword: <strong>{{ frontmatter?.primaryKeyword || '—' }}</strong></span>
+          <span>Locale: <strong>{{ frontmatter?.targetLocale || '—' }}</strong></span>
+        </div>
+      </UCard>
 
       <div v-if="errorMessage">
         <UAlert
@@ -121,140 +247,377 @@ watch(() => contentId.value, async () => {
         />
       </div>
 
-      <!-- Debug: Show raw data -->
       <div
-        v-if="content"
-        class="rounded-xl border border-dashed bg-muted/50 p-4 text-xs"
+        v-if="error && !content"
+        class="rounded-md border border-dashed p-6 text-sm text-muted-foreground text-center"
       >
-        <details>
-          <summary class="cursor-pointer font-medium mb-2">
-            Debug: Raw API Data
-          </summary>
-          <pre class="whitespace-pre-wrap overflow-x-auto">{{ JSON.stringify(content, null, 2) }}</pre>
-        </details>
+        Content not found or you don't have access to this draft.
       </div>
 
-      <!-- Generated Content Display -->
       <div
-        v-if="hasGeneratedContent"
-        class="space-y-6"
+        v-else-if="pending"
+        class="grid gap-6 lg:grid-cols-[2fr,1fr]"
       >
-        <!-- MDX Content -->
-        <div class="rounded-xl border bg-background p-6">
-          <h2 class="text-lg font-semibold mb-4">
-            Generated Content (MDX)
-          </h2>
-          <div class="prose prose-sm dark:prose-invert max-w-none">
-            <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ content?.currentVersion?.bodyMdx }}</pre>
-          </div>
+        <div class="space-y-4">
+          <div class="h-48 rounded-2xl bg-muted animate-pulse" />
+          <div class="h-32 rounded-2xl bg-muted animate-pulse" />
+          <div class="h-32 rounded-2xl bg-muted animate-pulse" />
         </div>
+        <div class="space-y-4">
+          <div class="h-64 rounded-2xl bg-muted animate-pulse" />
+          <div class="h-48 rounded-2xl bg-muted animate-pulse" />
+        </div>
+      </div>
 
-        <!-- Sections -->
-        <div
-          v-if="sections.length > 0"
-          class="rounded-xl border bg-background p-6"
-        >
-          <h2 class="text-lg font-semibold mb-4">
-            Sections ({{ sections.length }})
-          </h2>
-          <div class="space-y-3">
-            <div
-              v-for="(section, idx) in sections"
-              :key="section.id || idx"
-              class="border rounded-lg p-4 space-y-2"
-            >
-              <div class="flex items-start justify-between">
+      <div
+        v-else-if="content"
+        class="grid gap-6 lg:grid-cols-[2fr,1fr]"
+      >
+        <div class="space-y-6">
+          <UCard class="space-y-4">
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center gap-2 text-sm">
+                <UBadge
+                  v-if="frontmatter?.contentType"
+                  variant="soft"
+                >
+                  {{ frontmatter.contentType }}
+                </UBadge>
+                <UBadge
+                  v-if="sourceDetails?.sourceType"
+                  color="neutral"
+                  variant="soft"
+                  class="capitalize"
+                >
+                  {{ sourceDetails.sourceType.replace('_', ' ') }}
+                </UBadge>
+                <span class="text-muted-500">
+                  {{ sections.length }} sections • {{ totalWordCount }} words
+                </span>
+              </div>
+              <div class="flex flex-wrap gap-6 text-sm text-muted-500">
                 <div>
-                  <h3 class="font-medium">
-                    {{ section.title || `Section ${section.index ?? idx + 1}` }}
-                  </h3>
-                  <p class="text-sm text-muted-foreground">
-                    Type: {{ section.type || 'unknown' }}
-                    <span v-if="section.level"> • Level: H{{ section.level }}</span>
-                    <span v-if="section.wordCount"> • {{ section.wordCount }} words</span>
+                  <p class="text-xs uppercase tracking-wide text-muted-400">
+                    Created by
+                  </p>
+                  <p>{{ contentRecord?.createdByUserId || '—' }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-muted-400">
+                    Version
+                  </p>
+                  <p>{{ currentVersion?.version ?? '1' }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-muted-400">
+                    Primary keyword
+                  </p>
+                  <p>{{ frontmatter?.primaryKeyword || '—' }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-muted-400">
+                    Locale
+                  </p>
+                  <p>{{ frontmatter?.targetLocale || '—' }}</p>
+                </div>
+              </div>
+              <div
+                v-if="sourceLink"
+                class="flex items-center gap-2"
+              >
+                <UButton
+                  color="neutral"
+                  icon="i-lucide-link-2"
+                  variant="ghost"
+                  size="sm"
+                  :to="sourceLink"
+                  target="_blank"
+                >
+                  View source
+                </UButton>
+                <p class="text-xs text-muted-500">
+                  {{ sourceDetails?.externalId }}
+                </p>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard v-if="sections.length > 0">
+            <template #header>
+              <div class="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p class="text-sm text-muted-500">
+                    Section outline
+                  </p>
+                  <p class="text-xl font-semibold">
+                    {{ sections.length }} structured blocks
                   </p>
                 </div>
                 <UBadge
-                  v-if="section.meta?.isKeySection"
-                  color="primary"
-                  size="xs"
+                  variant="soft"
+                  size="sm"
                 >
-                  Key Section
+                  {{ totalWordCount }} words
                 </UBadge>
               </div>
+            </template>
+            <div class="space-y-3">
               <div
-                v-if="section.startOffset !== undefined && section.endOffset !== undefined"
-                class="text-xs text-muted-foreground"
+                v-for="section in sections"
+                :key="section.id"
+                class="rounded-2xl border border-muted-200/60 bg-muted/30 p-4 space-y-3"
               >
-                Offset: {{ section.startOffset }} - {{ section.endOffset }}
-                <span v-if="section.anchor"> • Anchor: {{ section.anchor }}</span>
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="font-medium">
+                      {{ section.title }}
+                    </p>
+                    <p class="text-xs uppercase tracking-wide text-muted-400">
+                      H{{ section.level }} • {{ section.wordCount }} words
+                    </p>
+                  </div>
+                  <UBadge
+                    color="neutral"
+                    size="xs"
+                    class="capitalize"
+                  >
+                    {{ section.type }}
+                  </UBadge>
+                </div>
+                <p
+                  v-if="section.summary"
+                  class="text-sm text-muted-500"
+                >
+                  {{ section.summary }}
+                </p>
+                <div class="text-sm text-muted-600 whitespace-pre-line">
+                  {{ sectionPreview(section.body) }}
+                </div>
+                <UAccordion
+                  size="xs"
+                  variant="ghost"
+                >
+                  <UAccordionItem :value="section.id">
+                    <template #label>
+                      <span class="text-primary text-xs">
+                        Show full section
+                      </span>
+                    </template>
+                    <pre class="whitespace-pre-wrap rounded-md bg-background/80 p-3 text-xs overflow-x-auto">{{ section.body }}</pre>
+                  </UAccordionItem>
+                </UAccordion>
+                <div class="flex justify-end">
+                  <UButton
+                    size="xs"
+                    color="primary"
+                    variant="ghost"
+                    icon="i-lucide-edit-3"
+                    @click="focusSection(section.id)"
+                  >
+                    Edit this section
+                  </UButton>
+                </div>
               </div>
-              <pre
-                v-if="content?.currentVersion?.bodyMdx && section.startOffset !== undefined && section.endOffset !== undefined"
-                class="text-xs bg-muted p-2 rounded mt-2 overflow-x-auto"
-              >
-                {{ content.currentVersion.bodyMdx.slice(section.startOffset, section.endOffset) }}
-              </pre>
             </div>
-          </div>
+          </UCard>
+
+          <UCard v-if="hasGeneratedContent">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <p class="text-lg font-semibold">
+                  Draft body (MDX)
+                </p>
+                <UBadge
+                  v-if="currentVersion?.version"
+                  size="sm"
+                  variant="soft"
+                >
+                  v{{ currentVersion.version }}
+                </UBadge>
+              </div>
+            </template>
+            <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ generatedContent }}</pre>
+          </UCard>
+
+          <UCard v-if="assets">
+            <template #header>
+              <p class="text-lg font-semibold">
+                Generation metadata
+              </p>
+            </template>
+            <div class="space-y-2 text-sm">
+              <p class="text-muted-500">
+                Engine: {{ assets.generator?.engine || 'codex' }}
+              </p>
+              <p class="text-muted-500">
+                Generated at: {{ assets.generator?.generatedAt ? formatDate(assets.generator.generatedAt) : '—' }}
+              </p>
+              <p
+                v-if="assets.generator?.stages"
+                class="text-muted-500"
+              >
+                Stages: {{ Array.isArray(assets.generator.stages) ? assets.generator.stages.join(', ') : assets.generator.stages }}
+              </p>
+            </div>
+          </UCard>
         </div>
 
-        <!-- Frontmatter -->
-        <div
-          v-if="frontmatter"
-          class="rounded-xl border bg-background p-6"
-        >
-          <h2 class="text-lg font-semibold mb-4">
-            Frontmatter
-          </h2>
-          <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(frontmatter, null, 2) }}</pre>
-        </div>
+        <div class="space-y-6">
+          <UCard v-if="sourceDetails">
+            <template #header>
+              <p class="text-lg font-semibold">
+                Source material
+              </p>
+            </template>
+            <div class="space-y-2 text-sm">
+              <p>
+                <span class="text-muted-500">Type:</span>
+                <span class="capitalize"> {{ sourceDetails.sourceType.replace('_', ' ') }}</span>
+              </p>
+              <p>
+                <span class="text-muted-500">Ingest status:</span>
+                <span class="capitalize"> {{ sourceDetails.ingestStatus || 'unknown' }}</span>
+              </p>
+              <p>
+                <span class="text-muted-500">External ID:</span>
+                {{ sourceDetails.externalId || '—' }}
+              </p>
+            </div>
+          </UCard>
 
-        <!-- Assets -->
-        <div
-          v-if="assets"
-          class="rounded-xl border bg-background p-6"
-        >
-          <h2 class="text-lg font-semibold mb-4">
-            Assets
-          </h2>
-          <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(assets, null, 2) }}</pre>
-        </div>
+          <UCard v-if="frontmatter">
+            <template #header>
+              <p class="text-lg font-semibold">
+                Frontmatter
+              </p>
+            </template>
+            <dl class="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt class="text-muted-500">
+                  Slug
+                </dt>
+                <dd class="font-medium">
+                  {{ frontmatter.slug }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-500">
+                  Status
+                </dt>
+                <dd class="font-medium capitalize">
+                  {{ frontmatter.status }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-500">
+                  Content type
+                </dt>
+                <dd class="font-medium capitalize">
+                  {{ frontmatter.contentType }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-500">
+                  Source content ID
+                </dt>
+                <dd class="font-medium">
+                  {{ frontmatter.sourceContentId || '—' }}
+                </dd>
+              </div>
+            </dl>
+          </UCard>
 
-        <!-- SEO Snapshot -->
-        <div
-          v-if="seoSnapshot"
-          class="rounded-xl border bg-background p-6"
-        >
-          <h2 class="text-lg font-semibold mb-4">
-            SEO Snapshot
-          </h2>
-          <pre class="text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ JSON.stringify(seoSnapshot, null, 2) }}</pre>
-        </div>
-      </div>
+          <UCard v-if="seoPlan || seoKeywords.length">
+            <template #header>
+              <p class="text-lg font-semibold">
+                SEO plan
+              </p>
+            </template>
+            <div class="space-y-3">
+              <p
+                v-if="seoPlan?.description"
+                class="text-sm text-muted-500"
+              >
+                {{ seoPlan.description }}
+              </p>
+              <div
+                v-if="seoKeywords.length"
+                class="flex flex-wrap gap-2"
+              >
+                <UBadge
+                  v-for="keyword in seoKeywords"
+                  :key="keyword"
+                  variant="soft"
+                  size="xs"
+                >
+                  {{ keyword }}
+                </UBadge>
+              </div>
+              <p
+                v-if="seoPlan?.schemaType"
+                class="text-xs uppercase tracking-wide text-muted-400"
+              >
+                Schema: {{ seoPlan.schemaType }}
+              </p>
+            </div>
+          </UCard>
 
-      <!-- Chat Interface for Editing -->
-      <div class="space-y-4">
-        <div
-          v-if="messages.length > 0"
-          class="rounded-xl border bg-background p-4"
-        >
-          <ChatMessagesList
-            :messages="messages"
-            :status="status"
-          />
-        </div>
+          <UCard>
+            <template #header>
+              <p class="text-lg font-semibold">
+                Draft conversation
+              </p>
+            </template>
+            <div class="space-y-4">
+              <div
+                v-if="sectionSelectOptions.length"
+                class="space-y-1"
+              >
+                <label class="text-xs uppercase tracking-wide text-muted-500">
+                  Editing section
+                </label>
+                <USelectMenu
+                  v-model="selectedSectionId"
+                  :items="sectionSelectOptions"
+                  value-key="value"
+                  placeholder="Select a section…"
+                />
+                <p
+                  v-if="selectedSection"
+                  class="text-xs text-muted-500"
+                >
+                  {{ selectedSection.wordCount }} words · {{ selectedSection.type }}
+                </p>
+              </div>
+              <div
+                v-else
+                class="text-xs text-muted-500"
+              >
+                Sections will appear here once a draft exists.
+              </div>
+              <div
+                v-if="messages.length > 0"
+                class="rounded-xl border border-muted-200/60 bg-muted/30 p-2"
+              >
+                <ChatMessagesList
+                  :messages="messages"
+                  :status="status"
+                />
+              </div>
 
-        <UChatPrompt
-          v-model="prompt"
-          placeholder="Add instructions to update this draft…"
-          variant="subtle"
-          class="[view-transition-name:chat-prompt]"
-          :disabled="loading || status === 'submitted' || status === 'streaming'"
-          @submit="handleSubmit"
-        >
-          <UChatPromptSubmit :status="promptStatus" />
-        </UChatPrompt>
+              <UChatPrompt
+                v-model="prompt"
+                placeholder="Describe the change you want..."
+                variant="subtle"
+                class="[view-transition-name:chat-prompt]"
+                :disabled="loading || status === 'submitted' || status === 'streaming' || !selectedSectionId"
+                @submit="handleSubmit"
+              >
+                <UChatPromptSubmit :status="promptStatus" />
+              </UChatPrompt>
+            </div>
+          </UCard>
+        </div>
       </div>
     </UContainer>
   </div>

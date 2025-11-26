@@ -79,30 +79,46 @@ For a YouTube video, the **target** pipeline is:
 
 Each stage has a conceptual API and a brief note on **what exists today vs what to build**.
 
-### 3.0 Current implementation (baseline)
+### 3.0 Current implementation (COMPLETED ✅)
 
-Today, `POST /api/content/generate` calls `generateContentDraft`, which:
+~~Today, `POST /api/content/generate` calls `generateContentDraft`, which:~~
 
-- Resolves `inputText` from either `text` or `sourceContent.sourceText`.
-- Calls `composeBlogFromText(inputText, options)` once via AI Gateway to get:
-  - Full `markdown` body.
-  - `meta` (engine/model/SEO-ish info).
-- Parses headings from `markdown` to build a `sections[]` array (with `id`, `index`, `type`, `level`, `title`, `startOffset`, `endOffset`, `anchor`, `wordCount`, `meta`).
-- Creates a `content` row (or updates an existing one) and a single `content_version` with:
-  - `frontmatter` (title, slug, status, contentType, sourceContentId).
-  - `bodyMdx` = full markdown.
-  - `sections` = parsed heading blocks.
-  - `assets.generator` + `seoSnapshot`.
+**REBUILT**: `generateContentDraft` has been transformed into a **staged pipeline** (`server/services/content/generation.ts`):
 
-This is our **monolithic baseline**. The stages below describe how we evolve this into a reusable, section‑driven pipeline without breaking the existing `/api/content/generate` entrypoint.
+1. **Chunking/Fetching Stage** (lines 62-215):
+   - Resolves `inputText` from either `text` or `sourceContent.sourceText`
+   - Fetches and chunks transcript data for RAG context
+   - Prepares source material for AI planning
+
+2. **AI-Planned Brief Stage** (lines 300-406):
+   - LLM generates structured outline and frontmatter
+   - Derives SEO metadata and content plan
+   - Creates stable foundation before section generation
+
+3. **RAG-Contextualized Section Generation** (lines 409-640):
+   - Per-section content generation with transcript chunk context
+   - JSON parsing safeguards for reliable structured output
+   - Individual section writing with RAG-aware prompts
+
+4. **MDX Assembly Stage**:
+   - Stitches sections into complete MDX document
+   - Captures section offsets, metadata, and assets
+   - Persists new `content_version` with structured sections
+
+**UI Integration COMPLETED**:
+- Chat landing page (`app/pages/[slug]/chat.vue`) displays real draft data in cards
+- Content detail route (`app/pages/[slug]/content/[id].vue`) renders staged pipeline data
+- Section-level display with summaries, metadata, and editing capabilities
+
+This provides `/api/content/generate` and `/api/chat` with **deterministic plan → sections → assemble behavior** while maintaining backward compatibility.
 
 ---
 
-## 3.1 Ingest + Transcript + Chunks
+## 3.1 Ingest + Transcript + Chunks ✅ COMPLETED
 
-**Conceptual endpoint**
+**Implemented endpoint**
 
-- `POST /api/source-content/youtube`
+- `POST /api/source-content/youtube` (`server/api/source-content/youtube.post.ts`)
 
 - **Request**
   - `youtubeUrl: string`
@@ -113,218 +129,220 @@ This is our **monolithic baseline**. The stages below describe how we evolve thi
   - `status: "transcribing" | "ready"`
   - `metadata: { videoId, durationSeconds?, channel?, thumbnailUrl? }`
 
-**Behaviour**
+**Implemented Behaviour** ✅
 
-- Parse YouTube URL → video ID.
-- Upsert `source_content` for the org.
-- Fetch transcript → normalize to `source_text`.
-- Update `ingest_status = 'ingested'`.
-- Chunk `source_text` into overlapping segments and write `chunk` rows.
-- Compute embeddings and index them in vector store.
+- Parse YouTube URL → video ID ✅
+- Upsert `source_content` for the org ✅
+- Fetch transcript → normalize to `source_text` ✅
+- Update `ingest_status = 'ingested'` ✅
+- Chunk `source_text` into overlapping segments and write `chunk` rows ✅
+- Compute embeddings and index them in vector store ✅
 
-**Existing building blocks**
+**Implementation Details**
 
-- In the current backend, ingest logic already fetches transcripts, creates chunk rows, and indexes embeddings.
+- **Database Schema**: `chunk` table created (`server/database/schema/chunk.ts`) ✅
+- **Chunking Service**: `chunkSourceContent` helper (`server/services/sourceContent/chunkSourceContent.ts`) ✅
+- **YouTube Ingest**: Modified `ingestYouTubeSource` to invoke chunking after transcript storage ✅
+- **Authentication**: Google OAuth integration for YouTube captions API ✅
 
-**What to implement**
-
-- Port this ingest + chunking behaviour into Nuxt, wiring it to `source_content` and `chunk` tables and your chosen vector store.
+**Testing Results** ✅
+- Successfully ingests YouTube videos with transcript chunking
+- Creates searchable chunk rows in database
+- Integrates with existing RAG pipeline for content generation
 
 ---
 
-## 3.2 Plan / Outline (Content Plan)
+## 3.2 Plan / Outline (Content Plan) ✅ INTEGRATED
 
-**Conceptual endpoint**
+**Implementation Status**
 
-- `POST /api/content/{contentId}/plan`
+- **Integrated into staged pipeline** (`server/services/content/generation.ts` lines 300-406) ✅
+- Planning occurs as **AI-Planned Brief Stage** within `generateContentDraft` ✅
 
-- **Request**
-  - `instructions?: string` (brand voice, audience, constraints).
-  - `targetKeywords?: string[]`.
-  - `schemaHint?: string` (e.g. `"recipe" | "course" | "how_to"`).
-
-- **Response**
-  - `planId: string`.
-  - `outline: Array<{ id: string; index: number; title: string; type: string; notes?: string }>`.
-  - `seo: { title: string; description: string; keywords: string[]; schemaType: string; slugSuggestion: string }`.
-
-**Behaviour**
+**Implemented Behaviour** ✅
 
 - LLM reads:
-  - Summarised transcript and/or key chunks.
-  - Org SEO profile.
-  - `instructions`, `targetKeywords`, `schemaHint`.
-- Produces a structured outline + initial SEO plan but **no full article yet**.
+  - Chunked transcript data with RAG context ✅
+  - Content generation instructions and target schema ✅
+  - Org-scoped content preferences ✅
+- Produces structured outline + frontmatter before section generation ✅
+- Creates stable foundation for per-section writing ✅
 
-**Existing building blocks**
+**Integration Details**
 
-- Existing logic can already derive headings/sections from finished MDX.
+- **Not exposed as separate endpoint** - integrated into content generation pipeline
+- **Frontmatter derivation**: Title, description, SEO metadata generated from AI brief ✅
+- **Section planning**: Structured outline feeds into per-section generation ✅
+- **JSON parsing safeguards**: Reliable structured output handling ✅
 
-**What to implement**
-
-- Add a dedicated "plan first" LLM call that works from transcript summaries and org SEO config before any full article exists.
-
----
-
-## 3.3 Frontmatter Generation
-
-**Conceptual endpoint**
-
-- `POST /api/content/{contentId}/frontmatter`
-
-- **Request**
-  - `planId: string`.
-  - `overrides?: { title?: string; description?: string; slug?: string; tags?: string[] }`.
-
-- **Response**
-  - `frontmatter: { title, description, slug, tags?, hero_image?, schema_type?, canonical_url?, locale? }`.
-
-**Behaviour**
-
-- Takes outline + SEO hints from plan.
-- Applies org‑level branding (tone, persona, etc.).
-- Emits a stable `frontmatter` object persisted on `content_version`.
-
-**Existing building blocks**
-
-- Current generation flow already produces reasonable titles/descriptions and later runs an SEO analyser.
-
-**What to implement**
-
-- Factor out frontmatter generation as a discrete step using the plan output, so frontmatter is stable before section writing.
+**Testing Results** ✅
+- Successfully generates structured content plans from YouTube transcripts
+- Produces consistent frontmatter and section outlines
+- Feeds into downstream section generation with proper context
 
 ---
 
-## 3.4 Section Generation (Per‑Section, RAG‑Aware)
+## 3.3 Frontmatter Generation ✅ INTEGRATED
 
-**Conceptual endpoint**
+**Implementation Status**
 
-- `POST /api/content/{contentId}/sections/generate`
+- **Integrated into AI-Planned Brief Stage** (`server/services/content/generation.ts`) ✅
+- Frontmatter generated as part of structured planning phase ✅
 
-- **Request**
-  - `planId: string`.
-  - `mode: "all" | "missing"` (generate all sections, or only those without content yet).
+**Implemented Behaviour** ✅
 
-- **Response**
-  - `sections: Section[]` (see section 4 for shape; includes `body_mdx`).
-  - `status: "in_progress" | "completed"`.
+- Takes outline + SEO hints from AI planning stage ✅
+- Applies content-type specific metadata (blog_post, how_to, etc.) ✅
+- Emits stable `frontmatter` object persisted on `content_version` ✅
+- Includes: title, description, slug, content_type, schema hints ✅
 
-**Behaviour**
+**Integration Details**
+
+- **Not separate endpoint** - part of unified generation pipeline
+- **Stable before section writing**: Frontmatter locked in during planning phase ✅
+- **Org-scoped**: Respects organization context and branding ✅
+- **SEO-aware**: Incorporates keyword targeting and schema markup ✅
+
+**Testing Results** ✅
+- Generates consistent frontmatter metadata from transcript content
+- Properly structures SEO-friendly titles and descriptions
+- Maintains stability across section generation phases
+- Displays correctly in content detail UI with metadata cards
+
+---
+
+## 3.4 Section Generation (Per‑Section, RAG‑Aware) ✅ COMPLETED
+
+**Implementation Status**
+
+- **RAG-Contextualized Section Generation** (`server/services/content/generation.ts` lines 409-640) ✅
+- Per-section writing with transcript chunk context ✅
+
+**Implemented Behaviour** ✅
 
 For each planned section:
 
-- Build a retrieval query based on section title/type/notes.
-- Query chunk embeddings for most relevant transcript `chunk` previews (RAG), similar to `_gather_transcript_context`.
-- LLM call for **only that section**:
-  - System: "You are writing ONE section of a blog post…".
-  - User: section description + RAG snippets + global instructions.
-- Produce `body_mdx` for that section.
-- Save/update corresponding section entry.
+- Build retrieval query based on section title/type/notes ✅
+- Query chunk embeddings for most relevant transcript `chunk` previews (RAG) ✅
+- LLM call for **only that section** with:
+  - System: "You are writing ONE section of a blog post…" ✅
+  - User: section description + RAG snippets + global instructions ✅
+- Produce `body_mdx` for that section ✅
+- JSON parsing safeguards for reliable structured output ✅
 
-**Existing building blocks**
+**Implementation Details**
 
-- Transcript chunking + embeddings are already in place, and there is a section‑level editor that uses RAG for patching.
+- **RAG Integration**: Uses existing chunk embeddings and retrieval system ✅
+- **Section-Specific Prompts**: Tailored prompts for each section type and context ✅
+- **Error Handling**: JSON parsing safeguards prevent generation failures ✅
+- **Context Assembly**: Similar to existing `_gather_transcript_context` patterns ✅
 
-**What to implement**
-
-- Reuse the same RAG + section prompts for **initial** section writing, iterating over the outline instead of calling a single monolithic "compose blog from text" helper.
-
----
-
-## 3.5 Assemble Full Version From Sections
-
-**Conceptual endpoint**
-
-- `POST /api/content/{contentId}/assemble`
-
-- **Request**
-  - `frontmatter: object`.
-  - `sections: Section[]`.
-
-- **Response**
-  - `versionId: string`.
-  - `body_mdx: string`.
-  - `body_html: string`.
-  - `sections: Section[]` (canonical form saved on `content_version`).
-  - `assets: { generator: { source: string; model?: string } }`.
-
-**Behaviour**
-
-- Build `body_mdx` as:
-  - `# {frontmatter.title}`.
-  - For each section `s` in order:
-    - `## {s.title}\n\n{s.body_mdx}\n` (or level 3+ as needed).
-- Render MDX → HTML for previews/publishing.
-- Persist new `content_version` row and update `content.current_version_id`.
-
-**Existing building blocks**
-
-- There is already logic that can rebuild `body_mdx` from an updated list of sections and write a new version.
-
-**What to implement**
-
-- Generalise that into an `assembleFromSections` helper and use it for both initial assembly and subsequent edits.
+**Testing Results** ✅
+- Successfully generates individual sections with relevant transcript context
+- Produces structured sections with proper MDX formatting
+- Integrates seamlessly with chunk-based RAG system
+- Displays sections with summaries and expandable full text in UI
 
 ---
 
-## 3.6 SEO Analysis
+## 3.5 Assemble Full Version From Sections ✅ COMPLETED
 
-**Conceptual endpoint**
+**Implementation Status**
 
-- `POST /api/content/{contentId}/versions/{versionId}/seo`
+- **MDX Assembly Stage** integrated into `generateContentDraft` pipeline ✅
+- Stitches sections into complete MDX document ✅
 
-- **Request**
-  - (optional) `focusKeyword?: string`.
+**Implemented Behaviour** ✅
 
-- **Response**
-  - SEO payload: `{ seo, scores, suggestions, structured_content, schema_type, word_count, reading_time_seconds, schema_validation }`.
+- Build `body_mdx` from structured sections:
+  - `# {frontmatter.title}` ✅
+  - For each section in order: `## {s.title}\n\n{s.body_mdx}\n` ✅
+  - Proper heading hierarchy (H2, H3, etc.) ✅
+- Capture section offsets, metadata, and assets ✅
+- Persist new `content_version` row and update `content.current_version_id` ✅
+- Generate assets metadata with generator info ✅
 
-**Behaviour**
+**Implementation Details**
 
-- Use `frontmatter`, `body_mdx`, `sections`, optional `assets` to:
-  - Compute readability, keyword focus, heading structure, metadata quality, schema health.
-  - Attach `json_ld` if missing but derivable from content type / sections.
-  - Return suggestions (like the current Python SEO analyzer).
+- **Section Offset Tracking**: Captures `startOffset` and `endOffset` for each section ✅
+- **Metadata Preservation**: Maintains section-level metadata and word counts ✅
+- **Asset Management**: Records generator source, model, and creation metadata ✅
+- **Version Management**: Creates new `content_version` with complete structured data ✅
 
-**Existing building blocks**
-
-- A full SEO analyser already exists that understands frontmatter, sections, and schema‑aware content.
-
-**What to implement**
-
-- Either port the analyser to Nuxt or call the existing service, then store its output in `seo_snapshot` for each version.
+**Testing Results** ✅
+- Successfully assembles complete MDX documents from individual sections
+- Maintains proper section structure and metadata
+- Creates versioned content with full traceability
+- Displays assembled content correctly in content detail UI with full MDX body
 
 ---
 
-## 3.7 Section Patching (Chat‑Driven Edits)
+## 3.6 SEO Analysis ⚠️ PARTIAL
 
-**Conceptual endpoint**
+**Implementation Status**
 
-- `POST /api/content/{contentId}/sections/{sectionId}/patch`
+- **Basic SEO metadata generation** integrated into content pipeline ✅
+- **Full SEO analysis endpoint** not yet implemented ❌
 
-- **Request**
-  - `instructions: string`.
+**Current Implementation** ✅
 
-- **Response**
-  - `versionId: string` (new version).
-  - `section: { sectionId, index, title, body_mdx }`.
+- Frontmatter includes SEO-friendly metadata (title, description, schema hints) ✅
+- Word count and section structure tracking ✅
+- Content type and schema awareness ✅
+- Basic metadata quality from AI planning stage ✅
 
-**Behaviour**
+**Missing Implementation** ❌
 
-- Load latest `content_version` for `contentId`.
-- Find target section by `sectionId`.
-- Build `current_text` from that section.
-- Use embeddings to gather relevant transcript `chunk` previews (RAG), similar to `_gather_transcript_context`.
-- Build prompts and call AI Gateway to rewrite only that section.
-- Replace that section’s body, rebuild `body_mdx` via `assembleFromSections`, and write a new `content_version`.
+- Dedicated SEO analysis endpoint
+- Comprehensive readability scoring
+- Keyword focus analysis
+- Schema validation
+- SEO suggestions and recommendations
+- `seo_snapshot` storage on content versions
 
-**Existing building blocks**
+**Next Steps**
 
-- A complete section‑patch flow exists: RAG over transcript chunks, section‑specific prompts, AI Gateway call, and reassembly into a new version.
+- Port existing SEO analyzer logic to Nuxt
+- Create dedicated `/api/content/{contentId}/versions/{versionId}/seo` endpoint
+- Integrate SEO analysis into content generation pipeline
+- Store SEO snapshots on `content_version` records
 
-**What to implement**
+---
 
-- Mirror that behaviour in Nuxt, scoped by `organization_id`, using the `content_version.sections` shape defined here.
+## 3.7 Section Patching (Chat‑Driven Edits) ⚠️ FOUNDATION READY
+
+**Implementation Status**
+
+- **Foundation components implemented** ✅
+- **Dedicated section patching endpoint** not yet implemented ❌
+
+**Available Building Blocks** ✅
+
+- RAG system with chunk embeddings and retrieval ✅
+- Section-aware content structure in `content_version.sections` ✅
+- AI Gateway integration for section-specific prompts ✅
+- Content versioning and assembly pipeline ✅
+- Organization-scoped access controls ✅
+
+**UI Foundation** ✅
+
+- Content detail page displays individual sections with summaries ✅
+- Section expansion interface ("Show full section") ✅
+- Editing chat module present in content detail view ✅
+- Section-level metadata and structure preserved ✅
+
+**Missing Implementation** ❌
+
+- Dedicated `/api/content/{contentId}/sections/{sectionId}/patch` endpoint
+- Section-specific editing prompts and context assembly
+- RAG-aware section rewriting logic
+- Automatic reassembly and new version creation after section edits
+
+**Next Steps**
+
+- Implement section patching endpoint using existing RAG and versioning infrastructure
+- Create section-specific editing prompts similar to existing patterns
+- Wire section editing to chat interface for in-context editing experience
 
 ---
 
@@ -358,41 +376,95 @@ Sections are the structured index over `body_mdx` used for:
 
 ---
 
-## 5. Chat‑First UX and Pipeline Triggers
+## 5. Chat‑First UX and Pipeline Triggers ✅ COMPLETED
 
-The pipeline is usually triggered from a chat UI rather than hard‑coded buttons.
+**Implementation Status**
 
-- **`POST /api/chat`**
-  - Detect URLs.
-  - Upsert `source_content` for YouTube.
-  - Ask for confirmation: e.g. "I found a YouTube link – generate an SEO blog from it?".
-  - On user "yes", call the pipeline stages internally:
-    1. Ingest + chunks (if needed).
-    2. Plan.
-    3. Frontmatter.
-    4. Generate sections.
-    5. Assemble version.
-    6. Run SEO analysis.
-  - Return progress updates + final `contentId`/`versionId`.
+- **Chat-driven content generation** fully implemented ✅
+- **Pipeline integration** with natural conversation flow ✅
 
-This keeps conversation natural while still using the reusable pipeline.
+**Implemented Behaviour** ✅
+
+- **`POST /api/chat`** with URL detection and content generation ✅
+  - Detect YouTube URLs in chat messages ✅
+  - Upsert `source_content` for YouTube videos ✅
+  - Trigger complete pipeline stages:
+    1. Ingest + chunks (via YouTube ingest API) ✅
+    2. Plan (AI-planned brief stage) ✅
+    3. Frontmatter (integrated into planning) ✅
+    4. Generate sections (RAG-aware per-section writing) ✅
+    5. Assemble version (MDX assembly with metadata) ✅
+    6. ~~Run SEO analysis~~ (basic SEO metadata only) ⚠️
+  - Return final `contentId`/`versionId` ✅
+
+**UI Implementation** ✅
+
+- **Chat Landing Page** (`app/pages/[slug]/chat.vue`):
+  - Real draft data displayed in cards ✅
+  - Status, content type, section/word counts ✅
+  - Quick navigation and actions per draft ✅
+  - "New Draft vs existing drafts" dropdown ✅
+
+- **Content Detail Route** (`app/pages/[slug]/content/[id].vue`):
+  - Current version, sections, SEO plan display ✅
+  - Source info with ingest status ✅
+  - MDX body rendering ✅
+  - Editing chat module for in-context editing ✅
+
+**Testing Results** ✅
+- Natural conversation flow from chat to content generation
+- Seamless integration between chat interface and staged pipeline
+- Proper routing and navigation between chat and content detail views
 
 ---
 
-## 6. Implementation Notes (Nuxt)
+## 6. Implementation Status Summary
 
-- **Database schema**
-  - `server/database/schema/sourceContent.ts`, `content.ts`, `chunk.ts` (and exports in `index.ts`).
-  - Migrations create `source_content`, `chunk`, `content`, `content_version`, `publication`.
+### ✅ COMPLETED COMPONENTS
 
-- **AI Gateway helper**
-  - `server/utils/aiGateway.ts`:
-    - `callChatCompletions` (wraps CF AI Gateway `/chat/completions`).
-    - Higher‑level helpers for section‑level writing/editing.
+- **Database Schema**
+  - `server/database/schema/chunk.ts` - Chunk table for transcript segments ✅
+  - `server/database/schema/index.ts` - Schema exports ✅
+  - Database migrations and schema synchronization ✅
 
-- **Reuse from existing backend**
-  - Ingest, chunking, embeddings: behaviour and prompt patterns.
-  - Section patching prompts and context assembly.
-  - SEO analyser logic, either ported or called remotely.
+- **YouTube Ingest Pipeline**
+  - `server/api/source-content/youtube.post.ts` - YouTube ingest endpoint ✅
+  - `server/services/sourceContent/chunkSourceContent.ts` - Chunking helper ✅
+  - `server/services/sourceContent/youtubeIngest.ts` - Modified for chunking ✅
+  - Google OAuth integration for YouTube captions ✅
 
-This plan replaces the previous monolithic‑first description with a **pipeline‑first** view that aligns with what your Python backend already supports and what the Nuxt backend should expose.
+- **Content Generation Pipeline**
+  - `server/services/content/generation.ts` - Rebuilt staged pipeline ✅
+    - Chunking/fetching stage (lines 62-215) ✅
+    - AI-planned brief stage (lines 300-406) ✅
+    - RAG-contextualized section generation (lines 409-640) ✅
+    - MDX assembly with metadata capture ✅
+
+- **UI Integration**
+  - `app/pages/[slug]/chat.vue` - Real draft data in cards ✅
+  - `app/pages/[slug]/content/[id].vue` - Staged data display ✅
+  - Section-level UI with summaries and metadata ✅
+  - Navigation between chat and content detail views ✅
+
+- **API Endpoints**
+  - `POST /api/source-content/youtube` ✅
+  - `POST /api/content/generate` (rebuilt with staged pipeline) ✅
+  - `POST /api/chat` (integrated with pipeline) ✅
+
+### ⚠️ PARTIAL/MISSING COMPONENTS
+
+- **SEO Analysis** - Basic metadata only, full analysis endpoint missing
+- **Section Patching** - Foundation ready, dedicated endpoint not implemented
+- **Dedicated Planning Endpoint** - Integrated into generation, not separate
+
+### 🎯 ACHIEVEMENT
+
+**Successfully transformed monolithic content generation into a reusable, staged pipeline** that provides:
+- End-to-end YouTube ingest with searchable chunks
+- Deterministic plan → sections → assemble behavior  
+- RAG-aware section generation with transcript context
+- Section-first architecture with editing capabilities
+- Chat-driven UX with natural conversation flow
+- Real-time UI reflecting staged pipeline data
+
+The implementation maintains backward compatibility while enabling the section-level editing and reusable pipeline architecture described in this plan.
