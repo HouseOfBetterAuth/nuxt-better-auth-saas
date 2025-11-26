@@ -48,9 +48,19 @@ const youtubeIntegration = computed(() => {
 })
 
 const integrationStatus = computed(() => {
-  if (!youtubeIntegration.value)
+  const integration = youtubeIntegration.value
+  if (!integration)
     return 'disconnected'
-  return youtubeIntegration.value.status || 'connected'
+  if (!('status' in integration) || integration.status == null)
+    return 'unknown'
+  return integration.status
+})
+
+const connectedByUser = computed(() => {
+  const integration = youtubeIntegration.value
+  if (!integration?.connectedByUserId)
+    return null
+  return members.value.find(member => member.userId === integration.connectedByUserId) || null
 })
 
 const connectLoading = ref(false)
@@ -217,8 +227,11 @@ watchEffect(() => {
             </div>
 
             <div class="rounded-lg border border-dashed border-muted-200/70 p-3 text-sm text-muted-500 space-y-1">
-              <p v-if="youtubeIntegration">
-                Connected by <strong>{{ youtubeIntegration.connectedByUserId }}</strong>
+              <p v-if="youtubeIntegration && connectedByUser">
+                Connected by <strong>{{ connectedByUser.name || connectedByUser.email }}</strong>
+              </p>
+              <p v-else-if="youtubeIntegration">
+                Connected by <strong>Unknown user</strong>
               </p>
               <p>
                 Last updated:

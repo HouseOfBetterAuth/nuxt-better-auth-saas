@@ -112,7 +112,13 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
         const status = error?.response?.status ?? error?.statusCode ?? error?.status
         console.error(`[Billing Guard] Subscription check failed (attempt ${attempt}/${maxAttempts}) for org ${orgId}:`, error)
 
-        // Treat 4xx responses as terminal but allow fail-open handling downstream
+        // 401/403 mean the user isn't authorized; stop retrying and block
+        if (status === 401 || status === 403) {
+          subs = null
+          break
+        }
+
+        // Treat other 4xx responses as terminal but allow fail-open handling downstream
         if (status && status >= 400 && status < 500) {
           subs = null
           break

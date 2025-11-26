@@ -84,18 +84,6 @@ if (activeOrg.value?.data) {
   teamSlug.value = activeOrg.value.data.slug
 }
 
-// Watch for changes
-watch(() => activeOrg.value?.data, (newData) => {
-  if (newData) {
-    // Only update if values match the PREVIOUS org (meaning we switched)
-    // Or if we're initializing. We don't want to overwrite user typing.
-    // Simplest strategy: If ID changes, update.
-    if (newData.name !== teamName.value && newData.id !== activeOrg.value?.data?.id) {
-      // This logic is tricky. Let's stick to the previous safe watcher.
-    }
-  }
-}, { deep: true })
-
 // Better watcher: Watch ID changes to handle switching
 watch(() => activeOrg.value?.data?.id, (newId) => {
   if (newId && activeOrg.value?.data) {
