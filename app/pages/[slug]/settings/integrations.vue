@@ -3,9 +3,9 @@ definePageMeta({
   layout: 'dashboard'
 })
 
-const route = useRoute()
+const currentRoute = useRoute()
 const router = useRouter()
-const slug = computed(() => route.params.slug as string)
+const slug = computed(() => currentRoute.params.slug as string)
 const toast = useToast()
 
 const { user, useActiveOrganization } = useAuth()
@@ -169,11 +169,11 @@ async function disconnectYoutube() {
 watchEffect(() => {
   if (!import.meta.client)
     return
-  if (route.query.connected === 'youtube') {
+  if (currentRoute.query.connected === 'youtube') {
     toast.add({ title: 'YouTube connected', description: 'Captions can now be ingested automatically.', color: 'success' })
-    const newQuery = { ...route.query }
+    const newQuery = { ...currentRoute.query }
     delete newQuery.connected
-    router.replace({ path: route.path, query: newQuery })
+    router.replace({ path: currentRoute.path, query: newQuery })
   }
 })
 </script>

@@ -13,14 +13,17 @@ const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 
 const {
-  actions,
+  messages,
   status,
-  errorMessage,
+  actions,
+  sources,
   generation,
-  sendMessage,
-  executeAction,
+  errorMessage,
   isBusy,
-  selectedContentType
+  activeSourceId,
+  selectedContentType,
+  sendMessage,
+  executeAction
 } = useChatSession()
 
 const { data: contents, pending: contentsPending, refresh: refreshContents } = await useFetch(() => '/api/content', {
@@ -176,52 +179,25 @@ function handleQuickChat(action: QuickChatAction) {
   prompt.value = action.prompt
 }
 
-const autoActionKey = ref<string | null>(null)
-const autoActionBusy = ref(false)
-
 async function handleAction(action: ChatActionSuggestion) {
   await executeAction(action)
+
+  const contentId = generation.value?.content?.id
+  if (contentId && activeSourceId.value) {
+    router.push({
+      path: `/${slug.value}/content/${contentId}`,
+      query: {
+        sourceId: activeSourceId.value
+      }
+    })
+  }
 }
 
-if (import.meta.client) {
-  watch(
-    () => actions.value.length,
-    async () => {
-      const currentActions = actions.value
-
-      if (!currentActions.length) {
-        autoActionKey.value = null
-        return
-      }
-
-      if (isBusy.value || autoActionBusy.value) {
-        return
-      }
-
-      const index = currentActions.findIndex(action => action.type === 'suggest_generate_from_source')
-      if (index === -1) {
-        return
-      }
-
-      const autoAction = currentActions[index]!
-      const key = `${autoAction.type}:${autoAction.sourceContentId ?? autoAction.label ?? 'auto'}:${index}`
-      if (autoActionKey.value === key) {
-        return
-      }
-
-      autoActionKey.value = key
-      autoActionBusy.value = true
-
-      try {
-        await handleAction(autoAction)
-      } catch (error) {
-        console.error('Automatic action execution failed', error)
-      } finally {
-        autoActionBusy.value = false
-      }
-    }
-  )
-}
+const { autoActionBusy } = useChatAutoActions({
+  actions,
+  isBusy,
+  handler: handleAction
+})
 
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',

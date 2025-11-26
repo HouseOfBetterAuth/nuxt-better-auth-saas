@@ -38,6 +38,7 @@ export function useChatSession() {
   const generation = useState<ChatGenerationResult | null>('chat/generation', () => null)
   const errorMessage = useState<string | null>('chat/error', () => null)
   const selectedContentType = useState<ContentType>('chat/content-type', () => DEFAULT_CONTENT_TYPE)
+  const activeSourceId = useState<string | null>('chat/active-source-id', () => null)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
@@ -77,18 +78,24 @@ export function useChatSession() {
 
       actions.value = response.actions ?? []
       sources.value = response.sources ?? []
+      const firstSourceId = sources.value[0]?.id ?? null
+      if (firstSourceId) {
+        activeSourceId.value = firstSourceId
+      }
       generation.value = response.generation ?? null
       status.value = 'ready'
+      return response
     } catch (error: any) {
       status.value = 'error'
       errorMessage.value = error?.data?.message || error?.message || 'Something went wrong.'
+      return null
     }
   }
 
   async function sendMessage(prompt: string) {
     const trimmed = prompt.trim()
     if (!trimmed) {
-      return
+      return null
     }
 
     messages.value.push({
@@ -98,7 +105,7 @@ export function useChatSession() {
       createdAt: new Date()
     })
 
-    await callChatEndpoint({ message: trimmed })
+    return await callChatEndpoint({ message: trimmed })
   }
 
   async function generateFromSource(action: ChatActionSuggestion) {
@@ -124,6 +131,7 @@ export function useChatSession() {
 
     status.value = 'streaming'
     errorMessage.value = null
+    activeSourceId.value = action.sourceContentId
 
     try {
       const response = await $fetch<ChatGenerationResult>('/api/content/generate', {
@@ -176,6 +184,7 @@ export function useChatSession() {
     generation,
     errorMessage,
     isBusy,
+    activeSourceId,
     selectedContentType,
     sendMessage,
     executeAction
