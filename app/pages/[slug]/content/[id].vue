@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ChatMessage } from '#shared/utils/types'
 import { computed, ref, watch } from 'vue'
 
 type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
@@ -64,10 +65,42 @@ interface ContentEntity {
   metadata?: Record<string, any>
 }
 
+interface ContentChatSession {
+  id: string
+  status?: string | null
+  sourceContentId?: string | null
+  metadata?: Record<string, any> | null
+}
+
+interface ContentChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  payload?: Record<string, any> | null
+  createdAt: string | Date
+}
+
+interface ContentChatLog {
+  id: string
+  type: string
+  message: string
+  payload?: Record<string, any> | null
+  createdAt: string | Date
+}
+
 interface ContentResponse {
   content: ContentEntity
   currentVersion?: ContentVersion | null
   sourceContent?: SourceContent | null
+  chatSession?: ContentChatSession | null
+  chatMessages?: ContentChatMessage[] | null
+  chatLogs?: ContentChatLog[] | null
+}
+
+type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
+
+interface ChatSubmissionResponse {
+  assistantMessage?: string | null
 }
 
 definePageMeta({
@@ -82,14 +115,9 @@ const contentId = computed(() => currentRoute.params.id as string)
 const prompt = ref('')
 const loading = ref(false)
 const toast = useToast()
-
-const {
-  messages,
-  status,
-  errorMessage,
-  sendMessage,
-  resetSession
-} = useContentChatSession(contentId)
+const conversationMessages = ref<ChatMessage[]>([])
+const chatStatus = ref<ChatStatus>('ready')
+const chatErrorMessage = ref<string | null>(null)
 
 const { data: content, pending, error, refresh } = await useFetch<ContentResponse>(() => `/api/content/${contentId.value}`, {
   key: () => `content-${contentId.value}`,
@@ -107,6 +135,38 @@ const { data: content, pending, error, refresh } = await useFetch<ContentRespons
 const contentRecord = computed(() => content.value?.content ?? null)
 const currentVersion = computed(() => content.value?.currentVersion ?? null)
 const sourceDetails = computed<SourceContent | null>(() => content.value?.sourceContent ?? null)
+const chatLogs = computed(() => content.value?.chatLogs ?? [])
+
+function createMessageId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).slice(2)
+}
+
+function toDate(value: string | Date) {
+  if (value instanceof Date) {
+    return value
+  }
+  const parsed = new Date(value)
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date()
+}
+
+watch(content, (value) => {
+  const chatMessages = value?.chatMessages ?? []
+  if (!Array.isArray(chatMessages)) {
+    conversationMessages.value = []
+    return
+  }
+  conversationMessages.value = chatMessages
+    .filter((message): message is ContentChatMessage => Boolean(message))
+    .map(message => ({
+      id: message.id,
+      role: message.role === 'user' ? 'user' : 'assistant',
+      content: message.content,
+      createdAt: toDate(message.createdAt)
+    }))
+}, { immediate: true })
 
 const title = computed(() => contentRecord.value?.title || 'Untitled draft')
 const contentStatus = computed<ContentStatus>(() => (contentRecord.value?.status as ContentStatus) || 'draft')
@@ -207,34 +267,6 @@ const viewTabs: { label: string, value: ViewTabValue }[] = [
 ]
 
 const activeViewTab = ref<ViewTabValue>('conversation')
-
-const debugSections = computed(() => [
-  {
-    title: 'Content response',
-    description: 'Raw payload returned from /api/content/[id] get endpoint',
-    value: content.value
-  },
-  {
-    title: 'Current version',
-    description: 'Normalized currentVersion object used for rendering',
-    value: currentVersion.value
-  },
-  {
-    title: 'Source details',
-    description: 'Source content metadata and ingest phase',
-    value: sourceDetails.value
-  },
-  {
-    title: 'Outline sections',
-    description: 'Sections computed for the live view outline',
-    value: sections.value
-  },
-  {
-    title: 'Draft conversation (messages)',
-    description: 'Messages stored in useContentChatSession',
-    value: messages.value
-  }
-])
 
 function slugify(value: string) {
   return value
@@ -344,17 +376,6 @@ function _formatDuration(seconds: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-function formatJSON(value: any) {
-  try {
-    if (value === undefined) {
-      return 'undefined'
-    }
-    return JSON.stringify(value, null, 2)
-  } catch (error: any) {
-    return `Unable to format value: ${error?.message || String(error)}`
-  }
-}
-
 function formatTranscriptText(raw: string) {
   if (!raw) {
     return ''
@@ -415,11 +436,11 @@ function focusSection(sectionId: string) {
   selectedSectionId.value = sectionId
 }
 
-const _promptStatus = computed(() => {
-  if (loading.value || status.value === 'submitted' || status.value === 'streaming') {
-    return loading.value ? 'submitted' : (status.value as 'submitted' | 'streaming')
+const promptStatus = computed(() => {
+  if (loading.value || chatStatus.value === 'submitted' || chatStatus.value === 'streaming') {
+    return loading.value ? 'submitted' : (chatStatus.value as 'submitted' | 'streaming')
   }
-  if (status.value === 'error') {
+  if (chatStatus.value === 'error') {
     return 'error'
   }
   return 'ready'
@@ -434,13 +455,49 @@ async function _handleSubmit() {
     return
   }
   loading.value = true
+  chatStatus.value = 'submitted'
+  chatErrorMessage.value = null
+
+  const userMessage: ChatMessage = {
+    id: createMessageId(),
+    role: 'user',
+    content: trimmed,
+    createdAt: new Date()
+  }
+  conversationMessages.value = [
+    ...conversationMessages.value,
+    userMessage
+  ]
+
   try {
-    await sendMessage(trimmed, {
-      sectionId: selectedSectionId.value,
-      sectionTitle: selectedSection.value?.title ?? null
+    const response = await $fetch<ChatSubmissionResponse>('/api/chat', {
+      method: 'POST',
+      body: {
+        message: trimmed,
+        contentId: contentId.value,
+        sectionId: selectedSectionId.value
+      }
     })
+
     prompt.value = ''
+
+    if (response?.assistantMessage) {
+      conversationMessages.value = [
+        ...conversationMessages.value,
+        {
+          id: createMessageId(),
+          role: 'assistant',
+          content: response.assistantMessage,
+          createdAt: new Date()
+        }
+      ]
+    }
+
+    chatStatus.value = 'ready'
     await refresh()
+  } catch (error: any) {
+    chatStatus.value = 'error'
+    chatErrorMessage.value = error?.data?.statusMessage || error?.data?.message || error?.message || 'Unable to send that message.'
   } finally {
     loading.value = false
   }
@@ -485,7 +542,6 @@ function handleShare() {
 
 watch(() => contentId.value, async () => {
   await refresh()
-  resetSession()
 })
 </script>
 
@@ -561,11 +617,11 @@ watch(() => contentId.value, async () => {
         <!-- Top alerts + tabs -->
         <div class="space-y-4">
           <UAlert
-            v-if="errorMessage"
+            v-if="chatErrorMessage"
             color="error"
             variant="soft"
             icon="i-lucide-alert-triangle"
-            :description="errorMessage"
+            :description="chatErrorMessage"
           />
 
           <UTabs
@@ -627,12 +683,12 @@ watch(() => contentId.value, async () => {
               </div>
 
               <div
-                v-if="messages.length > 0"
+                v-if="conversationMessages.length > 0"
                 class="rounded-xl border border-muted-200/60 bg-muted/30 p-2"
               >
                 <ChatMessagesList
-                  :messages="messages"
-                  :status="status"
+                  :messages="conversationMessages"
+                  :status="chatStatus"
                 />
               </div>
 
@@ -643,11 +699,12 @@ watch(() => contentId.value, async () => {
                 class="[view-transition-name:chat-prompt]"
                 :disabled="
                   loading
-                    || status === 'submitted'
-                    || status === 'streaming'
+                    || chatStatus === 'submitted'
+                    || chatStatus === 'streaming'
                     || !selectedSectionId
                 "
                 :autofocus="false"
+                @submit="_handleSubmit"
               />
             </UCard>
 
@@ -893,27 +950,37 @@ watch(() => contentId.value, async () => {
           </UAlert>
 
           <p class="text-sm text-muted-500">
-            Raw payloads for inspection. Use this view to debug ingest/generation steps.
+            Activity history for this draft's chat session.
           </p>
 
-          <UCard
-            v-for="section in debugSections"
-            :key="section.title"
-            :ui="{ body: 'space-y-3' }"
+          <div
+            v-if="!chatLogs.length"
+            class="rounded-xl border border-dashed border-muted-200/70 bg-muted/30 p-4 text-sm text-muted-500 text-center"
           >
-            <template #header>
-              <div>
-                <p class="text-base font-semibold">
-                  {{ section.title }}
+            No chat activity recorded yet.
+          </div>
+
+          <UCard
+            v-else
+            :ui="{ body: 'p-0' }"
+          >
+            <ul class="divide-y divide-muted-200/60">
+              <li
+                v-for="log in chatLogs"
+                :key="log.id"
+                class="p-4 space-y-1"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-500">
+                  <span>{{ log.type.replace(/_/g, ' ') }}</span>
+                  <span class="normal-case">
+                    {{ formatDate(log.createdAt) }}
+                  </span>
+                </div>
+                <p class="text-sm text-muted-700 dark:text-muted-200">
+                  {{ log.message }}
                 </p>
-                <p class="text-xs text-muted-500">
-                  {{ section.description }}
-                </p>
-              </div>
-            </template>
-            <pre class="overflow-x-auto rounded-lg bg-muted/40 p-4 text-xs">
-{{ formatJSON(section.value) }}
-            </pre>
+              </li>
+            </ul>
           </UCard>
         </div>
       </UContainer>

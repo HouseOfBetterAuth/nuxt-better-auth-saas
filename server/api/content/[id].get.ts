@@ -48,38 +48,59 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const session = await findChatSession(db, organizationId, record.content.id)
+  let chatSession = null
+  let chatMessages: Array<{
+    id: string
+    role: string
+    content: string
+    payload?: Record<string, any> | null
+    createdAt: Date
+  }> = []
+  let chatLogs: Array<{
+    id: string
+    type: string
+    message: string
+    payload?: Record<string, any> | null
+    createdAt: Date
+  }> = []
 
-  if (!session) {
-    return {
-      ...record,
-      chatSession: null,
-      chatMessages: [],
-      chatLogs: []
+  try {
+    const session = await findChatSession(db, organizationId, record.content.id)
+
+    if (session) {
+      const [messages, logs] = await Promise.all([
+        getSessionMessages(db, session.id, organizationId),
+        getSessionLogs(db, session.id, organizationId)
+      ])
+
+      chatSession = session
+      chatMessages = messages.map(message => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        payload: message.payload,
+        createdAt: message.createdAt
+      }))
+      chatLogs = logs.map(log => ({
+        id: log.id,
+        type: log.type,
+        message: log.message,
+        payload: log.payload,
+        createdAt: log.createdAt
+      }))
     }
+  } catch (error) {
+    console.error('Failed to load chat session', {
+      contentId: record.content.id,
+      organizationId,
+      error
+    })
   }
-
-  const [messages, logs] = await Promise.all([
-    getSessionMessages(db, session.id, organizationId),
-    getSessionLogs(db, session.id, organizationId)
-  ])
 
   return {
     ...record,
-    chatSession: session,
-    chatMessages: messages.map(message => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      payload: message.payload,
-      createdAt: message.createdAt
-    })),
-    chatLogs: logs.map(log => ({
-      id: log.id,
-      type: log.type,
-      message: log.message,
-      payload: log.payload,
-      createdAt: log.createdAt
-    }))
+    chatSession,
+    chatMessages,
+    chatLogs
   }
 })
