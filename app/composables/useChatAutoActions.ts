@@ -1,6 +1,6 @@
+import type { ChatActionSuggestion } from '#shared/utils/types'
 import type { Ref } from 'vue'
 import { ref, watch } from 'vue'
-import type { ChatActionSuggestion } from '#shared/utils/types'
 
 interface UseChatAutoActionsOptions {
   actions: Ref<ChatActionSuggestion[]>

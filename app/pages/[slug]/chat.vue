@@ -13,10 +13,10 @@ const router = useRouter()
 const slug = computed(() => route.params.slug as string)
 
 const {
-  messages,
+  _messages,
   status,
   actions,
-  sources,
+  _sources,
   generation,
   errorMessage,
   isBusy,
@@ -193,7 +193,7 @@ async function handleAction(action: ChatActionSuggestion) {
   }
 }
 
-const { autoActionBusy } = useChatAutoActions({
+const { autoActionBusy: _autoActionBusy } = useChatAutoActions({
   actions,
   isBusy,
   handler: handleAction

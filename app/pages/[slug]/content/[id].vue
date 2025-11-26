@@ -115,7 +115,7 @@ const generatedContent = computed(() => currentVersion.value?.bodyMdx || current
 const hasGeneratedContent = computed(() => !!generatedContent.value)
 const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
-const assets = computed(() => currentVersion.value?.assets || null)
+const _assets = computed(() => currentVersion.value?.assets || null)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
 
 const sections = computed(() => {
@@ -154,7 +154,7 @@ const contentUpdatedAtLabel = computed(() => {
   return value ? formatDate(value) : '—'
 })
 
-const sourceLink = computed(() => {
+const _sourceLink = computed(() => {
   const metadata = sourceDetails.value?.metadata as Record<string, any> | null
   if (metadata && typeof metadata.originalUrl === 'string') {
     return metadata.originalUrl
@@ -171,7 +171,7 @@ const seoPlan = computed(() => {
   return plan && typeof plan === 'object' ? plan : null
 })
 
-const seoKeywords = computed(() => {
+const _seoKeywords = computed(() => {
   const planKeywords = seoPlan.value?.keywords
   if (Array.isArray(planKeywords)) {
     return planKeywords.filter(keyword => typeof keyword === 'string' && keyword.trim().length > 0)
@@ -190,7 +190,7 @@ const primaryActionLabel = computed(() => (isPublished.value ? 'View' : 'Publish
 const primaryActionColor = computed(() => (isPublished.value ? 'primary' : 'success'))
 const diffStats = computed(() => {
   const versionStats = currentVersion.value?.diffStats
-  const fmStats = frontmatter.value?.diffStats as { additions?: number; deletions?: number } | undefined
+  const fmStats = frontmatter.value?.diffStats as { additions?: number, deletions?: number } | undefined
   const additions = Number(versionStats?.additions ?? fmStats?.additions ?? 0)
   const deletions = Number(versionStats?.deletions ?? fmStats?.deletions ?? 0)
   return {
@@ -200,7 +200,7 @@ const diffStats = computed(() => {
 })
 
 type ViewTabValue = 'conversation' | 'diff' | 'logs'
-const viewTabs: { label: string; value: ViewTabValue }[] = [
+const viewTabs: { label: string, value: ViewTabValue }[] = [
   { label: 'Conversation', value: 'conversation' },
   { label: 'Diff', value: 'diff' },
   { label: 'Logs', value: 'logs' }
@@ -275,53 +275,60 @@ function sectionPreview(body: string, limit = 320) {
 
 const selectedSectionId = ref<string | null>(null)
 const selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
-const showFullTranscript = ref(false)
-const formattedTranscript = computed(() => formatTranscriptText(sourceDetails.value?.sourceText ?? ''))
+const _showFullTranscript = ref(false)
+const _formattedTranscript = computed(() => formatTranscriptText(sourceDetails.value?.sourceText ?? ''))
 
 // Processing state
-const isProcessing = computed(() => {
-  if (!sourceDetails.value) return false
+const _isProcessing = computed(() => {
+  if (!sourceDetails.value)
+    return false
   return sourceDetails.value.ingestStatus === 'pending' || contentStatus.value === 'generating'
 })
 
-const processingStatusText = computed(() => {
-  if (sourceDetails.value?.ingestStatus === 'pending') return 'Processing source content...'
-  if (contentStatus.value === 'generating') return 'Generating content...'
+const _processingStatusText = computed(() => {
+  if (sourceDetails.value?.ingestStatus === 'pending')
+    return 'Processing source content...'
+  if (contentStatus.value === 'generating')
+    return 'Generating content...'
   return 'Processing...'
 })
 
-const processingProgress = computed(() => {
+const _processingProgress = computed(() => {
   // This could be enhanced with actual progress from the API
   return sourceDetails.value?.ingestStatus === 'ingested' ? 100 : 50
 })
 
-const processingStatusColor = computed(() => {
-  if (contentStatus.value === 'error') return 'error'
-  if (sourceDetails.value?.ingestStatus === 'ingested') return 'success'
+const _processingStatusColor = computed(() => {
+  if (contentStatus.value === 'error')
+    return 'error'
+  if (sourceDetails.value?.ingestStatus === 'ingested')
+    return 'success'
   return 'primary'
 })
 
 // Helper methods
-function getStatusColor(status?: string) {
+function _getStatusColor(status?: string) {
   switch (status) {
     case 'ingested':
-      return 'success'  // Changed from 'green'
+      return 'success' // Changed from 'green'
     case 'pending':
-      return 'warning'  // Changed from 'yellow'
+      return 'warning' // Changed from 'yellow'
     case 'failed':
-      return 'error'    // Changed from 'red'
+      return 'error' // Changed from 'red'
     default:
-      return 'neutral'  // Changed from 'gray'
+      return 'neutral' // Changed from 'gray'
   }
 }
 
-function formatStatus(status?: string) {
-  if (!status) return 'Unknown'
+function _formatStatus(status?: string) {
+  if (!status)
+    return 'Unknown'
   return status.replace(/_/g, ' ')
 }
 
-function formatSourceType(type?: string | null) {
-  if (!type) return '—'
+function _formatSourceType(type?: string | null) {
+  if (!type)
+    return '—'
   return type
     .toString()
     .split('_')
@@ -329,8 +336,9 @@ function formatSourceType(type?: string | null) {
     .join(' ')
 }
 
-function formatDuration(seconds: number) {
-  if (!seconds) return '—'
+function _formatDuration(seconds: number) {
+  if (!seconds)
+    return '—'
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.floor(seconds % 60)
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
@@ -407,7 +415,7 @@ function focusSection(sectionId: string) {
   selectedSectionId.value = sectionId
 }
 
-const promptStatus = computed(() => {
+const _promptStatus = computed(() => {
   if (loading.value || status.value === 'submitted' || status.value === 'streaming') {
     return loading.value ? 'submitted' : (status.value as 'submitted' | 'streaming')
   }
@@ -417,7 +425,7 @@ const promptStatus = computed(() => {
   return 'ready'
 })
 
-async function handleSubmit() {
+async function _handleSubmit() {
   const trimmed = prompt.value.trim()
   if (!trimmed) {
     return
@@ -571,7 +579,10 @@ watch(() => contentId.value, async () => {
         </div>
 
         <!-- Conversation tab -->
-        <div v-if="activeViewTab === 'conversation'" class="space-y-6">
+        <div
+          v-if="activeViewTab === 'conversation'"
+          class="space-y-6"
+        >
           <div
             v-if="error && !content"
             class="rounded-md border border-dashed p-6 text-sm text-muted-foreground text-center"
@@ -588,7 +599,10 @@ watch(() => contentId.value, async () => {
                 </p>
               </template>
 
-              <div v-if="sectionSelectOptions.length" class="space-y-1">
+              <div
+                v-if="sectionSelectOptions.length"
+                class="space-y-1"
+              >
                 <label class="text-xs uppercase tracking-wide text-muted-500">
                   Editing section
                 </label>
@@ -605,7 +619,10 @@ watch(() => contentId.value, async () => {
                   {{ selectedSection.wordCount }} words · {{ selectedSection.type }}
                 </p>
               </div>
-              <div v-else class="text-xs text-muted-500">
+              <div
+                v-else
+                class="text-xs text-muted-500"
+              >
                 Sections will appear here once a draft exists.
               </div>
 
@@ -625,10 +642,10 @@ watch(() => contentId.value, async () => {
                 variant="subtle"
                 class="[view-transition-name:chat-prompt]"
                 :disabled="
-                  loading ||
-                  status === 'submitted' ||
-                  status === 'streaming' ||
-                  !selectedSectionId
+                  loading
+                    || status === 'submitted'
+                    || status === 'streaming'
+                    || !selectedSectionId
                 "
                 :autofocus="false"
               />
@@ -667,7 +684,10 @@ watch(() => contentId.value, async () => {
                       {{ sections.length }} structured blocks
                     </p>
                   </div>
-                  <UBadge variant="soft" size="sm">
+                  <UBadge
+                    variant="soft"
+                    size="sm"
+                  >
                     {{ totalWordCount }} words
                   </UBadge>
                 </div>
@@ -688,12 +708,19 @@ watch(() => contentId.value, async () => {
                         H{{ section.level }} • {{ section.wordCount }} words
                       </p>
                     </div>
-                    <UBadge color="neutral" size="xs" class="capitalize">
+                    <UBadge
+                      color="neutral"
+                      size="xs"
+                      class="capitalize"
+                    >
                       {{ section.type }}
                     </UBadge>
                   </div>
 
-                  <p v-if="section.summary" class="text-sm text-muted-500">
+                  <p
+                    v-if="section.summary"
+                    class="text-sm text-muted-500"
+                  >
                     {{ section.summary }}
                   </p>
 
@@ -737,7 +764,10 @@ watch(() => contentId.value, async () => {
         </div>
 
         <!-- Diff tab -->
-        <div v-else-if="activeViewTab === 'diff'" class="space-y-6">
+        <div
+          v-else-if="activeViewTab === 'diff'"
+          class="space-y-6"
+        >
           <UCard v-if="hasGeneratedContent">
             <template #header>
               <div class="flex items-center justify-between">
@@ -769,7 +799,10 @@ watch(() => contentId.value, async () => {
                     {{ sections.length }} structured blocks
                   </p>
                 </div>
-                <UBadge variant="soft" size="sm">
+                <UBadge
+                  variant="soft"
+                  size="sm"
+                >
                   {{ totalWordCount }} words
                 </UBadge>
               </div>
@@ -790,12 +823,19 @@ watch(() => contentId.value, async () => {
                       H{{ section.level }} • {{ section.wordCount }} words
                     </p>
                   </div>
-                  <UBadge color="neutral" size="xs" class="capitalize">
+                  <UBadge
+                    color="neutral"
+                    size="xs"
+                    class="capitalize"
+                  >
                     {{ section.type }}
                   </UBadge>
                 </div>
 
-                <p v-if="section.summary" class="text-sm text-muted-500">
+                <p
+                  v-if="section.summary"
+                  class="text-sm text-muted-500"
+                >
                   {{ section.summary }}
                 </p>
 
@@ -838,7 +878,10 @@ watch(() => contentId.value, async () => {
         </div>
 
         <!-- Logs tab -->
-        <div v-else-if="activeViewTab === 'logs'" class="space-y-4">
+        <div
+          v-else-if="activeViewTab === 'logs'"
+          class="space-y-4"
+        >
           <UAlert
             v-if="error && !content"
             color="warning"
