@@ -21,6 +21,21 @@ const updateZodLocale = (newLocale: string) => {
   }
 }
 
+const { session, user, client } = useAuth()
+const isImpersonating = computed(() => !!(session.value as any)?.impersonatedBy)
+const stoppingImpersonation = ref(false)
+
+const stopImpersonating = async () => {
+  stoppingImpersonation.value = true
+  try {
+    await client.admin.stopImpersonating()
+    window.location.href = '/admin/user'
+  } catch (e) {
+    console.error(e)
+    stoppingImpersonation.value = false
+  }
+}
+
 watchEffect(() => {
   updateZodLocale(locale.value)
 })
@@ -48,5 +63,23 @@ useSeoMeta({
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <div
+      v-if="isImpersonating"
+      class="bg-amber-500 text-white px-6 py-3 flex justify-between items-center gap-4 fixed bottom-6 left-1/2 -translate-x-1/2 rounded-full shadow-lg z-[100]"
+    >
+      <span class="font-medium whitespace-nowrap">
+        Impersonating {{ user?.email }}
+      </span>
+      <UButton
+        color="white"
+        variant="solid"
+        size="xs"
+        :loading="stoppingImpersonation"
+        class="rounded-full"
+        @click="stopImpersonating"
+      >
+        Stop
+      </UButton>
+    </div>
   </UApp>
 </template>

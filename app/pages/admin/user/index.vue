@@ -5,7 +5,7 @@ import BanUserModal from './components/BanUserModal.vue'
 import CreateUserModal from './components/CreateUserModal.vue'
 
 const { t } = useI18n()
-const { client } = useAuth()
+const { client, user: currentUser } = useAuth()
 const isUserModalOpen = ref(false)
 const isBanModalOpen = ref(false)
 const selectedUserId = ref('')
@@ -39,11 +39,27 @@ const { refresh } = useAdminTable()
 
 const getActionItems = (row: Row<User>) => {
   const user = row.original
-  return [
+  const items: any[] = [
     {
       type: 'label',
       label: t('global.page.actions')
-    },
+    }
+  ]
+
+  if (user.id !== currentUser.value?.id) {
+    items.push({
+      label: 'Impersonate',
+      icon: 'i-lucide-scan-face',
+      async onSelect() {
+        await client.admin.impersonateUser({
+          userId: user.id
+        })
+        window.location.href = '/'
+      }
+    })
+  }
+
+  items.push(
     {
       type: 'separator'
     },
@@ -80,7 +96,8 @@ const getActionItems = (row: Row<User>) => {
         }
       }
     }
-  ]
+  )
+  return items
 }
 
 const getRoleDropdownItems = (original: User) => {
