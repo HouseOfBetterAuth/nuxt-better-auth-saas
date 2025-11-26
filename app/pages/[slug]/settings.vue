@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
+import { canUpdateOrgSettings } from '~~/shared/utils/permissions'
 
 definePageMeta({
   layout: 'dashboard'
@@ -19,21 +20,137 @@ const newKeyExpiresIn = ref<number | undefined>(undefined) // Default never? or 
 const createdKey = ref<string | null>(null)
 const createKeyLoading = ref(false)
 
+// Sessions State
+const sessions = ref<any[]>([])
+const sessionsLoading = ref(false)
+const showAllSessions = ref(false)
+
+const displayedSessions = computed(() => {
+  if (showAllSessions.value)
+    return sessions.value
+  return sessions.value.slice(0, 4)
+})
+
+function parseUserAgent(ua: string) {
+  if (!ua)
+    return { browser: 'Unknown', os: 'Unknown', icon: 'i-lucide-help-circle' }
+
+  let browser = 'Unknown Browser'
+  let os = 'Unknown OS'
+  let icon = 'i-lucide-monitor' // Default to desktop
+
+  // Detect Browser
+  if (ua.includes('Firefox'))
+    browser = 'Firefox'
+  else if (ua.includes('Chrome'))
+    browser = 'Chrome'
+  else if (ua.includes('Safari'))
+    browser = 'Safari'
+  else if (ua.includes('Edge'))
+    browser = 'Edge'
+
+  // Detect OS
+  if (ua.includes('Win')) {
+    os = 'Windows'
+  }
+  else if (ua.includes('Mac')) {
+    os = 'macOS'
+  }
+  else if (ua.includes('Linux')) {
+    os = 'Linux'
+  }
+  else if (ua.includes('Android')) {
+    os = 'Android'
+    icon = 'i-lucide-smartphone'
+  } else if (ua.includes('iPhone') || ua.includes('iPad')) {
+    os = 'iOS'
+    icon = 'i-lucide-smartphone'
+  }
+
+  return { browser, os, icon }
+}
+
+async function fetchSessions() {
+  sessionsLoading.value = true
+  try {
+    const { data } = await client.listSessions()
+    if (data) {
+      const currentToken = useAuth().session.value?.token
+      sessions.value = data
+        .map((s: any) => {
+          const { browser, os, icon } = parseUserAgent(s.userAgent)
+          return {
+            ...s,
+            isCurrent: s.token === currentToken,
+            browser,
+            os,
+            icon
+          }
+        })
+        .sort((a: any, b: any) => {
+          if (a.isCurrent)
+            return -1
+          if (b.isCurrent)
+            return 1
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        })
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function revokeSession(token: string) {
+  // eslint-disable-next-line no-alert
+  if (!confirm('Are you sure you want to revoke this session?'))
+    return
+
+  try {
+    await client.revokeSession({ token })
+    toast.add({ title: 'Session revoked', color: 'success' })
+    await fetchSessions()
+  } catch (e: any) {
+    toast.add({ title: 'Error revoking session', description: e.message, color: 'error' })
+  }
+}
+
+async function revokeAllSessions() {
+  // eslint-disable-next-line no-alert
+  if (!confirm('Are you sure you want to revoke ALL other sessions? This will sign you out of all other devices.'))
+    return
+
+  try {
+    if (client.revokeOtherSessions) {
+      await client.revokeOtherSessions()
+    } else {
+      // Fallback: revoke one by one (except current)
+      const others = sessions.value.filter(s => !s.isCurrent)
+      for (const s of others) {
+        await client.revokeSession({ token: s.token })
+      }
+    }
+    toast.add({ title: 'All other sessions revoked', color: 'success' })
+    await fetchSessions()
+  } catch (e: any) {
+    toast.add({ title: 'Error revoking sessions', description: e.message, color: 'error' })
+  }
+}
+
 async function fetchApiKeys() {
   if (!activeOrg.value?.data?.id)
     return
   apiKeysLoading.value = true
   try {
-    const { data } = await client.apiKey.list()
-    if (data) {
-      // Filter for this org using metadata
-      apiKeys.value = data.filter((k: any) => {
-        const meta = k.metadata ? (typeof k.metadata === 'string' ? JSON.parse(k.metadata) : k.metadata) : {}
-        return meta.organizationId === activeOrg.value?.data?.id
-      })
-    }
+    // Fetch all keys for the organization via custom endpoint
+    const data = await $fetch<any[]>('/api/organization/api-keys', {
+      query: { organizationId: activeOrg.value.data.id }
+    })
+    apiKeys.value = data || []
   } catch (e) {
     console.error(e)
+    apiKeys.value = []
   } finally {
     apiKeysLoading.value = false
   }
@@ -73,8 +190,8 @@ async function deleteApiKey(id: string) {
     return
 
   try {
-    await client.apiKey.delete({
-      keyId: id
+    await $fetch(`/api/organization/api-keys/${id}`, {
+      method: 'DELETE'
     })
     toast.add({ title: 'API Key deleted', color: 'success' })
     await fetchApiKeys()
@@ -97,14 +214,14 @@ const currentUserRole = computed(() => {
 })
 
 const canUpdateSettings = computed(() => {
-  return currentUserRole.value === 'owner' || currentUserRole.value === 'admin'
+  // @ts-expect-error - role type mismatch between client/shared because Drizzle enum vs string
+  return canUpdateOrgSettings(currentUserRole.value)
 })
 
 // Fetch keys on mount if allowed
 onMounted(() => {
-  if (canUpdateSettings.value) {
-    fetchApiKeys()
-  }
+  fetchApiKeys()
+  fetchSessions()
 })
 
 const canDeleteTeam = computed(() => {
@@ -160,31 +277,66 @@ const loading = ref(false)
 const teamName = ref('')
 const teamSlug = ref('')
 
-// Initialize fields immediately from preloaded data or activeOrg
-if (activeOrg.value?.data) {
-  teamName.value = activeOrg.value.data.name
-  teamSlug.value = activeOrg.value.data.slug
+const timezones = [
+  { label: 'Eastern Time (EST)', value: 'America/New_York' },
+  { label: 'Central Time (CST)', value: 'America/Chicago' },
+  { label: 'Mountain Time (MST)', value: 'America/Denver' },
+  { label: 'Pacific Time (PST)', value: 'America/Los_Angeles' },
+  { label: 'Alaska Time (AKT)', value: 'America/Anchorage' },
+  { label: 'Hawaii Time (HST)', value: 'Pacific/Honolulu' }
+]
+
+const teamTimezone = ref(timezones.find(t => t.value === 'America/New_York') || timezones[0])
+
+const { formatDate: formatDateGlobal } = useDate()
+
+function formatDate(date: string | Date) {
+  let tz = teamTimezone.value
+  // Handle case where timezone is an object (e.g. from SelectMenu without value-attribute working)
+  if (typeof tz === 'object' && tz !== null) {
+    tz = (tz as any).value
+  }
+  return formatDateGlobal(date, undefined, tz as string)
 }
 
-// Watch for changes
-watch(() => activeOrg.value?.data, (newData) => {
-  if (newData) {
-    // Only update if values match the PREVIOUS org (meaning we switched)
-    // Or if we're initializing. We don't want to overwrite user typing.
-    // Simplest strategy: If ID changes, update.
-    if (newData.name !== teamName.value && newData.id !== activeOrg.value?.data?.id) {
-      // This logic is tricky. Let's stick to the previous safe watcher.
+// Initialize and sync data from activeOrg
+const lastSyncedOrgId = ref<string | null>(null)
+
+watch(() => activeOrg.value?.data, (data) => {
+  if (!data)
+    return
+
+  // Update basic fields only when switching organizations to preserve unsaved edits
+  if (data.id !== lastSyncedOrgId.value) {
+    teamName.value = data.name
+    teamSlug.value = data.slug
+    lastSyncedOrgId.value = data.id
+  }
+
+  // Always sync timezone from metadata
+  const meta = data.metadata
+  if (meta) {
+    try {
+      const parsed = typeof meta === 'string' ? JSON.parse(meta) : meta
+      if (parsed.timezone) {
+        // Handle legacy object format or string format
+        const tzValue = (typeof parsed.timezone === 'object' && parsed.timezone !== null)
+          ? parsed.timezone.value
+          : parsed.timezone.trim()
+
+        const found = timezones.find(t => t.value === tzValue)
+        if (found) {
+          teamTimezone.value = found
+        } else {
+          // Fallback if not found in list, construct a temporary object to show value
+          teamTimezone.value = { label: tzValue, value: tzValue }
+        }
+      }
+    } catch {
+      // Ignore parse error
     }
   }
-}, { deep: true })
-
-// Better watcher: Watch ID changes to handle switching
-watch(() => activeOrg.value?.data?.id, (newId) => {
-  if (newId && activeOrg.value?.data) {
-    teamName.value = activeOrg.value.data.name
-    teamSlug.value = activeOrg.value.data.slug
-  }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 async function updateTeam() {
   if (!activeOrg.value?.data?.id)
@@ -192,11 +344,20 @@ async function updateTeam() {
   loading.value = true
 
   try {
+    // Ensure timezone is a string
+    let tz = teamTimezone.value
+    if (typeof tz === 'object' && tz !== null) {
+      tz = (tz as any).value
+    }
+
     const { error } = await organization.update({
       organizationId: activeOrg.value.data.id,
       data: {
         name: teamName.value,
-        slug: teamSlug.value
+        slug: teamSlug.value,
+        metadata: {
+          timezone: tz
+        }
       }
     })
 
@@ -208,8 +369,9 @@ async function updateTeam() {
     await useAuth().fetchSession()
 
     // If slug changed, we must redirect to new URL
-    // Otherwise reload is fine, but redirection is safer
-    window.location.href = `/${teamSlug.value}/settings`
+    if (teamSlug.value !== activeOrg.value.data.slug) {
+      window.location.href = `/${teamSlug.value}/settings`
+    }
   } catch (e: any) {
     toast.add({
       title: 'Error updating team',
@@ -293,7 +455,6 @@ async function deleteTeam() {
     </h1>
 
     <div
-      v-if="canUpdateSettings"
       class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8"
     >
       <h2 class="text-xl font-semibold mb-4">
@@ -305,27 +466,43 @@ async function deleteTeam() {
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <UFormField label="Organization name">
-          <UInput v-model="teamName" />
+          <UInput
+            v-model="teamName"
+            :disabled="!canUpdateSettings"
+          />
+        </UFormField>
+
+        <UFormField label="Organization Timezone">
+          <USelectMenu
+            v-model="teamTimezone"
+            :items="timezones"
+            option-attribute="label"
+            class="w-full"
+            :disabled="!canUpdateSettings"
+          />
         </UFormField>
 
         <UFormField label="Organization ID">
-          <div class="flex gap-2">
-            <UInput
-              :model-value="activeOrg?.data?.id"
-              readonly
-              class="flex-1 font-mono text-sm bg-gray-50 dark:bg-gray-800"
-            />
-            <UButton
-              :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-              color="gray"
-              variant="ghost"
-              @click="copyId"
-            />
-          </div>
+          <UInput
+            :model-value="activeOrg?.data?.id"
+            readonly
+            class="font-mono text-sm bg-gray-50 dark:bg-gray-800"
+          >
+            <template #trailing>
+              <UButton
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+                color="gray"
+                variant="ghost"
+                size="xs"
+                @click="copyId"
+              />
+            </template>
+          </UInput>
         </UFormField>
       </div>
 
       <UButton
+        v-if="canUpdateSettings"
         label="Save"
         color="black"
         :loading="loading"
@@ -335,19 +512,30 @@ async function deleteTeam() {
 
     <!-- API Keys Section -->
     <div
-      v-if="canUpdateSettings"
       class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8"
     >
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">
           API Keys
         </h2>
-        <UButton
-          label="Create New Key"
-          icon="i-lucide-plus"
-          size="sm"
-          @click="isCreateKeyModalOpen = true"
-        />
+        <div
+          v-if="canUpdateSettings"
+          class="flex items-center gap-2"
+        >
+          <span
+            v-if="apiKeys.length >= 4"
+            class="text-xs text-red-500"
+          >
+            Max 4 keys reached
+          </span>
+          <UButton
+            label="Create New Key"
+            icon="i-lucide-plus"
+            size="sm"
+            :disabled="apiKeys.length >= 4"
+            @click="isCreateKeyModalOpen = true"
+          />
+        </div>
       </div>
       <p class="text-sm text-gray-500 mb-6">
         Manage API keys for accessing the organization programmatically.
@@ -355,12 +543,20 @@ async function deleteTeam() {
 
       <div
         v-if="apiKeysLoading"
-        class="py-4 text-center"
+        class="space-y-3"
       >
-        <UIcon
-          name="i-lucide-loader-2"
-          class="animate-spin"
-        />
+        <div
+          v-for="i in 3"
+          :key="i"
+          class="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-lg"
+        >
+          <div class="space-y-2">
+            <USkeleton class="h-4 w-32" />
+            <USkeleton class="h-3 w-48" />
+            <USkeleton class="h-3 w-24" />
+          </div>
+          <USkeleton class="h-8 w-8 rounded-md" />
+        </div>
       </div>
       <div
         v-else-if="!apiKeys || apiKeys.length === 0"
@@ -385,17 +581,108 @@ async function deleteTeam() {
               {{ key.start }}... <span v-if="key.prefix">({{ key.prefix }})</span>
             </div>
             <div class="text-xs text-gray-400 mt-1">
-              Created: {{ new Date(key.createdAt).toLocaleDateString() }}
-              <span> • Last used: {{ key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : 'Never' }}</span>
-              <span v-if="key.expiresAt"> • Expires: {{ new Date(key.expiresAt).toLocaleDateString() }}</span>
+              Created: {{ formatDate(key.createdAt) }}
+              <span> • Last used: {{ key.lastRequest ? formatDate(key.lastRequest) : 'Never' }}</span>
+              <span v-if="key.expiresAt"> • Expires: {{ formatDate(key.expiresAt) }}</span>
             </div>
           </div>
           <UButton
+            v-if="canUpdateSettings"
             color="red"
             variant="ghost"
             icon="i-lucide-trash-2"
             size="xs"
             @click="deleteApiKey(key.id)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Trusted Devices -->
+    <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">
+          Trusted Devices
+        </h2>
+        <UButton
+          v-if="sessions.length > 1"
+          label="Revoke all sessions except current"
+          color="red"
+          variant="ghost"
+          size="sm"
+          @click="revokeAllSessions"
+        />
+      </div>
+      <p class="text-sm text-gray-500 mb-6">
+        Manage your active sessions and devices.
+      </p>
+
+      <div
+        v-if="sessionsLoading"
+        class="space-y-3"
+      >
+        <div
+          v-for="i in 3"
+          :key="i"
+          class="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-lg"
+        >
+          <div class="flex items-center gap-3">
+            <USkeleton class="h-5 w-5 rounded-full" />
+            <div class="space-y-1">
+              <USkeleton class="h-4 w-48" />
+              <USkeleton class="h-3 w-32" />
+            </div>
+          </div>
+          <USkeleton class="h-6 w-16 rounded-md" />
+        </div>
+      </div>
+      <div
+        v-else
+        class="space-y-4"
+      >
+        <div
+          v-for="s in displayedSessions"
+          :key="s.id"
+          class="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-lg"
+        >
+          <div class="flex items-center gap-3">
+            <UIcon
+              :name="s.icon"
+              class="w-5 h-5 text-gray-500"
+            />
+            <div>
+              <div class="font-medium flex items-center gap-2">
+                {{ s.browser }} on {{ s.os }}
+                <UBadge
+                  v-if="s.isCurrent"
+                  label="Current"
+                  variant="subtle"
+                  size="xs"
+                />
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                {{ s.ipAddress }} • Last active: {{ formatDate(s.updatedAt) }}
+              </div>
+            </div>
+          </div>
+          <UButton
+            v-if="!s.isCurrent"
+            color="red"
+            variant="ghost"
+            label="Revoke"
+            size="xs"
+            @click="revokeSession(s.token)"
+          />
+        </div>
+        <div
+          v-if="sessions.length > 4"
+          class="text-center pt-2"
+        >
+          <UButton
+            variant="link"
+            color="gray"
+            :label="showAllSessions ? 'Show less' : `Show ${sessions.length - 4} more`"
+            @click="showAllSessions = !showAllSessions"
           />
         </div>
       </div>

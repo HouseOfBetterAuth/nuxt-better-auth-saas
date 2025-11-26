@@ -130,6 +130,13 @@ export const createBetterAuth = () => betterAuth({
         }
       }
     },
+    organization: {
+      update: {
+        before: async (org: any) => {
+          console.log('[Auth Hook] Organization Update Payload:', JSON.stringify(org, null, 2))
+        }
+      }
+    },
     member: {
       create: {
         after: async (_member: any) => {
@@ -151,20 +158,6 @@ export const createBetterAuth = () => betterAuth({
       delete: {
         after: async (_invitation: any) => {
           // await syncSubscriptionQuantity(invitation.organizationId)
-        }
-      }
-    },
-    apiKey: {
-      create: {
-        before: async (record: any) => {
-          if (!record.organizationId && record.metadata?.organizationId) {
-            return {
-              data: {
-                ...record,
-                organizationId: record.metadata.organizationId
-              }
-            }
-          }
         }
       }
     }
@@ -318,21 +311,14 @@ export const createBetterAuth = () => betterAuth({
         owner,
         admin,
         member
-      }
+      },
+      enableMetadata: true
     }),
     apiKey({
       enableMetadata: true,
       schema: {
         apikey: {
-          modelName: 'apiKey',
-          fields: {},
-          // @ts-expect-error - Additional fields are supported at runtime but missing from type definition
-          additionalFields: {
-            organizationId: {
-              type: 'string',
-              required: false
-            }
-          }
+          modelName: 'apiKey'
         }
       }
     }),

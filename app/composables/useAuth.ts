@@ -38,7 +38,8 @@ export function useAuth() {
           owner,
           admin,
           member
-        }
+        },
+        enableMetadata: true
       }),
       apiKeyClient(),
       stripeClient({
