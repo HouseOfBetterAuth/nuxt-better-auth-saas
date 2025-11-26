@@ -39,7 +39,7 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
     : Boolean(failOpenFlag)
 
   // 2. Get organization from route slug
-  const { loggedIn, organization } = useAuth()
+  const { loggedIn, organization: _organization } = useAuth()
   if (!loggedIn.value)
     return
 
@@ -50,10 +50,7 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
   console.log('[Billing Guard] routeSlug:', routeSlug)
 
   // Use cached org list to avoid fetching on every navigation
-  const { data: orgs } = await useAsyncData('user-organizations', async () => {
-    const { data } = await organization.list()
-    return data
-  })
+  const { data: orgs } = await useUserOrganizations()
 
   if (!orgs.value || orgs.value.length === 0)
     return
@@ -115,9 +112,10 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
         const status = error?.response?.status ?? error?.statusCode ?? error?.status
         console.error(`[Billing Guard] Subscription check failed (attempt ${attempt}/${maxAttempts}) for org ${orgId}:`, error)
 
-        // Only throw immediately on 4xx client errors (non-retryable)
+        // Treat 4xx responses as terminal but allow fail-open handling downstream
         if (status && status >= 400 && status < 500) {
-          throw error
+          subs = null
+          break
         }
 
         const shouldRetry = !status || status >= 500

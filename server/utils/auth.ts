@@ -226,7 +226,8 @@ export const createBetterAuth = () => betterAuth({
   },
   account: {
     accountLinking: {
-      enabled: true
+      enabled: true,
+      allowDifferentEmails: true
     }
   },
   hooks: {

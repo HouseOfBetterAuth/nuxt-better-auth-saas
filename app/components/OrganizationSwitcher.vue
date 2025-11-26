@@ -1,11 +1,13 @@
 <script setup lang="ts">
 const { organization, session, useActiveOrganization, user } = useAuth()
 
-// Use lazy fetch for organizations to not block navigation
-const { data: organizations, status } = await useLazyAsyncData('user-organizations', async () => {
-  const { data } = await organization.list()
-  return data
-})
+// Use shared composable to ensure consistent handler/key usage
+const { data: organizations, status } = await useUserOrganizations({ lazy: true })
+
+const dropdownMenuUi = {
+  content: 'w-60 cursor-pointer',
+  item: 'cursor-pointer data-[active=true]:bg-gray-100 dark:data-[active=true]:bg-gray-800 data-[active=true]:text-gray-900 dark:data-[active=true]:text-white'
+}
 
 const isPending = computed(() => status.value === 'pending')
 const activeOrg = useActiveOrganization()
@@ -21,8 +23,9 @@ const activeOrgId = computed(() => {
       return org.id
   }
   // Fallback to session
-  if (session.value?.activeOrganizationId) {
-    return session.value.activeOrganizationId
+  const sessionActiveOrgId = (session.value as any)?.activeOrganizationId
+  if (sessionActiveOrgId) {
+    return sessionActiveOrgId as string
   }
   return null
 })
@@ -65,7 +68,7 @@ const activeStripeSubscription = computed(() => {
 const _canManageTeam = computed(() => {
   if (!activeOrg.value?.data?.members || !user.value?.id)
     return false
-  const member = activeOrg.value.data.members.find(m => m.userId === user.value!.id)
+  const member = activeOrg.value.data.members.find((m: { userId?: string | null, role?: string | null }) => m.userId === user.value!.id)
   return member?.role === 'owner' || member?.role === 'admin'
 })
 
@@ -160,7 +163,7 @@ const dropdownItems = computed(() => {
   >
     <UDropdownMenu
       :items="dropdownItems"
-      :ui="{ content: 'w-60 cursor-pointer', item: { base: 'cursor-pointer', active: 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' } }"
+      :ui="dropdownMenuUi"
       arrow
     >
       <button class="flex items-center justify-between w-full px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors group outline-none cursor-pointer">

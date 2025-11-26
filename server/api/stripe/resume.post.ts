@@ -96,11 +96,13 @@ export default defineEventHandler(async (event) => {
 
   const orgCustomerId = member.organization?.stripeCustomerId
 
-  if (!subscriptionOrgId && subscriptionCustomerId && orgCustomerId && subscriptionCustomerId !== orgCustomerId) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden: Subscription customer mismatch'
-    })
+  if (!subscriptionOrgId && orgCustomerId) {
+    if (!subscriptionCustomerId || subscriptionCustomerId !== orgCustomerId) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'Forbidden: Subscription customer mismatch'
+      })
+    }
   }
 
   if (!subscriptionOrgId && !orgCustomerId) {

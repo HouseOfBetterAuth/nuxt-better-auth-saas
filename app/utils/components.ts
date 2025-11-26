@@ -1,3 +1,5 @@
+export { default as UAccordion } from '@nuxt/ui/runtime/components/Accordion.vue'
+export { default as UAccordionItem } from '@nuxt/ui/runtime/components/AccordionItem.vue'
 export { default as UAvatar } from '@nuxt/ui/runtime/components/Avatar.vue'
 export { default as UBadge } from '@nuxt/ui/runtime/components/Badge.vue'
 export { default as UButton } from '@nuxt/ui/runtime/components/Button.vue'

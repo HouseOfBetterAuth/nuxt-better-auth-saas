@@ -5,6 +5,9 @@ definePageMeta({
   layout: 'dashboard'
 })
 
+const route = useRoute()
+const slug = computed(() => route.params.slug as string)
+
 const { organization, useActiveOrganization, fetchSession, user } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
@@ -246,6 +249,29 @@ async function deleteTeam() {
         :loading="loading"
         @click="updateTeam"
       />
+    </div>
+
+    <div
+      v-if="canUpdateSettings"
+      class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-semibold mb-2">
+            Integrations
+          </h2>
+          <p class="text-sm text-gray-500">
+            Manage YouTube access and future provider connections for automated ingest.
+          </p>
+        </div>
+        <UButton
+          color="black"
+          icon="i-lucide-arrow-up-right"
+          :to="`/${slug}/settings/integrations`"
+        >
+          Manage integrations
+        </UButton>
+      </div>
     </div>
 
     <div

@@ -24,15 +24,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const activeOrgId = (session.value as any)?.activeOrganizationId
 
   // Use cached org list to avoid fetching on every navigation
-  const { data: orgs, error: orgsError, refresh: _refreshOrgs } = await useAsyncData('user-organizations', async () => {
-    try {
-      const { data } = await organization.list()
-      return data as SimpleOrganization[]
-    } catch (error) {
-      console.error('[Organization Guard] Failed to load organizations', error)
-      throw error
-    }
-  })
+  const { data: orgs, error: orgsError } = await useUserOrganizations()
 
   if (orgsError.value) {
     if (import.meta.client) {

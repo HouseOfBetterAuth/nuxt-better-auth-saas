@@ -1,3 +1,4 @@
+import type Stripe from 'stripe'
 import { and, eq } from 'drizzle-orm'
 import { member as memberTable, organization as organizationTable } from '~~/server/database/schema'
 import { getAuthSession } from '~~/server/utils/auth'
@@ -62,11 +63,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const orgStripeCustomerId = org.stripeCustomerId as string
+
   const stripe = createStripeClient()
 
-  const listSubscriptions = async (status: 'active' | 'trialing') => {
-    const subs: Stripe.ApiList<Stripe.Subscription> = await stripe.subscriptions.list({
-      customer: org.stripeCustomerId,
+  type StripeSubscription = Stripe.Subscription & { current_period_start?: number | null }
+
+  const listSubscriptions = async (status: 'active' | 'trialing'): Promise<StripeSubscription[]> => {
+    const subs = await stripe.subscriptions.list({
+      customer: orgStripeCustomerId,
       status,
       limit: 100
     })
@@ -85,13 +90,20 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const subscription = candidateSubscriptions.reduce((latest, current) => {
+  const subscription = candidateSubscriptions.reduce<StripeSubscription | null>((latest, current) => {
     if (!latest)
       return current
     const latestStart = latest.current_period_start ?? 0
     const currentStart = current.current_period_start ?? 0
     return currentStart > latestStart ? current : latest
-  })
+  }, null)
+
+  if (!subscription) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Subscription not found'
+    })
+  }
 
   // If currently trialing, calculate locally and return immediately (No Proration/Stripe API needed)
   if (subscription.status === 'trialing') {
