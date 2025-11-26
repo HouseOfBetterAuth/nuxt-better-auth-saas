@@ -20,7 +20,7 @@ export const chunk = pgTable('chunk', {
   embedding: jsonb('embedding').$type<number[] | null>().default(null),
   metadata: jsonb('metadata').$type<Record<string, any> | null>().default(null),
   createdAt: timestamp('created_at').defaultNow().notNull()
-}, (chunk) => ({
+}, chunk => ({
   organizationIdIdx: index('idx_chunk_organization_id').on(chunk.organizationId),
   sourceContentIdIdx: index('idx_chunk_source_content_id').on(chunk.sourceContentId),
   sourceChunkUnique: unique('uq_chunk_source_content_chunk_index').on(chunk.sourceContentId, chunk.chunkIndex)

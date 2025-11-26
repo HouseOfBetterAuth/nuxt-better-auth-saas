@@ -111,8 +111,18 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short'
 })
 
-function formatDate(value: string | Date) {
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return '—'
+  }
+
   const date = typeof value === 'string' ? new Date(value) : value
+  const timeValue = date instanceof Date ? date.getTime() : Number.NaN
+
+  if (!Number.isFinite(timeValue)) {
+    return '—'
+  }
+
   return dateFormatter.format(date)
 }
 
