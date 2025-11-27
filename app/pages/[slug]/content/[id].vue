@@ -475,8 +475,10 @@ async function _handleSubmit() {
       body: {
         message: trimmed,
         action: {
-          type: 'generate_content',
-          contentId: contentId.value
+          type: 'patch_section',
+          contentId: contentId.value,
+          sectionId: selectedSectionId.value,
+          sectionTitle: selectedSection.value?.title ?? null
         }
       }
     })

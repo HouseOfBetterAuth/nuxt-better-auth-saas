@@ -16,6 +16,14 @@ interface ChatResponse {
   actions?: ChatActionSuggestion[]
   sources?: ChatSourceSnapshot[]
   generation?: ChatGenerationResult | null
+  sessionId?: string | null
+  sessionContentId?: string | null
+  messages?: Array<{
+    id: string
+    role: 'user' | 'assistant' | 'system'
+    content: string
+    createdAt: string | Date
+  }>
 }
 
 function createId() {
@@ -23,6 +31,39 @@ function createId() {
     return crypto.randomUUID()
   }
   return Math.random().toString(36).slice(2)
+}
+
+function toDate(value: string | Date) {
+  if (value instanceof Date) {
+    return value
+  }
+  const parsed = new Date(value)
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date()
+}
+
+function normalizeMessages(list: ChatResponse['messages']) {
+  if (!Array.isArray(list)) {
+    return []
+  }
+  return list
+    .filter(message => message && (message.role === 'assistant' || message.role === 'user'))
+    .map(message => ({
+      id: message.id || createId(),
+      role: message.role as ChatMessage['role'],
+      content: message.content,
+      createdAt: toDate(message.createdAt)
+    }))
+}
+
+interface CreateContentFromConversationPayload {
+  title: string
+  contentType: ContentType
+  messageIds?: string[]
+}
+
+interface CreateContentFromConversationResponse {
+  content: Record<string, any>
+  version: Record<string, any>
 }
 
 export function useChatSession() {
@@ -39,6 +80,8 @@ export function useChatSession() {
   const errorMessage = useState<string | null>('chat/error', () => null)
   const selectedContentType = useState<ContentType>('chat/content-type', () => DEFAULT_CONTENT_TYPE)
   const activeSourceId = useState<string | null>('chat/active-source-id', () => null)
+  const sessionId = useState<string | null>('chat/session-id', () => null)
+  const sessionContentId = useState<string | null>('chat/session-content-id', () => null)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
@@ -67,13 +110,23 @@ export function useChatSession() {
         body: withSelectedContentType(body)
       })
 
-      if (response.assistantMessage) {
-        messages.value.push({
-          id: createId(),
-          role: 'assistant',
-          content: response.assistantMessage,
-          createdAt: new Date()
-        })
+      sessionId.value = response.sessionId ?? sessionId.value
+      sessionContentId.value = response.sessionContentId ?? sessionContentId.value ?? null
+
+      const normalizedMessages = normalizeMessages(response.messages)
+
+      if (normalizedMessages.length > 0) {
+        messages.value = normalizedMessages
+      } else if (response.assistantMessage) {
+        messages.value = [
+          ...messages.value,
+          {
+            id: createId(),
+            role: 'assistant',
+            content: response.assistantMessage,
+            createdAt: new Date()
+          }
+        ]
       }
 
       actions.value = response.actions ?? []
@@ -174,6 +227,26 @@ export function useChatSession() {
     })
   }
 
+  async function createContentFromConversation(payload: CreateContentFromConversationPayload) {
+    if (!sessionId.value) {
+      throw new Error('Start a conversation before creating content.')
+    }
+
+    const response = await $fetch<CreateContentFromConversationResponse>(`/api/chat/${sessionId.value}/create-content`, {
+      method: 'POST',
+      body: {
+        ...payload,
+        messageIds: Array.isArray(payload.messageIds) ? payload.messageIds : undefined
+      }
+    })
+
+    if (response?.content?.id) {
+      sessionContentId.value = response.content.id
+    }
+
+    return response
+  }
+
   return {
     messages,
     status,
@@ -185,6 +258,9 @@ export function useChatSession() {
     activeSourceId,
     selectedContentType,
     sendMessage,
-    executeAction
+    executeAction,
+    sessionId,
+    sessionContentId,
+    createContentFromConversation
   }
 }

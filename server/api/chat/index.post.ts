@@ -5,7 +5,7 @@ import {
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import { generateContentDraft } from '~~/server/services/content/generation'
+import { generateContentDraft, patchContentSection } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { ingestYouTubeSource } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
@@ -29,7 +29,16 @@ interface ChatActionGenerateContent {
   temperature?: number
 }
 
-type ChatAction = ChatActionGenerateContent
+interface ChatActionPatchSection {
+  type: 'patch_section'
+  contentId?: string | null
+  sectionId?: string | null
+  sectionTitle?: string | null
+  instructions?: string | null
+  temperature?: number
+}
+
+type ChatAction = ChatActionGenerateContent | ChatActionPatchSection
 
 interface ChatRequestBody {
   message: string
@@ -122,6 +131,7 @@ export default defineEventHandler(async (event) => {
   }))
 
   let generationResult: Awaited<ReturnType<typeof generateContentDraft>> | null = null
+  let patchSectionResult: Awaited<ReturnType<typeof patchContentSection>> | null = null
 
   if (body.action?.type === 'generate_content') {
     let sanitizedSystemPrompt: string | undefined
@@ -173,7 +183,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const sessionContentId = body.action?.contentId ?? generationResult?.content?.id ?? null
+  const sessionContentId = body.action?.contentId ?? generationResult?.content?.id ?? patchSectionResult?.content?.id ?? null
   const sessionSourceId = body.action?.sourceContentId ?? processedSources[0]?.source.id ?? null
 
   const session = await ensureChatSession(db, {
@@ -185,6 +195,50 @@ export default defineEventHandler(async (event) => {
       lastAction: body.action?.type ?? (message.trim() ? 'message' : null)
     }
   })
+
+  if (body.action?.type === 'patch_section') {
+    const instructions = (typeof body.action.instructions === 'string' ? body.action.instructions : message).trim()
+    if (!instructions) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Instructions are required to update a section.'
+      })
+    }
+
+    const contentIdToPatch = typeof body.action.contentId === 'string' ? body.action.contentId : null
+    const sectionIdToPatch = typeof body.action.sectionId === 'string' ? body.action.sectionId : null
+
+    if (!contentIdToPatch || !sectionIdToPatch) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'contentId and sectionId are required to patch a section.'
+      })
+    }
+
+    const temperature = typeof body.action.temperature === 'number' && Number.isFinite(body.action.temperature)
+      ? body.action.temperature
+      : undefined
+
+    patchSectionResult = await patchContentSection(db, {
+      organizationId,
+      userId: user.id,
+      contentId: contentIdToPatch,
+      sectionId: sectionIdToPatch,
+      instructions,
+      temperature
+    })
+
+    await addChatLog(db, {
+      sessionId: session.id,
+      organizationId,
+      type: 'section_patched',
+      message: `Updated section "${body.action.sectionTitle || patchSectionResult.section?.title || 'selected section'}"`,
+      payload: {
+        contentId: contentIdToPatch,
+        sectionId: sectionIdToPatch
+      }
+    })
+  }
 
   if (message.trim()) {
     await addChatMessage(db, {
@@ -240,6 +294,11 @@ export default defineEventHandler(async (event) => {
     assistantMessages.push('Your draft is ready, let me know if you want edits to specific sections.')
   }
 
+  if (patchSectionResult) {
+    const sectionLabel = body.action?.sectionTitle || patchSectionResult.section?.title || 'that section'
+    assistantMessages.push(`Updated "${sectionLabel}". Refresh the draft to review the latest changes.`)
+  }
+
   if (assistantMessages.length === 0) {
     assistantMessages.push('Got it. I\'m ready whenever you want to start a draft or share a link.')
   }
@@ -274,6 +333,7 @@ export default defineEventHandler(async (event) => {
         }
       : null,
     sessionId: session.id,
+    sessionContentId: session.contentId ?? null,
     messages: messages.map(message => ({
       id: message.id,
       role: message.role,
