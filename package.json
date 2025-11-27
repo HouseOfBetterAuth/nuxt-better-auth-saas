@@ -31,7 +31,6 @@
     "@nuxtjs/seo": "^3.2.2",
     "@vueuse/core": "13.9.0",
     "@vueuse/integrations": "^13.9.0",
-    "ai-elements-vue": "^0.13.1",
     "aws4fetch": "^1.0.20",
     "better-auth": "^1.4.1",
     "date-fns": "^4.1.0",

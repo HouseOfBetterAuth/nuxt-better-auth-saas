@@ -4,6 +4,7 @@
       "slogan": "Nuxt.js Full-Stack SaaS Starter Kit - Free & Open Source",
       "getStarted": "Get Started",
       "viewOnGithub": "View on GitHub",
+      "tryQuillioChat": "Try Quillio chat",
       "features": {
         "title": "Solid Foundation for Your SaaS Success",
         "categories": {
@@ -91,6 +92,7 @@
       "slogan": "Nuxt.js 全栈 SaaS 起步工具包 - 免费开源",
       "getStarted": "开始使用",
       "viewOnGithub": "在 GitHub 上查看",
+      "tryQuillioChat": "试用 Quillio 聊天",
       "features": {
         "title": "为您的 SaaS 成功打造坚实基础",
         "categories": {
@@ -178,6 +180,7 @@
       "slogan": "Nuxt.js フルスタック SaaS スターターキット - 無料＆オープンソース",
       "getStarted": "始めましょう",
       "viewOnGithub": "GitHub で見る",
+      "tryQuillioChat": "Quillio チャットを試す",
       "features": {
         "title": "SaaS の成功のための堅固な基盤",
         "categories": {
@@ -265,6 +268,7 @@
       "slogan": "Kit de Démarrage SaaS Full-Stack Nuxt.js - Gratuit et Open Source",
       "getStarted": "Commencer",
       "viewOnGithub": "Voir sur GitHub",
+      "tryQuillioChat": "Essayer le chat Quillio",
       "features": {
         "title": "Base solide pour votre succès SaaS",
         "categories": {

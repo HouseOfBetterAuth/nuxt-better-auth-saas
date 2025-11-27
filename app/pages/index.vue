@@ -211,7 +211,7 @@ const activeScreenshot = ref('0')
                 variant="soft"
                 size="lg"
               >
-                Try Quillio chat
+                {{ t('home.tryQuillioChat') }}
               </UButton>
             </div>
           </div>

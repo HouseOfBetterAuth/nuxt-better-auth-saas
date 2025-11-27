@@ -61,34 +61,52 @@ cd NuxSaaS
 nvm use
 
 # 3. Install dependencies
-npm install
+pnpm install
 
 # 4. Setup environment variables
 cp .env.example .env
 
 # 5. Generate and apply database migrations
-npm run db:generate
-npm run db:migrate
+pnpm run db:generate
+pnpm run db:migrate
 
 # 6. Start development server
-npm run dev
+pnpm run dev
 ```
 
 ## 🚀 Deployment
+
+### Database Migrations
+Before deploying to production, ensure database migrations are applied:
+
+```bash
+# Generate migration files (if schema changed)
+pnpm run db:generate
+
+# Apply migrations to database
+pnpm run db:migrate
+```
+
+**Important**: Run migrations before deploying your application to ensure the database schema is up-to-date. This is especially important for the `isAnonymous` column added to the user table for anonymous session support.
+
 #### Node.js Server
 ```bash
 # Deploy to self host server
-npm run build
-npm run serve
+pnpm run db:migrate  # Apply any pending migrations
+pnpm run build
+pnpm run serve
 ```
 
 #### Cloudflare Worker
 ```bash
 # Deploy to Cloudflare Worker
-npm run build
+pnpm run db:migrate  # Apply any pending migrations
+pnpm run build
 cp wrangler.example.toml wrangler.toml
-npm run deploy
+pnpm run deploy
 ```
+
+**Environment Variables**: Ensure your production environment has the required database connection string (`NUXT_DATABASE_URL`) and other necessary environment variables configured before running migrations.
 
 ## 🌟 Support
 

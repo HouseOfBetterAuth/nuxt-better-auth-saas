@@ -29,3 +29,7 @@ tests/coverage
 .wrangler/
 wrangler.toml
 uploads/
+
+# Cookie files and credentials
+*_cookies.txt
+*.cookies

@@ -10,7 +10,7 @@ definePageMeta({
 
 const router = useRouter()
 const toast = useToast()
-const { loggedIn, user, signInAnonymous, useActiveOrganization } = useAuth()
+const { loggedIn, user, signInAnonymous, useActiveOrganization, refreshActiveOrg } = useAuth()
 const activeOrgState = useActiveOrganization()
 
 const {
@@ -107,9 +107,8 @@ const handleCreateDraft = async () => {
 
   const ensureOrgSlug = activeOrgState.value?.data?.slug
   if (!ensureOrgSlug) {
-    // TODO: This should refresh organization data, not content data
-    // Consider: await refreshActiveOrganization() or similar
-    await refreshContents()
+    // Refresh organization data to ensure we have an active organization
+    await refreshActiveOrg()
   }
 
   createDraftLoading.value = true
