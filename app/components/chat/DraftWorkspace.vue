@@ -246,7 +246,7 @@ watch(content, (value) => {
     .filter((message): message is ContentChatMessage => Boolean(message))
     .map(message => ({
       id: message.id,
-      role: message.role === 'user' ? 'user' : 'assistant',
+      role: ['user', 'system', 'assistant'].includes(message.role) ? message.role : 'assistant',
       content: message.content,
       createdAt: toDate(message.createdAt),
       payload: message.payload ?? null

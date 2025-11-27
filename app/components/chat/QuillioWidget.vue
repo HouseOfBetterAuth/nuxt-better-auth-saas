@@ -34,9 +34,9 @@ const {
   data: workspaceDraftsPayload,
   pending: draftsPending,
   refresh: refreshDrafts
-} = await useFetch<{ drafts: any[] }>('/api/chat/workspace', {
+} = await useFetch<{ contents: any[] }>('/api/chat/workspace', {
   default: () => ({
-    drafts: []
+    contents: []
   })
 })
 const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
@@ -47,7 +47,7 @@ const remainingAnonDrafts = computed(() => Math.max(0, ANON_DRAFT_LIMIT - (anony
 const hasReachedAnonLimit = computed(() => !loggedIn.value && (anonymousDraftCount.value || 0) >= ANON_DRAFT_LIMIT)
 
 const contentEntries = computed(() => {
-  const list = Array.isArray(workspaceDraftsPayload.value?.drafts) ? workspaceDraftsPayload.value?.drafts : []
+  const list = Array.isArray(workspaceDraftsPayload.value?.contents) ? workspaceDraftsPayload.value?.contents : []
   return list.map((entry: any) => {
     const sections = Array.isArray(entry.currentVersion?.sections) ? entry.currentVersion.sections : []
     const wordCount = sections.reduce((sum: number, section: Record<string, any>) => {
@@ -120,8 +120,8 @@ const loadWorkspaceDetail = async (contentId: string) => {
     const response = await $fetch<{ drafts?: any[], workspace?: any | null }>('/api/chat/workspace', {
       query: { contentId }
     })
-    if (Array.isArray(response?.drafts)) {
-      workspaceDraftsPayload.value = { drafts: response.drafts }
+    if (Array.isArray(response?.contents)) {
+      workspaceDraftsPayload.value = { contents: response.contents }
     }
     workspaceDetail.value = response?.workspace ?? null
   } catch (error) {
@@ -259,7 +259,7 @@ if (import.meta.client) {
         </div>
 
         <ChatDraftWorkspace
-          v-if="workspaceDetail"
+          v-if="workspaceDetail?.content?.id"
           :content-id="workspaceDetail.content.id"
           :organization-slug="workspaceDetail.content.slug || activeOrgState?.value?.data?.slug || null"
           :initial-payload="workspaceDetail"

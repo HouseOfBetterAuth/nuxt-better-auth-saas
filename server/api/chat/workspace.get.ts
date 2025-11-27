@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     ? query.contentId.trim()
     : null
 
-  const drafts = await db
+  const contents = await db
     .select({
       content: schema.content,
       sourceContent: schema.sourceContent,
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     : null
 
   return {
-    drafts,
+    contents,
     workspace
   }
 })
