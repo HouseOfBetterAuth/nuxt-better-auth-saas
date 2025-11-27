@@ -426,235 +426,257 @@ async function handleCreateContentSubmit() {
 
 <template>
   <div class="flex flex-col justify-center gap-4 sm:gap-6 py-8">
-    <UContainer class="space-y-4">
-      <div class="text-center">
-        <h1 class="text-3xl sm:text-4xl text-highlighted font-bold">
-          What should we write next?
-        </h1>
-      </div>
-
-      <div v-if="errorMessage">
-        <UAlert
-          color="error"
-          variant="soft"
-          icon="i-lucide-alert-triangle"
-          :description="errorMessage"
-        />
-      </div>
-
-      <UChatPrompt
-        v-model="prompt"
-        placeholder="Ask anything…"
-        variant="subtle"
-        class="[view-transition-name:chat-prompt]"
-        :disabled="isBusy || loading"
-        @submit="handlePromptSubmit"
-      >
-        <UChatPromptSubmit :status="promptStatus" />
-        <template
-          v-if="contentOptions.length > 0"
-          #footer
-        >
-          <USelectMenu
-            v-model="selectedContentId"
-            :items="contentOptions"
-            :icon="selectedContentOption?.icon ?? 'i-lucide-file-plus'"
-            variant="ghost"
-            value-key="value"
-            class="hover:bg-default focus:bg-default data-[state=open]:bg-default"
-            :ui="{
-              trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
-            }"
-            @update:model-value="handleContentSelect"
-          />
-        </template>
-      </UChatPrompt>
-
-      <UCard
-        v-if="messages.length"
-        :ui="{ body: 'space-y-4' }"
-        class="shadow-none border border-dashed border-muted-200/70"
+    <UContainer class="space-y-6">
+      <CodexChatLayout
+        sidebar-label="Workflow"
+        conversation-label="Conversation history"
       >
         <template #header>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-sm text-muted-500">
-                Conversation history
+          <div class="flex flex-col gap-3">
+            <div class="text-center space-y-1">
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Codex Assistant
               </p>
-              <p class="text-lg font-semibold">
-                {{ messages.length }} message{{ messages.length === 1 ? '' : 's' }}
-              </p>
+              <h1 class="text-3xl sm:text-4xl text-highlighted font-bold">
+                What should we write next?
+              </h1>
             </div>
-            <UBadge
-              size="sm"
+            <UAlert
+              v-if="errorMessage"
+              color="error"
               variant="soft"
-              :color="sessionContentId ? 'neutral' : 'primary'"
+              icon="i-lucide-alert-triangle"
+              :description="errorMessage"
+            />
+            <div
+              v-if="actions.length"
+              class="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-3 text-sm text-primary-600 dark:text-primary-300 space-y-2"
             >
-              <template v-if="sessionContentId">
-                Linked to draft
-              </template>
-              <template v-else>
-                {{ includedMessageCount }} included
-              </template>
-            </UBadge>
-          </div>
-          <div
-            v-if="linkedContent"
-            class="flex items-center justify-between gap-3 rounded-md border border-muted-200/80 bg-background/60 px-3 py-2 text-sm"
-          >
-            <div class="flex flex-col">
-              <span class="text-xs uppercase tracking-wide text-muted-500">
-                Linked draft
-              </span>
-              <NuxtLink
-                class="font-medium text-primary-600 hover:underline"
-                :to="`/${slug}/content/${linkedContent.id}`"
-              >
-                {{ linkedContent.title || 'View draft' }}
-              </NuxtLink>
+              <p>
+                Detected a {{ actions[0]?.sourceType?.replace('_', ' ') || 'source' }} link. Draft generation is running automatically.
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  v-for="action in actions"
+                  :key="`${action.type}-${action.sourceContentId || action.label || 'action'}`"
+                  size="xs"
+                  color="primary"
+                  variant="ghost"
+                  :disabled="isBusy || loading"
+                  :loading="isBusy"
+                  @click="handleAction(action)"
+                >
+                  Run again
+                </UButton>
+              </div>
             </div>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-rotate-cw"
-              @click="toast.add({
-                title: 'Sync coming soon',
-                description: 'Resyncing chat instructions into linked drafts will be available shortly.',
-                color: 'neutral'
-              })"
-            >
-              Sync coming soon
-            </UButton>
           </div>
         </template>
 
-        <div class="max-h-[400px] space-y-3 overflow-y-auto pr-1">
-          <div
-            v-for="message in messages"
-            :key="message.id"
-            class="rounded-lg border border-muted-200/60 bg-background/60 p-3"
-          >
-            <UCheckbox
-              :model-value="selectedMessageIdsSet.has(message.id)"
-              :disabled="creatingContent"
-              @update:model-value="value => toggleMessageSelection(message.id, Boolean(value))"
+        <template #sidebar>
+          <div class="space-y-4">
+            <div class="rounded-2xl border border-muted-200/60 bg-background/30 p-4 space-y-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="text-sm text-muted-500">
+                  Structured schema focus
+                </span>
+                <UBadge
+                  color="neutral"
+                  variant="soft"
+                  size="sm"
+                  class="capitalize"
+                >
+                  {{ selectedContentTypeOption?.label || 'Unknown' }}
+                </UBadge>
+                <USelectMenu
+                  v-model="selectedContentType"
+                  :items="schemaOptions"
+                  value-key="value"
+                  :icon="selectedContentTypeOption?.icon || 'i-lucide-file-text'"
+                  size="xs"
+                  color="primary"
+                  variant="ghost"
+                  class="ml-auto hover:bg-default focus:bg-default data-[state=open]:bg-default"
+                />
+              </div>
+              <p class="text-xs text-muted-500">
+                {{ selectedContentTypeOption?.description || 'No description available' }}
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  v-for="quickChat in quickChats"
+                  :key="quickChat.label"
+                  :icon="quickChat.icon"
+                  :label="quickChat.label"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  class="rounded-full"
+                  :disabled="isBusy || loading"
+                  @click="handleQuickChat(quickChat)"
+                />
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-muted-200/60 bg-background/30 p-4 space-y-3">
+              <p class="text-sm font-semibold">
+                Target draft
+              </p>
+              <USelectMenu
+                v-model="selectedContentId"
+                :items="contentOptions"
+                :icon="selectedContentOption?.icon ?? 'i-lucide-file-plus'"
+                variant="soft"
+                value-key="value"
+                @update:model-value="handleContentSelect"
+              />
+              <p class="text-xs text-muted-500">
+                Choose an existing draft or keep chatting to spawn a new one.
+              </p>
+            </div>
+
+            <div
+              v-if="canCreateContent"
+              class="flex justify-end"
             >
-              <template #label>
-                <div class="space-y-1 text-left">
-                  <p class="text-xs uppercase tracking-wide text-muted-500">
-                    {{ message.role === 'assistant' ? 'Assistant' : 'You' }}
+              <UButton
+                icon="i-lucide-wand-2"
+                color="primary"
+                variant="soft"
+                size="sm"
+                :disabled="isBusy || loading"
+                @click="openCreateContentModal"
+              >
+                Create draft from chat
+              </UButton>
+            </div>
+          </div>
+        </template>
+
+        <template #messages>
+          <UCard
+            v-if="messages.length"
+            :ui="{ body: 'space-y-4' }"
+            class="shadow-none border border-dashed border-muted-200/70"
+          >
+            <template #header>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm text-muted-500">
+                    Conversation history
                   </p>
-                  <p class="text-sm text-muted-700 whitespace-pre-wrap leading-relaxed">
-                    {{ message.content }}
+                  <p class="text-lg font-semibold">
+                    {{ messages.length }} message{{ messages.length === 1 ? '' : 's' }}
                   </p>
                 </div>
-              </template>
-            </UCheckbox>
-          </div>
-        </div>
-        <div class="text-xs text-muted-500 space-y-2">
-          <p>
-            Selected messages feed into draft creation so you can exclude small talk or unrelated steps.
-          </p>
-          <UAccordion
-            v-if="transcriptPreview"
-            size="xs"
-            :items="[{ label: 'Preview transcript sent to Codex', value: 'transcript', content: '' }]"
-          >
-            <template #content>
-              <UTextarea
-                :model-value="transcriptPreview"
-                readonly
-                autoresize
-                class="text-xs"
-              />
+                <UBadge
+                  size="sm"
+                  variant="soft"
+                  :color="sessionContentId ? 'neutral' : 'primary'"
+                >
+                  <template v-if="sessionContentId">
+                    Linked to draft
+                  </template>
+                  <template v-else>
+                    {{ includedMessageCount }} included
+                  </template>
+                </UBadge>
+              </div>
+              <div
+                v-if="linkedContent"
+                class="flex items-center justify-between gap-3 rounded-md border border-muted-200/80 bg-background/60 px-3 py-2 text-sm"
+              >
+                <div class="flex flex-col">
+                  <span class="text-xs uppercase tracking-wide text-muted-500">
+                    Linked draft
+                  </span>
+                  <NuxtLink
+                    class="font-medium text-primary-600 hover:underline"
+                    :to="`/${slug}/content/${linkedContent.id}`"
+                  >
+                    {{ linkedContent.title || 'View draft' }}
+                  </NuxtLink>
+                </div>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-rotate-cw"
+                  @click="toast.add({
+                    title: 'Sync coming soon',
+                    description: 'Resyncing chat instructions into linked drafts will be available shortly.',
+                    color: 'neutral'
+                  })"
+                >
+                  Sync coming soon
+                </UButton>
+              </div>
             </template>
-          </UAccordion>
-        </div>
-      </UCard>
 
-      <div
-        v-if="canCreateContent"
-        class="flex justify-end"
-      >
-        <UButton
-          icon="i-lucide-wand-2"
-          color="primary"
-          variant="soft"
-          size="sm"
-          :disabled="isBusy || loading"
-          @click="openCreateContentModal"
-        >
-          Create draft from chat
-        </UButton>
-      </div>
+            <div class="max-h-[400px] space-y-3 overflow-y-auto pr-1">
+              <div
+                v-for="message in messages"
+                :key="message.id"
+                class="rounded-lg border border-muted-200/60 bg-background/60 p-3"
+              >
+                <UCheckbox
+                  :model-value="selectedMessageIdsSet.has(message.id)"
+                  :disabled="creatingContent"
+                  @update:model-value="value => toggleMessageSelection(message.id, Boolean(value))"
+                >
+                  <template #label>
+                    <div class="space-y-1 text-left">
+                      <p class="text-xs uppercase tracking-wide text-muted-500">
+                        {{ message.role === 'assistant' ? 'Assistant' : 'You' }}
+                      </p>
+                      <p class="text-sm text-muted-700 whitespace-pre-wrap leading-relaxed">
+                        {{ message.content }}
+                      </p>
+                    </div>
+                  </template>
+                </UCheckbox>
+              </div>
+            </div>
+            <div class="text-xs text-muted-500 space-y-2">
+              <p>
+                Selected messages feed into draft creation so you can exclude small talk or unrelated steps.
+              </p>
+              <UAccordion
+                v-if="transcriptPreview"
+                size="xs"
+                :items="[{ label: 'Preview transcript sent to Codex', value: 'transcript', content: '' }]"
+              >
+                <template #content>
+                  <UTextarea
+                    :model-value="transcriptPreview"
+                    readonly
+                    autoresize
+                    class="text-xs"
+                  />
+                </template>
+              </UAccordion>
+            </div>
+          </UCard>
+        </template>
 
-      <div
-        v-if="actions.length"
-        class="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 text-sm text-primary-600 dark:text-primary-300 space-y-2"
-      >
-        <p>
-          Detected a {{ actions[0]?.sourceType?.replace('_', ' ') || 'source' }} link. Draft generation is running automatically.
-        </p>
-        <div class="flex flex-wrap gap-2">
-          <UButton
-            v-for="action in actions"
-            :key="`${action.type}-${action.sourceContentId || action.label || 'action'}`"
-            size="xs"
-            color="primary"
-            variant="ghost"
-            :disabled="isBusy || loading"
-            :loading="isBusy"
-            @click="handleAction(action)"
-          >
-            Run again
-          </UButton>
-        </div>
-      </div>
-
-      <div class="rounded-2xl border border-muted-200/60 bg-background/30 p-4 space-y-3">
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="text-sm text-muted-500">
-            Structured schema focus
-          </span>
-          <UBadge
-            color="neutral"
-            variant="soft"
-            size="sm"
-            class="capitalize"
-          >
-            {{ selectedContentTypeOption?.label || 'Unknown' }}
-          </UBadge>
-          <USelectMenu
-            v-model="selectedContentType"
-            :items="schemaOptions"
-            value-key="value"
-            :icon="selectedContentTypeOption?.icon || 'i-lucide-file-text'"
-            size="xs"
-            color="primary"
-            variant="ghost"
-            class="ml-auto hover:bg-default focus:bg-default data-[state=open]:bg-default"
-          />
-        </div>
-        <p class="text-xs text-muted-500">
-          {{ selectedContentTypeOption?.description || 'No description available' }}
-        </p>
-        <div class="flex flex-wrap gap-2">
-          <UButton
-            v-for="quickChat in quickChats"
-            :key="quickChat.label"
-            :icon="quickChat.icon"
-            :label="quickChat.label"
-            size="sm"
-            color="neutral"
-            variant="outline"
-            class="rounded-full"
-            :disabled="isBusy || loading"
-            @click="handleQuickChat(quickChat)"
-          />
-        </div>
-      </div>
+        <template #composer>
+          <div class="space-y-3">
+            <UChatPrompt
+              v-model="prompt"
+              placeholder="Ask anything…"
+              variant="subtle"
+              class="[view-transition-name:chat-prompt]"
+              :disabled="isBusy || loading"
+              @submit="handlePromptSubmit"
+            >
+              <UChatPromptSubmit :status="promptStatus" />
+            </UChatPrompt>
+            <p class="text-xs text-muted-500">
+              Shift + Enter inserts a line break. Use the sidebar to switch schema or link drafts.
+            </p>
+          </div>
+        </template>
+      </CodexChatLayout>
     </UContainer>
 
     <UContainer

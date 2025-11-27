@@ -651,66 +651,95 @@ watch(() => contentId.value, async () => {
           </div>
 
           <template v-else-if="content">
-            <!-- Draft conversation -->
-            <UCard :ui="{ body: 'space-y-4' }">
+            <CodexChatLayout
+              sidebar-label="Section tools"
+              conversation-label="Draft conversation"
+            >
               <template #header>
-                <p class="text-lg font-semibold">
-                  Draft conversation
-                </p>
+                <div class="flex flex-col gap-2">
+                  <p class="text-sm text-muted-500">
+                    Loop revisions back into this draft without leaving chat.
+                  </p>
+                  <p class="text-xs uppercase tracking-wide text-muted-500">
+                    Content ID · {{ contentId }}
+                  </p>
+                </div>
               </template>
 
-              <div
-                v-if="sectionSelectOptions.length"
-                class="space-y-1"
-              >
-                <label class="text-xs uppercase tracking-wide text-muted-500">
-                  Editing section
-                </label>
-                <USelectMenu
-                  v-model="selectedSectionId"
-                  :items="sectionSelectOptions"
-                  value-key="value"
-                  placeholder="Select a section…"
-                />
-                <p
-                  v-if="selectedSection"
+              <template #sidebar>
+                <div
+                  v-if="sectionSelectOptions.length"
+                  class="space-y-2"
+                >
+                  <label class="text-xs uppercase tracking-wide text-muted-500">
+                    Editing section
+                  </label>
+                  <USelectMenu
+                    v-model="selectedSectionId"
+                    :items="sectionSelectOptions"
+                    value-key="value"
+                    placeholder="Select a section…"
+                  />
+                  <p
+                    v-if="selectedSection"
+                    class="text-xs text-muted-500"
+                  >
+                    {{ selectedSection.wordCount }} words · {{ selectedSection.type }}
+                  </p>
+                  <UButton
+                    v-if="selectedSection"
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-edit-3"
+                    @click="focusSection(selectedSection.id)"
+                  >
+                    Jump to section
+                  </UButton>
+                </div>
+                <div
+                  v-else
                   class="text-xs text-muted-500"
                 >
-                  {{ selectedSection.wordCount }} words · {{ selectedSection.type }}
-                </p>
-              </div>
-              <div
-                v-else
-                class="text-xs text-muted-500"
-              >
-                Sections will appear here once a draft exists.
-              </div>
+                  Sections will appear here once a draft exists.
+                </div>
+              </template>
 
-              <div
-                v-if="conversationMessages.length > 0"
-                class="rounded-xl border border-muted-200/60 bg-muted/30 p-2"
-              >
-                <ChatMessagesList
-                  :messages="conversationMessages"
-                  :status="chatStatus"
+              <template #messages>
+                <div
+                  v-if="conversationMessages.length > 0"
+                  class="rounded-xl border border-muted-200/60 bg-muted/30 p-2"
+                >
+                  <ChatMessagesList
+                    :messages="conversationMessages"
+                    :status="chatStatus"
+                  />
+                </div>
+                <div
+                  v-else
+                  class="text-sm text-muted-500"
+                >
+                  No chat history yet. Send instructions to start iterating on this section.
+                </div>
+              </template>
+
+              <template #composer>
+                <UChatPrompt
+                  v-model="prompt"
+                  placeholder="Describe the change you want..."
+                  variant="subtle"
+                  class="[view-transition-name:chat-prompt]"
+                  :disabled="
+                    loading
+                      || chatStatus === 'submitted'
+                      || chatStatus === 'streaming'
+                      || !selectedSectionId
+                  "
+                  :autofocus="false"
+                  @submit="_handleSubmit"
                 />
-              </div>
-
-              <UChatPrompt
-                v-model="prompt"
-                placeholder="Describe the change you want..."
-                variant="subtle"
-                class="[view-transition-name:chat-prompt]"
-                :disabled="
-                  loading
-                    || chatStatus === 'submitted'
-                    || chatStatus === 'streaming'
-                    || !selectedSectionId
-                "
-                :autofocus="false"
-                @submit="_handleSubmit"
-              />
-            </UCard>
+              </template>
+            </CodexChatLayout>
 
             <!-- Draft body (MDX) -->
             <UCard v-if="hasGeneratedContent">

@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "nuxt dev",
     "test": "vitest run --silent=false",
+    "test:chat": "vitest run tests/integration/chat.test.ts tests/e2e/chat-codex.test.ts",
+    "test:chat-manual": "npx tsx tests/manual/chat-runner.ts",
+    "test:chat-custom": "npx tsx tests/manual/chat-runner.ts custom",
     "coverage": "vitest run --coverage",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
