@@ -25,7 +25,8 @@ export const user = pgTable('user', {
   banExpires: timestamp('ban_expires'),
   lastActiveOrganizationId: text('last_active_organization_id'),
   stripeCustomerId: text('stripe_customer_id'),
-  polarCustomerId: text('polar_customer_id')
+  polarCustomerId: text('polar_customer_id'),
+  isAnonymous: boolean('is_anonymous').default(false)
 })
 
 export const account = pgTable(

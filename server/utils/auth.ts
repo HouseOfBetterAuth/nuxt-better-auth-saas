@@ -73,7 +73,11 @@ export const createBetterAuth = () => betterAuth({
 
           // 1. Try to get user's last active org
           const users = await db
-            .select()
+            .select({
+              id: schema.user.id,
+              lastActiveOrganizationId: schema.user.lastActiveOrganizationId,
+              isAnonymous: schema.user.isAnonymous
+            })
             .from(schema.user)
             .where(eq(schema.user.id, session.userId))
             .limit(1)
@@ -110,7 +114,7 @@ export const createBetterAuth = () => betterAuth({
           // 4. For anonymous users without organizations, create a default one
           if (!activeOrgId) {
             const user = users[0]
-            if (user && user.email?.includes('@anonymous.')) {
+            if (user && user.isAnonymous) {
               // Create a default organization for anonymous users
               const [newOrg] = await db
                 .insert(schema.organization)
