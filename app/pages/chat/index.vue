@@ -58,7 +58,6 @@ const contentEntries = computed(() => {
     return {
       id: entry.content.id,
       title: entry.content.title || 'Untitled draft',
-      slug: entry.content.slug,
       status: entry.content.status,
       updatedAt,
       contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
@@ -109,6 +108,18 @@ const handleCreateDraft = async () => {
   if (!ensureOrgSlug) {
     // Refresh organization data to ensure we have an active organization
     await refreshActiveOrg()
+
+    // Re-check the slug after refresh
+    const refreshedSlug = activeOrgState.value?.data?.slug
+    if (!refreshedSlug) {
+      createDraftLoading.value = false
+      toast.add({
+        title: 'Unable to determine workspace',
+        description: 'Could not identify your workspace. Please try refreshing the page.',
+        color: 'error'
+      })
+      return
+    }
   }
 
   createDraftLoading.value = true
@@ -140,9 +151,9 @@ const handleCreateDraft = async () => {
   }
 }
 
-const handleOpenDraft = (entry: { id: string, slug?: string | null }) => {
-  const slug = entry.slug || activeOrgState.value?.data?.slug
-  if (!slug) {
+const handleOpenDraft = (entry: { id: string }) => {
+  const workspaceSlug = activeOrgState.value?.data?.slug
+  if (!workspaceSlug) {
     toast.add({
       title: 'Workspace not ready',
       description: 'We are preparing your workspace. Try again in a few seconds.',
@@ -150,7 +161,7 @@ const handleOpenDraft = (entry: { id: string, slug?: string | null }) => {
     })
     return
   }
-  router.push(`/${slug}/content/${entry.id}`)
+  router.push(`/${workspaceSlug}/content/${entry.id}`)
 }
 
 if (import.meta.client) {
