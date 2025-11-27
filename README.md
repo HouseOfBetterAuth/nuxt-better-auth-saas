@@ -31,6 +31,13 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - Billing page shows a prominent red warning banner when subscription is `past_due`, warning that Pro access and team members will be lost if not resolved.  
   - "Manage Payment Method" button on billing page opens Stripe's hosted portal for secure card updates.
 
+- **Failed Payment Grace Period** (Stripe Dashboard Configuration)  
+  - Configure in Stripe Dashboard → Settings → Billing → Subscriptions and emails.  
+  - **Smart Retries**: Stripe automatically retries failed payments at optimal times.  
+  - **Grace Period**: Set subscriptions to become `past_due` on failure, then auto-cancel after 7 days.  
+  - During grace period: Users see warning banners, receive Stripe emails, and can update payment method.  
+  - On cancellation: Webhook triggers `removeExcessMembersOnExpiration()` to downgrade team to free plan limits and removes any invited team members. Team members will have to be added again if the plan is reactivated.
+
 - **Organizations & Limits**  
   - First team gets **one free organization**.  
   - Every additional organization requires its own Pro subscription.  
