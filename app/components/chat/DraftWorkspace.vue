@@ -129,8 +129,22 @@ const emit = defineEmits<{
 
 const currentRoute = useRoute()
 const router = useRouter()
-const slug = computed(() => props.organizationSlug ?? (currentRoute.params.slug as string | undefined) ?? null)
-const contentId = computed(() => props.contentId ?? (currentRoute.params.id as string))
+const slug = computed(() => {
+  if (props.organizationSlug) return props.organizationSlug
+  const param = currentRoute.params.slug
+  if (Array.isArray(param)) {
+    return param[0]?.trim() || null
+  }
+  return param?.trim() || null
+})
+const contentId = computed(() => {
+  if (props.contentId) return props.contentId
+  const param = currentRoute.params.id
+  if (Array.isArray(param)) {
+    return param[0]?.trim() || ''
+  }
+  return param?.trim() || ''
+})
 const showBackButton = computed(() => props.showBackButton !== false)
 const backRoute = computed(() => {
   if (props.backTo !== undefined) {
