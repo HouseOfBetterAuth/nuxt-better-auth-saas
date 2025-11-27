@@ -130,7 +130,8 @@ const emit = defineEmits<{
 const currentRoute = useRoute()
 const router = useRouter()
 const slug = computed(() => {
-  if (props.organizationSlug) return props.organizationSlug
+  if (props.organizationSlug)
+    return props.organizationSlug
   const param = currentRoute.params.slug
   if (Array.isArray(param)) {
     return param[0]?.trim() || null
@@ -138,7 +139,8 @@ const slug = computed(() => {
   return param?.trim() || null
 })
 const contentId = computed(() => {
-  if (props.contentId) return props.contentId
+  if (props.contentId)
+    return props.contentId
   const param = currentRoute.params.id
   if (Array.isArray(param)) {
     return param[0]?.trim() || ''
@@ -242,12 +244,16 @@ function createMessageId() {
   return Math.random().toString(36).slice(2)
 }
 
-function toDate(value: string | Date) {
+function toDate(value: string | Date): Date | null {
   if (value instanceof Date) {
     return value
   }
   const parsed = new Date(value)
-  return Number.isFinite(parsed.getTime()) ? parsed : new Date()
+  if (Number.isFinite(parsed.getTime())) {
+    return parsed
+  }
+  console.warn('[DraftWorkspace] Failed to parse date value:', value)
+  return null
 }
 
 watch(content, (value) => {
@@ -262,7 +268,7 @@ watch(content, (value) => {
       id: message.id,
       role: ['user', 'system', 'assistant'].includes(message.role) ? message.role : 'assistant',
       content: message.content,
-      createdAt: toDate(message.createdAt),
+      createdAt: toDate(message.createdAt) || new Date(),
       payload: message.payload ?? null
     }))
 }, { immediate: true })
@@ -274,7 +280,6 @@ const generatedContent = computed(() => currentVersion.value?.bodyMdx || current
 const hasGeneratedContent = computed(() => !!generatedContent.value)
 const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
-const _assets = computed(() => currentVersion.value?.assets || null)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
 
 const sections = computed(() => {
@@ -326,7 +331,6 @@ function formatDate(value: string | Date | null | undefined) {
   return dateFormatter.format(date)
 }
 
-const _totalWordCount = computed(() => sections.value.reduce((sum, section) => sum + (section.wordCount || 0), 0))
 const contentUpdatedAtLabel = computed(() => {
   const value = contentRecord.value?.updatedAt
   return value ? formatDate(value) : '—'
@@ -349,13 +353,6 @@ const seoPlan = computed(() => {
   return plan && typeof plan === 'object' ? plan : null
 })
 
-const _seoKeywords = computed(() => {
-  const planKeywords = seoPlan.value?.keywords
-  if (Array.isArray(planKeywords)) {
-    return planKeywords.filter(keyword => typeof keyword === 'string' && keyword.trim().length > 0)
-  }
-  return []
-})
 
 const publicContentUrl = computed(() => {
   if (!frontmatter.value?.slug) {
@@ -423,74 +420,7 @@ function sectionPreview(body: string, limit = 320) {
 
 const selectedSectionId = ref<string | null>(null)
 const selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
-const _showFullTranscript = ref(false)
-const _formattedTranscript = computed(() => formatTranscriptText(sourceDetails.value?.sourceText ?? ''))
 
-// Processing state
-const _isProcessing = computed(() => {
-  if (!sourceDetails.value)
-    return false
-  return sourceDetails.value.ingestStatus === 'pending' || contentStatus.value === 'generating'
-})
-
-const _processingStatusText = computed(() => {
-  if (sourceDetails.value?.ingestStatus === 'pending')
-    return 'Processing source content...'
-  if (contentStatus.value === 'generating')
-    return 'Generating content...'
-  return 'Processing...'
-})
-
-const _processingProgress = computed(() => {
-  // This could be enhanced with actual progress from the API
-  return sourceDetails.value?.ingestStatus === 'ingested' ? 100 : 50
-})
-
-const _processingStatusColor = computed(() => {
-  if (contentStatus.value === 'error')
-    return 'error'
-  if (sourceDetails.value?.ingestStatus === 'ingested')
-    return 'success'
-  return 'primary'
-})
-
-// Helper methods
-function _getStatusColor(status?: string) {
-  switch (status) {
-    case 'ingested':
-      return 'success' // Changed from 'green'
-    case 'pending':
-      return 'warning' // Changed from 'yellow'
-    case 'failed':
-      return 'error' // Changed from 'red'
-    default:
-      return 'neutral' // Changed from 'gray'
-  }
-}
-
-function _formatStatus(status?: string) {
-  if (!status)
-    return 'Unknown'
-  return status.replace(/_/g, ' ')
-}
-
-function _formatSourceType(type?: string | null) {
-  if (!type)
-    return '—'
-  return type
-    .toString()
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-}
-
-function _formatDuration(seconds: number) {
-  if (seconds == null || !Number.isFinite(seconds))
-    return '—'
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = Math.floor(seconds % 60)
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
-}
 
 function formatTranscriptText(raw: string) {
   if (!raw) {
@@ -560,15 +490,6 @@ function focusSection(sectionId: string) {
   })
 }
 
-const _promptStatus = computed(() => {
-  if (loading.value || chatStatus.value === 'submitted' || chatStatus.value === 'streaming') {
-    return loading.value ? 'submitted' : (chatStatus.value as 'submitted' | 'streaming')
-  }
-  if (chatStatus.value === 'error') {
-    return 'error'
-  }
-  return 'ready'
-})
 
 async function _handleSubmit() {
   const trimmed = prompt.value.trim()
