@@ -126,6 +126,12 @@ export default defineNuxtConfig({
     rollupConfig: {
       external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
     },
+    esbuild: {
+      options: {
+        jsx: 'automatic',
+        jsxImportSource: 'react'
+      }
+    },
     publicAssets: process.env.NUXT_APP_STORAGE === 'local'
       ? [{
           dir: resolve(process.env.NUXT_LOCAL_UPLOAD_DIR || './uploads'),

@@ -11,6 +11,7 @@ import * as schema from '../database/schema'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
 import { cacheClient, resendInstance } from './drivers'
+import { renderDeleteAccount, renderResetPassword, renderTeamInvite, renderVerifyEmail } from './email'
 import { runtimeConfig } from './runtimeConfig'
 import { createStripeClient, setupStripe } from './stripe'
 
@@ -60,11 +61,13 @@ export const createBetterAuth = () => betterAuth({
       enabled: true,
       async sendDeleteAccountVerification({ user, url }) {
         if (resendInstance) {
+          const name = user.name || user.email.split('@')[0]
+          const html = await renderDeleteAccount(name, url)
           await resendInstance.emails.send({
             from: runtimeConfig.emailFrom!,
             to: user.email,
             subject: 'Confirm account deletion',
-            html: `<p>Hi ${user.name},</p><p>Click the link below to confirm deleting your account. This action cannot be undone.</p><p><a href="${url}">${url}</a></p>`
+            html
           })
         }
       }
@@ -266,11 +269,13 @@ export const createBetterAuth = () => betterAuth({
     enabled: true,
     requireEmailVerification: true,
     sendResetPassword: async ({ user, url }) => {
+      const name = user.name || user.email.split('@')[0]
+      const html = await renderResetPassword(name, url)
       const response = await resendInstance.emails.send({
         from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
         to: user.email,
         subject: 'Reset your password',
-        text: `Click the link to reset your password: ${url}`
+        html
       })
       await logAuditEvent({
         userId: user.id,
@@ -299,11 +304,13 @@ export const createBetterAuth = () => betterAuth({
       console.log(url)
       console.log('>>> ------------------------ <<<')
       try {
+        const name = user.name || user.email.split('@')[0]
+        const html = await renderVerifyEmail(name, url)
         const response = await resendInstance.emails.send({
           from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
           to: user.email,
           subject: 'Verify your email address',
-          text: `Click the link to verify your email: ${url}`
+          html
         })
         await logAuditEvent({
           userId: user.id,
@@ -415,7 +422,20 @@ export const createBetterAuth = () => betterAuth({
         admin,
         member
       },
-      enableMetadata: true
+      enableMetadata: true,
+      async sendInvitationEmail({ email, inviter, organization, invitation }) {
+        if (resendInstance) {
+          const inviterName = inviter.user.name || inviter.user.email.split('@')[0]
+          const inviteUrl = `${runtimeConfig.public.baseURL}/invite/${invitation.id}`
+          const html = await renderTeamInvite(inviterName, organization.name, inviteUrl)
+          await resendInstance.emails.send({
+            from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
+            to: email,
+            subject: `You're invited to join ${organization.name}`,
+            html
+          })
+        }
+      }
     }),
     apiKey({
       enableMetadata: true,

@@ -97,6 +97,18 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - **Org Name Changes**: When organization name is updated in settings, Stripe customer name is automatically updated.  
   - **Owner Email Changes**: When an owner verifies a new email, Stripe customer email is updated for all their organizations.
 
+- **Transactional Emails** (React Email + Resend)  
+  - **Account Emails**  
+    - **Verify Email**: Sent when a user signs up or changes their email to verify the address.  
+    - **Reset Password**: Sent when a user requests to reset their password via forgot password.  
+    - **Delete Account**: Sent when a user requests account deletion, requiring email confirmation.  
+    - **Team Invite**: Sent when a user is invited to join an organization.  
+  - **Billing Emails** (sent to org owner)  
+    - **Subscription Confirmed**: Sent when a subscription is created, includes plan, seats, amount, and next billing date.  
+    - **Trial Expired**: Sent when a free trial expires without converting to a paid subscription.  
+    - **Subscription Canceled**: Sent when a subscription is canceled, includes the date when access ends.  
+    - *Coming soon: Trial Expiring, Payment Failed*
+
 - **Auth & Org Handling (Better Auth style)**  
   - Most auth, organization, and subscription flows are implemented the "Better Auth way", using its primitives and conventions.  
   - **Exception:** API keys are wired using metadata on users/orgs to associate keys with organizations where Better Auth doesn't natively handle org-scoped API keys.

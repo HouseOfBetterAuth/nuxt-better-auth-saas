@@ -7,6 +7,11 @@ import { member as memberTable, organization as organizationTable } from '../dat
 import { logAuditEvent } from './auditLogger'
 import { useDB } from './db'
 import { runtimeConfig } from './runtimeConfig'
+import {
+  sendSubscriptionCanceledEmail,
+  sendSubscriptionConfirmedEmail,
+  sendTrialExpiredEmail
+} from './stripeEmails'
 import { removeExcessMembersOnExpiration } from './subscription-handlers'
 
 /**
@@ -318,9 +323,11 @@ export const setupStripe = () => stripe({
             },
             onTrialExpired: async (subscription: Subscription) => {
               await addPaymentLog('trial_expired', subscription)
-              // Remove excess members when trial expires without conversion
               if (subscription.referenceId) {
+                // Remove excess members when trial expires without conversion
                 await removeExcessMembersOnExpiration(subscription.referenceId)
+                // Send trial expired email
+                await sendTrialExpiredEmail(subscription.referenceId, subscription)
               }
             }
           }
@@ -338,9 +345,11 @@ export const setupStripe = () => stripe({
             },
             onTrialExpired: async (subscription: Subscription) => {
               await addPaymentLog('trial_expired', subscription)
-              // Remove excess members when trial expires without conversion
               if (subscription.referenceId) {
+                // Remove excess members when trial expires without conversion
                 await removeExcessMembersOnExpiration(subscription.referenceId)
+                // Send trial expired email
+                await sendTrialExpiredEmail(subscription.referenceId, subscription)
               }
             }
           }
@@ -353,6 +362,8 @@ export const setupStripe = () => stripe({
       // Sync customer name back to org name (in case payment method changed it)
       if (subscription.referenceId) {
         await syncStripeCustomerName(subscription.referenceId)
+        // Send confirmation email
+        await sendSubscriptionConfirmedEmail(subscription.referenceId, subscription)
       }
     },
     onSubscriptionUpdate: async ({ subscription }) => {
@@ -364,8 +375,10 @@ export const setupStripe = () => stripe({
     },
     onSubscriptionCancel: async ({ subscription }) => {
       await addPaymentLog('subscription_canceled', subscription)
-      // Remove excess members when subscription is canceled
       if (subscription.referenceId) {
+        // Send cancellation email
+        await sendSubscriptionCanceledEmail(subscription.referenceId, subscription)
+        // Remove excess members when subscription is canceled
         await removeExcessMembersOnExpiration(subscription.referenceId)
       }
     },
