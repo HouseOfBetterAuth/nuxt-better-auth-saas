@@ -17,6 +17,6 @@ describe('app', async () => {
   it('should load homepage successfully', async () => {
     const page = await createPage('/')
     const h1 = await page.$('h1')
-    expect(await h1?.textContent()).eq('NuxSaaS')
+    expect(await h1?.textContent()).eq('HouseOfBetterAuth')
   })
 })

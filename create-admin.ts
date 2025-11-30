@@ -87,7 +87,7 @@ const auth = betterAuth({
 })
 
 async function createAdminUser() {
-  const email = process.env.NUXT_ADMIN_EMAIL || 'admin@nuxsaas.com'
+  const email = process.env.NUXT_ADMIN_EMAIL || 'admin@example.com'
   const password = process.env.NUXT_ADMIN_PASSWORD || 'admin-password'
   const name = 'Admin User'
 

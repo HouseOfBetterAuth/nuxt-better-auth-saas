@@ -60,7 +60,7 @@ const clickSignOut = () => {
           <span
             class="self-center ml-2 text-xl font-semibold whitespace-nowrap dark:text-white"
           >
-            {{ t('global.appName') }}
+            {{ t('global.appNameShort') }}
           </span>
         </a>
         <Logo

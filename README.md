@@ -1,4 +1,4 @@
-## NuxSaaS (Customized Fork)
+## HouseOfBetterAuth (Customized Fork)
 
 Very small Nuxt-based SaaS starter I’m using for my own project.
 
@@ -159,7 +159,7 @@ npx nuxthub deploy
 
 ---
 
-Inspired by the original NuxSaaS project: https://github.com/NuxSaaS/NuxSaaS
+Inspired by the original NuxSaaS project: https://github.com/NuxSaaS/NuxSaaS (now HouseOfBetterAuth)
 
 ### License
 

@@ -441,11 +441,11 @@ async function createTeam() {
           v-if="!isCollapsed"
           class="flex items-center ps-2.5"
         >
-          <Logo class="h-6 w-6" />
+          <Logo class="h-9 w-7" />
           <span
             class="self-center ml-2 text-xl font-semibold whitespace-nowrap dark:text-white"
           >
-            {{ t('global.appName') }}
+            {{ t('global.appNameShort') }}
           </span>
         </a>
         <Logo
