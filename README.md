@@ -221,8 +221,111 @@ npx nuxthub deploy
 
 Inspired by the original NuxSaaS project: https://github.com/NuxSaaS/NuxSaaS (now HouseOfBetterAuth)
 
+### Configuring Plans
+
+Plans are defined in `shared/utils/plans.ts`. This file is the single source of truth for pricing, features, and Stripe price IDs.
+
+```typescript
+// shared/utils/plans.ts
+export const PLANS = {
+  // Legacy plans (for existing subscribers on old pricing)
+  PRO_MONTHLY_V1: {
+    id: 'pro-monthly-v1',
+    priceId: 'price_xxx', // Your Stripe Price ID
+    key: 'pro',
+    interval: 'month',
+    label: 'Monthly (Legacy)',
+    priceNumber: 14.99,
+    seatPriceNumber: 5.00,
+    description: 'Billed monthly',
+    trialDays: 14,
+    features: [
+      'Feature 1',
+      'Feature 2',
+      // ...
+    ]
+  },
+  
+  // Current plans (for new subscribers)
+  PRO_MONTHLY: {
+    id: 'pro-monthly-v2',
+    priceId: 'price_yyy', // Your Stripe Price ID
+    key: 'pro',
+    interval: 'month',
+    label: 'Monthly',
+    priceNumber: 11.99,
+    seatPriceNumber: 5.99,
+    description: 'Billed monthly',
+    trialDays: 14,
+    features: [
+      'Feature 1',
+      'Feature 2',
+      // ...
+    ]
+  },
+  
+  PRO_YEARLY: {
+    id: 'pro-yearly-v2',
+    priceId: 'price_zzz', // Your Stripe Price ID
+    key: 'pro',
+    interval: 'year',
+    label: 'Yearly',
+    priceNumber: 99.99,
+    seatPriceNumber: 44.44,
+    description: 'Billed yearly (Save ~45%)',
+    trialDays: 14,
+    features: [/* ... */]
+  }
+}
+```
+
+**Helper functions:**
+
+```typescript
+import { PLANS, findPlanById, findPlanByPriceId, normalizePlanId } from '~~/shared/utils/plans'
+
+// Find plan by ID (handles -no-trial suffix automatically)
+const plan = findPlanById('pro-monthly-v2')
+
+// Find plan by Stripe price ID
+const plan = findPlanByPriceId('price_xxx')
+
+// Normalize plan ID (removes -no-trial suffix)
+const normalizedId = normalizePlanId('pro-monthly-v2-no-trial') // 'pro-monthly-v2'
+```
+
+**How `plans.ts` works as a living database:**
+
+This file acts as your **single source of truth** for all pricing configurations. Unlike a traditional database, it's version-controlled and deployed with your code, making price changes explicit and reviewable.
+
+**Why keep legacy plans?**
+- Existing subscribers remain on their original pricing forever (grandfathered)
+- The app matches subscriptions by `priceId` from Stripe, so legacy plans must stay in the file
+- Removing a legacy plan would break lookups for existing subscribers
+
+**Adding new pricing:**
+1. Create new prices in Stripe Dashboard
+2. Add new plan entries (e.g., `PRO_MONTHLY_V3`) with the new `priceId`
+3. Keep old plans in place - they're still needed for existing subscribers
+4. The UI automatically shows the latest plans to new users (plans without `Legacy` in label)
+
+**Legacy plan behavior:**
+- Legacy subscribers see their original price on the billing page
+- If they cancel and re-subscribe later, they get current (potentially higher) pricing
+- A warning modal explains this before they confirm downgrade
+- Switching monthly → yearly always uses current yearly pricing (no legacy yearly lock)
+
+**Example flow:**
+```
+User A subscribes in 2024 at $14.99/mo (V1)
+You raise prices to $19.99/mo (V2) in 2025
+User A still pays $14.99/mo forever
+User B subscribes in 2025 at $19.99/mo (V2)
+If User A cancels and re-subscribes, they pay $19.99/mo (V2)
+```
+
 ### License
 
 MIT. See [LICENSE](LICENSE).
 
-Documentation coming soon – if there’s interest, I’ll prioritize writing deeper docs and examples.
+Documentation coming soon – if there's interest, I'll prioritize writing deeper docs and examples.
