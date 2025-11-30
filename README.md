@@ -19,6 +19,13 @@
 
 A production-ready Nuxt SaaS starter with authentication, billing, teams, and more.
 
+> **Note:** This template is opinionated and built for my own apps. It's designed specifically for:
+> - **Stripe-only billing** — Polar and other payment providers will not be supported
+> - **Multi-tenant orgs** — each user can own multiple organizations, but only the first org gets a free trial
+> - **No single-tenant mode** — this is not designed for single-user or personal-use SaaS apps
+>
+> Feel free to fork and adapt, but these constraints are intentional and won't change.
+
 <p align="center">
   <img src="/public/screenshots/home.png" alt="Homepage" width="80%" />
 </p>
