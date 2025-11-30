@@ -20,7 +20,18 @@ const apiKeys = ref<any[]>([])
 const loading = ref(false)
 const isCreateModalOpen = ref(false)
 const newKeyName = ref('')
-const newKeyExpiresIn = ref<number | undefined>(undefined)
+const newKeyExpiresInDays = ref<number | undefined>(undefined)
+
+// Expiration options in days
+const expirationOptions = [
+  { label: 'Never', value: undefined },
+  { label: '7 days', value: 7 },
+  { label: '30 days', value: 30 },
+  { label: '60 days', value: 60 },
+  { label: '90 days', value: 90 },
+  { label: '180 days', value: 180 },
+  { label: '365 days', value: 365 }
+]
 const createdKey = ref<string | null>(null)
 const createLoading = ref(false)
 
@@ -50,7 +61,7 @@ async function createApiKey() {
   try {
     const { data, error } = await client.apiKey.create({
       name: newKeyName.value,
-      expiresIn: newKeyExpiresIn.value,
+      expiresIn: newKeyExpiresInDays.value ? newKeyExpiresInDays.value * 24 * 60 * 60 : undefined,
       metadata: {
         organizationId: activeOrg.value.data.id
       }
@@ -94,7 +105,7 @@ function closeModal() {
   isCreateModalOpen.value = false
   createdKey.value = null
   newKeyName.value = ''
-  newKeyExpiresIn.value = undefined
+  newKeyExpiresInDays.value = undefined
 }
 
 onMounted(() => {
@@ -237,16 +248,13 @@ onMounted(() => {
                 @keyup.enter="createApiKey"
               />
             </UFormField>
-            <UFormField label="Expiration (Seconds)">
-              <UInput
-                v-model="newKeyExpiresIn"
-                type="number"
-                placeholder="Leave empty for never"
-                @keyup.enter="createApiKey"
+            <UFormField label="Expiration">
+              <USelect
+                v-model="newKeyExpiresInDays"
+                :items="expirationOptions"
+                value-key="value"
+                class="w-full"
               />
-              <p class="text-xs text-gray-500 mt-1">
-                Default is never if empty.
-              </p>
             </UFormField>
             <div class="flex justify-end gap-2 pt-4">
               <UButton

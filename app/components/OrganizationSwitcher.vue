@@ -2,9 +2,12 @@
 const { organization, session, useActiveOrganization, user } = useAuth()
 
 // Use lazy fetch for organizations to not block navigation
+// getCachedData returns undefined to ensure fresh data on each full page load
 const { data: organizations, status } = await useLazyAsyncData('user-organizations', async () => {
   const { data } = await organization.list()
   return data
+}, {
+  getCachedData: () => undefined
 })
 
 const isPending = computed(() => status.value === 'pending')

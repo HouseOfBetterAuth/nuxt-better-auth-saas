@@ -17,7 +17,7 @@
           },
           "teams": {
             "title": "Teams & Organizations",
-            "description": "Multi-org support with 14-day trial (first org), Owner/Admin/Member roles, and invite links that work for both new and existing users."
+            "description": "Multi-org support with 14-day trial (first org), Owner/Admin/Member roles, invite links that work for both new and existing users, and per-org timezone settings."
           },
           "auth": {
             "title": "Auth & Profile",

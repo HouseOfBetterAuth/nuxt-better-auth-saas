@@ -1,8 +1,12 @@
+![HouseOfBetterAuth Logo](/public/HouseOfBetterAuth.png)
+
 ## HouseOfBetterAuth (Customized Fork)
 
 Very small Nuxt-based SaaS starter I’m using for my own project.
 
-[ADD SCREENSHOT: main dashboard]
+![Homepage](/public/screenshots/home.webp)
+
+![Dashboard](/public/screenshots/dashboard.webp)
 
 ### Features (What This Starter Actually Does)
 
@@ -17,11 +21,15 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - **Plan Switch Preview**: When upgrading from monthly to yearly, users see the full payment breakdown including any credit for unused monthly time, the yearly plan cost, and the final prorated amount due.  
   - **Trial Ending Notices**: Clear messaging when adding team members will end a trial, explaining why payment is required.
 
+![Trial to Paid Seat Preview](/public/screenshots/trial-to-2-seats-preview.png)
+
 - **Invoice History**  
   - Lazy-loaded invoice history component on the billing page.  
   - Shows last 3 invoices by default with "Show more" pagination.  
   - Each invoice displays: invoice number, status badge (paid/open/draft), date, amount, and quick links to view or download PDF.  
   - Automatically refreshes after seat changes or plan switches to show new payments.
+
+![Invoice History](/public/screenshots/invoices-1.png)
 
 - **Declined Card Handling**  
   - Uses Stripe's `payment_behavior: 'error_if_incomplete'` to fail fast without leaving subscriptions in a broken state.  
@@ -34,6 +42,10 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
     - `usePaymentStatus()` - Composable for checking `isPaymentFailed`, `hasUsedTrial`, `activeSub`, etc.  
     - `<BillingPaymentFailedBanner />` - Global warning banner for dashboard layout.  
     - `<BillingPaymentFailedCard />` - Detailed action card with update payment buttons.
+
+![Failed Payment UI](/public/screenshots/failed-payment-upgrade-ui.png)
+
+![Failed Payment Webhook](/public/screenshots/failed-payment-recurring-webhook.png)
 
 - **Failed Payment Grace Period** (Stripe Dashboard Configuration)  
   - Configure in Stripe Dashboard → Settings → Billing → Subscriptions and emails.  
@@ -48,6 +60,14 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - `<SettingsSessionsSection />` - Trusted devices / active sessions management.  
   - `<SettingsDangerZone />` - Leave or delete organization actions.
 
+![Org Settings with Timezones](/public/screenshots/org-settings-with-timezones.png)
+
+![API Key Creation](/public/screenshots/org-settings-api-key-1.png)
+
+![API Key Created](/public/screenshots/org-settings-apit-key-2.png)
+
+![API Key Expiration](/public/screenshots/org-settings-api-key-expiration-3.png)
+
 - **Members Page Components** (for template customization):  
   - `<MembersInviteForm />` - Invite form with seat limit checking, trial conversion, and upgrade flows.  
   - `useTimezone()` - Composable for timezone list and formatting utilities.
@@ -59,6 +79,12 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - Good for "workspace per client" / "workspace per brand" setups.  
   - Trial eligibility is checked server-side and enforced via separate Stripe plan configurations (no-trial variants).
 
+![Create New Org](/public/screenshots/org-switcher-create-new-org.png)
+
+![One Free Org Per Account](/public/screenshots/org-switcher-one-free-org-per%20account-1.png)
+
+![One Free Org Payment Required](/public/screenshots/org-switcher-one-free-org-per%20account-2.png)
+
 - **Seats, Members & Invites**  
   - Pro plan is seat-based: base plan includes 1 seat, extra members cost per-seat.  
   - **Owners** can add/remove seats and preview the new price before confirming.  
@@ -67,17 +93,19 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
     - If a user signs up from an invite, they land directly in the invited org instead of a confusing default personal team. 
     - If they already have an account, they can click the invite link any time to join the org.
 
-[ADD SCREENSHOT: billing page with downgrade warning + seat controls]
+![Subscription Management](/public/screenshots/subscription.webp)
+
+![Seat Change Preview](/public/screenshots/billing-invite-seat-preview.png)
 
 - **Referrals (Users & Orgs)**  
   - Basic tracking hooks for who referred a **user** and/or an **organization** (e.g. for attribution, rewards, or analytics).  
   - Can be extended to payouts or dashboards later.
 
-- **Timezone Switcher**  
-  - UI support for choosing a timezone so billing dates, trials, and activity timestamps make sense for the user (not just the server).  
-  - Helpful when you have globally distributed teams.
+- **Timezone Support**  
+  - Per-organization timezone settings so billing dates, trials, and activity timestamps display correctly for each team.  
+  - Full timezone list with search, stored at the org level.  
+  - `useTimezone()` composable for formatting dates/times throughout the app.
 
-[ADD SCREENSHOT: settings / profile with timezone selector]
 
 - **Roles & Permissions**  
   - **Owner**: full control over org, billing, members, and dangerous actions.  
@@ -92,6 +120,8 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   - **Email Change with Stripe Sync**: When a team owner changes their email (with verification), Stripe customer email is automatically updated for all organizations they own.  
   - **Trusted Devices**: View and revoke active sessions from the profile page.  
   - **Account Deletion**: Users can delete their account with email verification for security.
+
+![Profile Settings](/public/screenshots/profile-settings-change-email-password-sessions-connected-accounts.png)
 
 - **Stripe Billing Sync**  
   - **Organization Name on Invoices**: Stripe customer name is set to the organization name (shows on invoices).  
@@ -121,11 +151,23 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   | Payment Failed | `payment_intent.payment_failed` webhook | Sent when a card is declined during subscription updates or renewals |
   | Subscription Expired | `onSubscriptionDeleted` webhook | Sent when subscription is deleted after grace period; notifies of downgrade to free, members removed, and 90-day data retention |
 
+![Add Seats Email](/public/screenshots/email-add-seats-confirmation.png)
+
+![Monthly to Yearly Email](/public/screenshots/email-monthly-to-yearly-confirmation.png)
+
+![Failed Payment Email](/public/screenshots/failed-payment-email-react-email-resend.png)
+
 - **Auth & Org Handling (Better Auth style)**  
   - Most auth, organization, and subscription flows are implemented the "Better Auth way", using its primitives and conventions.  
-  - **Exception:** API keys are wired using metadata on users/orgs to associate keys with organizations where Better Auth doesn't natively handle org-scoped API keys.
+  - **Exception - Org-Level API Keys:** Better Auth's API key plugin doesn't natively support organization-scoped keys. This starter uses the `metadata` field in the API key schema to store `organizationId`, enabling per-org API keys with expiration options (7/30/60/90/180/365 days or never).
 
-[ADD SCREENSHOT: members page showing roles (owner/admin/member)]
+#### Invite Members Flow
+
+![Invite Members Step 1](/public/screenshots/invite-members-1.png)
+
+![Invite Members Step 2](/public/screenshots/invite-members-2.png)
+
+![Invite Members Step 3](/public/screenshots/invite-members-3.png)
 
 ### Stack
 
@@ -156,6 +198,24 @@ npx nuxthub deploy
 - User settings: API keys per user or per organization for external integrations.
 - User settings: session management UI (see active sessions/devices, revoke sessions).
 - Admin panel tools: impersonate users for support, soft-ban or restrict abusive accounts.
+
+#### Admin Impersonation
+
+![Impersonate User Step 1](/public/screenshots/Impersonate-1.png)
+
+![Impersonate User Step 2](/public/screenshots/Impersonate-2.png)
+
+#### Pro Badge & Users
+
+![Pro Badge](/public/screenshots/pro-badge.png)
+
+![Admin Users Panel](/public/screenshots/users.webp)
+
+#### Authentication
+
+![Sign In](/public/screenshots/signin.webp)
+
+![Pricing](/public/screenshots/pricing.webp)
 
 ---
 

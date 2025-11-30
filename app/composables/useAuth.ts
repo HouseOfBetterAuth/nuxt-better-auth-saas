@@ -114,7 +114,8 @@ export function useAuth() {
   // Centralized function to refresh organization data
   const refreshActiveOrg = async () => {
     try {
-      const orgData: any = await $fetch('/api/organization/full-data')
+      // Add cache-busting timestamp to bypass any HTTP/CDN caching
+      const orgData: any = await $fetch(`/api/organization/full-data?_t=${Date.now()}`)
 
       // Flatten the structure to match what components expect
       // orgData comes as { organization: {...}, subscriptions: [...], userOwnsMultipleOrgs: bool, user: ... }
@@ -122,7 +123,8 @@ export function useAuth() {
       const flattenedData = {
         ...orgData.organization,
         subscriptions: orgData.subscriptions,
-        userOwnsMultipleOrgs: orgData.userOwnsMultipleOrgs
+        userOwnsMultipleOrgs: orgData.userOwnsMultipleOrgs,
+        needsUpgrade: orgData.needsUpgrade
       }
 
       const state = useActiveOrgState()
