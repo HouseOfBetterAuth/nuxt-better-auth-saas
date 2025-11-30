@@ -45,6 +45,9 @@ A production-ready Nuxt SaaS starter with authentication, billing, teams, and mo
 - [x] **Referral tracking** — track user and org referrals for attribution
 - [x] **Connected accounts** — link/unlink multiple OAuth providers
 - [x] **Account deletion** — secure deletion with email verification
+- [ ] **More Testing** — I'm sure there are some bugs, will activtly test and make updates.
+- [ ] **NuxHub self-hosted** — self-hosted deployment guide
+- [ ] **Abandoned cart emails** — email users with incomplete subscription status
 - [ ] **Usage-based billing** — metered billing support
 
 <p align="center">
@@ -83,6 +86,51 @@ pnpm run dev -o
 npx nuxthub deploy
 ```
 
+### Environment Variables
+
+**Important:** Set `NUXT_APP_URL` to your production URL for Better Auth to work correctly.
+
+```bash
+# .env
+NUXT_APP_URL=https://yourdomain.com
+```
+
+This URL is used by Better Auth for:
+- OAuth callback URLs
+- Email verification links
+- Password reset links
+- CORS origin validation
+
+The origin is configured in `server/utils/auth.ts`:
+
+```typescript
+export const createBetterAuth = () => betterAuth({
+  baseURL: runtimeConfig.public.baseURL,
+  trustedOrigins: [
+    'http://localhost:8787',
+    'http://localhost:3000',
+    // ... other local origins
+    runtimeConfig.public.baseURL  // Your production URL
+  ],
+  // ...
+})
+```
+
+Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfig.public.baseURL`.
+
+### Recommended Hosting
+
+**Recommended stack:**
+- **Cloudflare Workers** — serverless hosting via [NuxHub](https://hub.nuxt.com)
+- **Neon Postgres** — serverless PostgreSQL database
+- **Cloudflare Hyperdrive** — connection pooling for Postgres
+
+**Caching:**
+- **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching, rate limiting)
+- **Redis** — use Redis if you're not on Cloudflare (Upstash, Railway, Vercel etc.)
+
+The app automatically uses Cloudflare KV when deployed to Cloudflare Workers. No additional configuration needed.
+
 ---
 
 ## Features
@@ -101,7 +149,7 @@ npx nuxthub deploy
 
 | Status | When | What Happens |
 |--------|------|--------------|
-| `incomplete` | User opens Stripe Checkout for the first time | Waiting for initial payment |
+| `incomplete` | User opens Stripe Checkout but doesn't complete payment | Waiting for initial payment — use for retargeting abandoned checkouts |
 | `trialing` | User starts a free trial | Full access during trial period |
 | `active` | Payment succeeds (after trial or direct subscribe) | Full access, billing active |
 | `past_due` | Payment fails on renewal | Grace period — user sees warning banners, can update payment method |
@@ -112,6 +160,7 @@ npx nuxthub deploy
 2. During the grace period (configured in Stripe Dashboard), users see warning banners and can update their payment method
 3. If payment isn't resolved, Stripe sends a webhook after the grace period and sets `status = "canceled"`
 4. On cancellation, the app downgrades the org to free tier and removes excess team members
+
 
 #### Stripe Webhook Setup
 
