@@ -69,7 +69,7 @@ const screenshots = [
   {
     label: t('home.screenshots.dashboard'),
     key: 'dashboard',
-    src: '/screenshots/dashboard.webp'
+    src: '/screenshots/dashboard.png'
   },
   {
     label: t('home.screenshots.users'),
@@ -79,17 +79,17 @@ const screenshots = [
   {
     label: t('home.screenshots.subscription'),
     key: 'subscription',
-    src: '/screenshots/subscription.webp'
+    src: '/screenshots/subscription.png'
   },
   {
     label: t('home.screenshots.pricing'),
     key: 'pricing',
-    src: '/screenshots/pricing.webp'
+    src: '/screenshots/pricing.png'
   },
   {
     label: t('home.screenshots.signin'),
     key: 'signin',
-    src: '/screenshots/signin.webp'
+    src: '/screenshots/signin.png'
   }
 ]
 const activeScreenshot = ref('0')

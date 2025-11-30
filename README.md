@@ -20,11 +20,11 @@
 A production-ready Nuxt SaaS starter with authentication, billing, teams, and more.
 
 <p align="center">
-  <img src="/public/screenshots/home.webp" alt="Homepage" width="80%" />
+  <img src="/public/screenshots/home.png" alt="Homepage" width="80%" />
 </p>
 
 <p align="center">
-  <img src="/public/screenshots/dashboard.webp" alt="Dashboard" width="80%" />
+  <img src="/public/screenshots/dashboard.png" alt="Dashboard" width="80%" />
 </p>
 
 ### Tech Stack
@@ -70,7 +70,7 @@ npx nuxthub deploy
 - **Grace period support** for failed payments before auto-cancellation
 
 <p align="center">
-  <img src="/public/screenshots/subscription.webp" alt="Subscription Management" width="70%" />
+  <img src="/public/screenshots/subscription.png" alt="Subscription Management" width="70%" />
 </p>
 
 <details>
@@ -174,8 +174,8 @@ Built with React Email + Resend.
 ### Authentication
 
 <p align="center">
-  <img src="/public/screenshots/signin.webp" alt="Sign In" width="45%" />
-  <img src="/public/screenshots/pricing.webp" alt="Pricing" width="45%" />
+  <img src="/public/screenshots/signin.png" alt="Sign In" width="45%" />
+  <img src="/public/screenshots/pricing.png" alt="Pricing" width="45%" />
 </p>
 
 ---
