@@ -119,6 +119,7 @@ Very small Nuxt-based SaaS starter I’m using for my own project.
   | Subscription Canceled | `onSubscriptionUpdate` (cancelAtPeriodEnd=true) | Sent when user clicks "Downgrade to Free", includes access end date |
   | Subscription Resumed | `/api/stripe/resume` endpoint | Sent when user resumes a canceled subscription |
   | Payment Failed | `payment_intent.payment_failed` webhook | Sent when a card is declined during subscription updates or renewals |
+  | Subscription Expired | `onSubscriptionDeleted` webhook | Sent when subscription is deleted after grace period; notifies of downgrade to free, members removed, and 90-day data retention |
 
 - **Auth & Org Handling (Better Auth style)**  
   - Most auth, organization, and subscription flows are implemented the "Better Auth way", using its primitives and conventions.  

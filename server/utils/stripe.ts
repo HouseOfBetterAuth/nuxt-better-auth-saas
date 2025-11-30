@@ -11,6 +11,7 @@ import {
   sendPaymentFailedEmail,
   sendSubscriptionCanceledEmail,
   sendSubscriptionConfirmedEmail,
+  sendSubscriptionExpiredEmail,
   sendTrialExpiredEmail,
   sendTrialStartedEmail
 } from './stripeEmails'
@@ -104,8 +105,10 @@ const getOrgByStripeCustomerId = async (stripeCustomerId: string) => {
  * Sync Stripe customer name with organization name (shows on invoices).
  * Called after subscription events to ensure the customer name stays as the org name
  * (not the cardholder name from payment method).
+ * @param organizationId - The organization ID
+ * @param newName - Optional: pass the new name directly to avoid DB race conditions
  */
-export const syncStripeCustomerName = async (organizationId: string) => {
+export const syncStripeCustomerName = async (organizationId: string, newName?: string) => {
   const db = await useDB()
   const org = await db.query.organization.findFirst({
     where: eq(organizationTable.id, organizationId)
@@ -114,11 +117,12 @@ export const syncStripeCustomerName = async (organizationId: string) => {
   if (!org?.stripeCustomerId)
     return
 
+  const nameToSync = newName || org.name
   const client = createStripeClient()
   await client.customers.update(org.stripeCustomerId, {
-    name: org.name
+    name: nameToSync
   })
-  console.log(`[Stripe] Synced customer ${org.stripeCustomerId} name to "${org.name}"`)
+  console.log(`[Stripe] Synced customer ${org.stripeCustomerId} name to "${nameToSync}"`)
 }
 
 export const addPaymentLog = async (action: string, subscription: any) => {
@@ -209,8 +213,9 @@ export const setupStripe = () => stripe({
         : paymentIntent.customer?.id
 
       if (customerId) {
-        console.log('[Stripe] Payment failed for customer:', customerId, 'Amount:', paymentIntent.amount)
-        await sendPaymentFailedEmail(customerId, paymentIntent.amount)
+        console.log('[Stripe] Payment failed for customer:', customerId, 'Amount:', paymentIntent.amount, 'PI:', paymentIntent.id)
+        // sendPaymentFailedEmail has built-in deduplication using KV storage
+        await sendPaymentFailedEmail(customerId, paymentIntent.amount, paymentIntent.id)
       }
     }
   },
@@ -455,7 +460,10 @@ export const setupStripe = () => stripe({
       await addPaymentLog('subscription_deleted', subscription)
       // Remove excess members when subscription is deleted/expired
       if (subscription.referenceId) {
-        await removeExcessMembersOnExpiration(subscription.referenceId)
+        const result = await removeExcessMembersOnExpiration(subscription.referenceId)
+        const membersRemoved = result?.removedCount || 0
+        // Send subscription expired email
+        await sendSubscriptionExpiredEmail(subscription.referenceId, subscription, membersRemoved)
       }
     }
   }

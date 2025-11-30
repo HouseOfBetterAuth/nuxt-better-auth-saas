@@ -63,13 +63,11 @@ async function updateTeam() {
     if (error)
       throw error
 
-    // Sync Stripe customer name if org name changed
-    if (teamName.value !== activeOrg.value.data.name) {
-      await $fetch('/api/stripe/sync-customer-name', {
-        method: 'POST',
-        body: { organizationId: activeOrg.value.data.id }
-      }).catch(e => console.warn('Failed to sync Stripe customer name:', e))
-    }
+    // Sync Stripe customer name (always sync to ensure it's up to date)
+    await $fetch('/api/stripe/sync-customer-name', {
+      method: 'POST',
+      body: { organizationId: activeOrg.value.data.id, name: teamName.value }
+    }).catch(e => console.warn('Failed to sync Stripe customer name:', e))
 
     toast.add({ title: 'Team updated successfully', color: 'success' })
     await fetchSession()

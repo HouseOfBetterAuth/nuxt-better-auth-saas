@@ -8,6 +8,7 @@ import { PaymentFailed } from '../../emails/PaymentFailed'
 import { ResetPassword } from '../../emails/ResetPassword'
 import { SubscriptionCanceled } from '../../emails/SubscriptionCanceled'
 import { SubscriptionConfirmed } from '../../emails/SubscriptionConfirmed'
+import { SubscriptionExpired } from '../../emails/SubscriptionExpired'
 import { SubscriptionResumed } from '../../emails/SubscriptionResumed'
 import { TeamInvite } from '../../emails/TeamInvite'
 import { TrialExpired } from '../../emails/TrialExpired'
@@ -104,4 +105,14 @@ export async function renderPaymentFailed(options: {
   billingUrl: string
 }): Promise<string> {
   return await render(PaymentFailed({ ...options, appName: getAppName() }))
+}
+
+export async function renderSubscriptionExpired(options: {
+  name: string
+  teamName: string
+  planName: string
+  membersRemoved: number
+  billingUrl: string
+}): Promise<string> {
+  return await render(SubscriptionExpired({ ...options, appName: getAppName() }))
 }

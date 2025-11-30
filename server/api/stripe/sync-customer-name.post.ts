@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const { organizationId } = body
+  const { organizationId, name } = body
 
   if (!organizationId) {
     throw createError({ statusCode: 400, message: 'organizationId is required' })
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   // Sync customer name if org has a Stripe customer
   if (org.stripeCustomerId) {
-    await syncStripeCustomerName(organizationId)
+    await syncStripeCustomerName(organizationId, name)
   }
 
   return { success: true }

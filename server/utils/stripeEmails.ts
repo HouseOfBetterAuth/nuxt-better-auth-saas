@@ -13,6 +13,7 @@ import {
   renderPaymentFailed,
   renderSubscriptionCanceled,
   renderSubscriptionConfirmed,
+  renderSubscriptionExpired,
   renderSubscriptionResumed,
   renderTrialExpired,
   renderTrialStarted
@@ -458,8 +459,8 @@ export async function sendSubscriptionResumedEmail(organizationId: string, subsc
  * Send payment failed email when a payment is declined
  * Triggered by payment_intent.payment_failed webhook
  */
-export async function sendPaymentFailedEmail(customerId: string, amount?: number) {
-  console.log('[Email] Sending payment failed email for customer:', customerId)
+export async function sendPaymentFailedEmail(customerId: string, amount?: number, paymentIntentId?: string) {
+  console.log('[Email] Sending payment failed email for customer:', customerId, paymentIntentId ? `PI: ${paymentIntentId}` : '')
 
   // Look up organization by Stripe customer ID
   const db = await useDB()
@@ -492,4 +493,30 @@ export async function sendPaymentFailedEmail(customerId: string, amount?: number
   })
 
   await sendEmail(info.owner.email, 'Action required: Your payment failed', html)
+}
+
+/**
+ * Send subscription expired email to org owner
+ * Triggered when subscription is deleted (grace period ended)
+ */
+export async function sendSubscriptionExpiredEmail(organizationId: string, subscription: any, membersRemoved: number): Promise<void> {
+  console.log('[Email] Sending subscription expired email for org:', organizationId)
+
+  const info = await getOrgOwnerInfo(organizationId)
+  if (!info) {
+    console.log('[Email] Could not get owner info for org:', organizationId)
+    return
+  }
+
+  const subInfo = getSubscriptionInfo(subscription)
+
+  const html = await renderSubscriptionExpired({
+    name: info.owner.name,
+    teamName: info.org.name,
+    planName: subInfo.planName,
+    membersRemoved,
+    billingUrl: `${runtimeConfig.public.baseURL}/${info.org.slug}/billing`
+  })
+
+  await sendEmail(info.owner.email, `Your ${subInfo.planName} subscription has expired`, html)
 }
