@@ -10,6 +10,11 @@ const { data: organizations, status } = await useLazyAsyncData('user-organizatio
   getCachedData: () => undefined
 })
 
+const dropdownMenuUi = {
+  content: 'w-60 cursor-pointer',
+  item: 'cursor-pointer data-[active=true]:bg-gray-100 dark:data-[active=true]:bg-gray-800 data-[active=true]:text-gray-900 dark:data-[active=true]:text-white'
+}
+
 const isPending = computed(() => status.value === 'pending')
 const activeOrg = useActiveOrganization()
 const route = useRoute()
@@ -163,7 +168,7 @@ const dropdownItems = computed(() => {
   >
     <UDropdownMenu
       :items="dropdownItems"
-      :ui="{ content: 'w-60 cursor-pointer', item: { base: 'cursor-pointer', active: 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' } }"
+      :ui="dropdownMenuUi"
       arrow
     >
       <button class="flex items-center justify-between w-full px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors group outline-none cursor-pointer">

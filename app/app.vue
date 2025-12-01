@@ -23,7 +23,7 @@ const updateZodLocale = (newLocale: string) => {
 }
 
 const route = useRoute()
-const referralCode = useStorage('referralCode', '')
+const referralCode = useStorage<string | null>('referralCode', null)
 
 watch(() => route.query.ref, (refParam) => {
   if (refParam) {

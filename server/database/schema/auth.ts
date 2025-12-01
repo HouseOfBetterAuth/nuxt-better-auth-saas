@@ -180,7 +180,8 @@ export const userRelations = relations(user, ({ many }) => ({
   accounts: many(account),
   members: many(member),
   invitations: many(invitation),
-  sessions: many(session)
+  sessions: many(session),
+  apiKeys: many(apiKey)
 }))
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -199,8 +200,7 @@ export const accountRelations = relations(account, ({ one }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
-  invitations: many(invitation),
-  apiKeys: many(apiKey)
+  invitations: many(invitation)
 }))
 
 export const memberRelations = relations(member, ({ one }) => ({

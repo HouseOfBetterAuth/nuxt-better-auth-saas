@@ -56,73 +56,34 @@
       "tryQuillioChat": "试用 Quillio 聊天",
       "features": {
         "title": "为您的 SaaS 成功打造坚实基础",
-        "categories": {
-          "foundation": "基础架构",
-          "integration": "集成功能",
-          "admin": "管理功能",
-          "experience": "用户体验",
-          "developer": "开发者友好"
-        },
         "items": {
-          "modernTechStack": {
+          "billing": {
+            "title": "Stripe 计费",
+            "description": "基于席位的订阅，支持按比例预览、传统定价支持、失败付款处理（宽限期）以及带 PDF 下载的发票历史记录。"
+          },
+          "emails": {
+            "title": "交易邮件",
+            "description": "通过 React Email + Resend 提供 10+ 邮件模板：验证、密码重置、团队邀请、试用通知、订阅更新、付款失败等。"
+          },
+          "teams": {
+            "title": "团队和组织",
+            "description": "多组织支持，14 天试用（第一个组织），所有者/管理员/成员角色，适用于新用户和现有用户的邀请链接，以及每个组织时区设置。"
+          },
+          "auth": {
+            "title": "认证和资料",
+            "description": "Better Auth 支持 Google/GitHub OAuth、头像上传、链接/取消链接账户、会话管理，以及同步到 Stripe 的电子邮件更改。"
+          },
+          "admin": {
+            "title": "管理面板",
+            "description": "用于支持的用户模拟、软封禁账户、审计日志以及完整的订阅和组织管理。"
+          },
+          "ssr": {
+            "title": "SSR 优化",
+            "description": "服务器渲染页面，客户端 API 调用最少。数据预取和智能缓存，实现快速导航。"
+          },
+          "stack": {
             "title": "现代技术栈",
-            "description": "使用 Nuxt 构建，支持 Nuxt v4、TypeScript 和 Vue 3 组合式 API"
-          },
-          "secureAuth": {
-            "title": "安全认证",
-            "description": "由 Better Auth 提供支持的强大身份验证系统，支持 OAuth2 社交登录（Google、GitHub 等）、登录/注册和基于邮件的密码重置功能。"
-          },
-          "enterpriseDatabase": {
-            "title": "企业级数据库",
-            "description": "使用 PostgreSQL 和 Drizzle ORM 实现类型安全的数据操作"
-          },
-          "emailIntegration": {
-            "title": "邮件集成",
-            "description": "内置 Resend 集成用于发送交易邮件"
-          },
-          "paymentReady": {
-            "title": "支付就绪",
-            "description": "集成 Stripe 实现订阅管理"
-          },
-          "noVendorLockIn": {
-            "title": "无供应商锁定",
-            "description": "模块化架构，组件可互换"
-          },
-          "dashboard": {
-            "title": "仪表盘",
-            "description": "功能强大的管理仪表盘，配备精美图表"
-          },
-          "advancedTables": {
-            "title": "高级表格",
-            "description": "类似 Notion/Airtable 的高级筛选、排序和分页功能，内置通用列表 API"
-          },
-          "userSubscriptionManagement": {
-            "title": "用户/订阅管理",
-            "description": "即用型的用户和订阅管理页面"
-          },
-          "modernUIDesign": {
-            "title": "现代化界面设计",
-            "description": "使用 Nuxt UI 和 TailwindCSS 构建的精美组件"
-          },
-          "i18nReady": {
-            "title": "多语言支持",
-            "description": "内置多语言支持功能"
-          },
-          "responsiveLayout": {
-            "title": "响应式布局",
-            "description": "针对所有设备和屏幕尺寸优化"
-          },
-          "developerFriendly": {
-            "title": "开发者友好",
-            "description": "使用 ESLint + TypeScript 提供更好的开发体验"
-          },
-          "quickSetup": {
-            "title": "快速搭建",
-            "description": "几分钟内即可开始开发"
-          },
-          "customizable": {
-            "title": "易于定制",
-            "description": "轻松扩展和自定义组件"
+            "description": "Nuxt 4、Vue 3、TypeScript、PostgreSQL、Drizzle ORM 和 Cloudflare（Hyperdrive、R2、Workers）用于边缘部署。"
           }
         }
       },
@@ -144,73 +105,34 @@
       "tryQuillioChat": "Quillio チャットを試す",
       "features": {
         "title": "SaaS の成功のための堅固な基盤",
-        "categories": {
-          "foundation": "基盤",
-          "integration": "統合機能",
-          "admin": "管理機能",
-          "experience": "ユーザー体験",
-          "developer": "開発者向け"
-        },
         "items": {
-          "modernTechStack": {
-            "title": "モダン技術スタック",
-            "description": "Nuxt で構築され、Nuxt v4、TypeScript、Vue 3 Composition API に対応"
+          "billing": {
+            "title": "Stripe 請求",
+            "description": "シートベースのサブスクリプション、按分プレビュー、レガシー価格サポート、猶予期間付きの失敗した支払い処理、PDF ダウンロード付きの請求履歴。"
           },
-          "secureAuth": {
-            "title": "セキュア認証",
-            "description": "Better Auth による堅牢な認証システム。OAuth2 ソーシャルログイン（Google、GitHub など）、サインイン/アップ、メールベースのパスワードリセット機能を提供。"
+          "emails": {
+            "title": "トランザクションメール",
+            "description": "React Email + Resend による 10+ のメールテンプレート：確認、パスワードリセット、チーム招待、トライアル通知、サブスクリプション更新、支払い失敗など。"
           },
-          "enterpriseDatabase": {
-            "title": "エンタープライズデータベース",
-            "description": "PostgreSQL と Drizzle ORM による型安全な操作"
+          "teams": {
+            "title": "チームと組織",
+            "description": "マルチ組織サポート、14 日間のトライアル（最初の組織）、所有者/管理者/メンバーロール、新規ユーザーと既存ユーザーの両方で機能する招待リンク、組織ごとのタイムゾーン設定。"
           },
-          "emailIntegration": {
-            "title": "メール統合",
-            "description": "トランザクションメール用の Resend 統合機能搭載"
+          "auth": {
+            "title": "認証とプロフィール",
+            "description": "Google/GitHub OAuth を備えた Better Auth、プロフィール画像アップロード、アカウントのリンク/リンク解除、セッション管理、Stripe に同期されるメール変更。"
           },
-          "paymentReady": {
-            "title": "決済対応",
-            "description": "サブスクリプション管理用の Stripe 統合"
+          "admin": {
+            "title": "管理パネル",
+            "description": "サポート用のユーザーなりすまし、ソフトバンアカウント、監査ログ、完全なサブスクリプションと組織管理。"
           },
-          "noVendorLockIn": {
-            "title": "ベンダーロックインなし",
-            "description": "交換可能なコンポーネントによるモジュラーアーキテクチャ"
+          "ssr": {
+            "title": "SSR 最適化",
+            "description": "最小限のクライアント API 呼び出しでサーバー側レンダリングページ。データプリフェッチとスマートキャッシュにより、高速なナビゲーションを実現。"
           },
-          "dashboard": {
-            "title": "ダッシュボード",
-            "description": "美しいチャートを備えた強力な管理ダッシュボード"
-          },
-          "advancedTables": {
-            "title": "高度なテーブル",
-            "description": "Notion/Airtable のような高度なフィルタリング、ソート、ページネーション機能とすぐに使える汎用リスト API"
-          },
-          "userSubscriptionManagement": {
-            "title": "ユーザー/サブスクリプション管理",
-            "description": "すぐに使えるユーザーとサブスクリプション管理ページ"
-          },
-          "modernUIDesign": {
-            "title": "モダンな UI デザイン",
-            "description": "Nuxt UI と TailwindCSS による美しいコンポーネント"
-          },
-          "i18nReady": {
-            "title": "多言語対応",
-            "description": "複数言語のサポートを標準搭載"
-          },
-          "responsiveLayout": {
-            "title": "レスポンシブレイアウト",
-            "description": "すべてのデバイスと画面サイズに最適化"
-          },
-          "developerFriendly": {
-            "title": "開発者フレンドリー",
-            "description": "ESLint + TypeScript でより良い開発体験"
-          },
-          "quickSetup": {
-            "title": "クイックセットアップ",
-            "description": "数分で開発を開始可能"
-          },
-          "customizable": {
-            "title": "カスタマイズ可能",
-            "description": "コンポーネントの拡張とカスタマイズが容易"
+          "stack": {
+            "title": "モダンスタック",
+            "description": "Nuxt 4、Vue 3、TypeScript、PostgreSQL、Drizzle ORM、およびエッジデプロイメント用の Cloudflare（Hyperdrive、R2、Workers）。"
           }
         }
       },
@@ -232,73 +154,34 @@
       "tryQuillioChat": "Essayer le chat Quillio",
       "features": {
         "title": "Base solide pour votre succès SaaS",
-        "categories": {
-          "foundation": "Fondation",
-          "integration": "Intégration",
-          "admin": "Administration",
-          "experience": "Expérience",
-          "developer": "Développeur"
-        },
         "items": {
-          "modernTechStack": {
-            "title": "Stack Technologique Moderne",
-            "description": "Construit avec Nuxt, prêt pour Nuxt v4, TypeScript et Vue 3 Composition API"
+          "billing": {
+            "title": "Facturation Stripe",
+            "description": "Abonnements basés sur les sièges avec aperçus de proratisation, support des prix hérités, gestion des paiements échoués avec périodes de grâce, et historique des factures avec téléchargements PDF."
           },
-          "secureAuth": {
-            "title": "Authentification Sécurisée",
-            "description": "Un système d'authentification robuste propulsé par Better Auth, offrant des connexions sociales OAuth2 (Google, GitHub, etc.), connexion/inscription, et réinitialisation de mot de passe par email."
+          "emails": {
+            "title": "Emails Transactionnels",
+            "description": "10+ modèles d'emails via React Email + Resend : vérification, réinitialisation de mot de passe, invitations d'équipe, notifications d'essai, mises à jour d'abonnement, échecs de paiement, et plus encore."
           },
-          "enterpriseDatabase": {
-            "title": "Base de Données Enterprise",
-            "description": "PostgreSQL avec Drizzle ORM pour des opérations sûres"
+          "teams": {
+            "title": "Équipes et Organisations",
+            "description": "Support multi-organisations avec essai de 14 jours (première organisation), rôles Propriétaire/Administrateur/Membre, liens d'invitation fonctionnant pour les nouveaux et les utilisateurs existants, et paramètres de fuseau horaire par organisation."
           },
-          "emailIntegration": {
-            "title": "Intégration Email",
-            "description": "Intégration Resend intégrée pour les emails transactionnels"
+          "auth": {
+            "title": "Authentification et Profil",
+            "description": "Better Auth avec OAuth Google/GitHub, téléchargement de photo de profil, liaison/déliaison de comptes, gestion de session, et modifications d'email synchronisées avec Stripe."
           },
-          "paymentReady": {
-            "title": "Prêt pour le Paiement",
-            "description": "Intégration Stripe pour la gestion des abonnements"
+          "admin": {
+            "title": "Panneau d'Administration",
+            "description": "Usurpation d'identité utilisateur pour le support, comptes soft-ban, journaux d'audit, et gestion complète des abonnements et organisations."
           },
-          "noVendorLockIn": {
-            "title": "Pas de Dépendance Fournisseur",
-            "description": "Architecture modulaire avec composants interchangeables"
+          "ssr": {
+            "title": "Optimisé SSR",
+            "description": "Pages rendues côté serveur avec un minimum d'appels API client. Préchargement de données et mise en cache intelligente pour une navigation rapide."
           },
-          "dashboard": {
-            "title": "Tableau de Bord",
-            "description": "Un tableau de bord d'administration puissant avec de beaux graphiques"
-          },
-          "advancedTables": {
-            "title": "Tables Avancées",
-            "description": "Filtrage avancé, tri et pagination comme Notion/Airtable, avec API de liste générique intégrée"
-          },
-          "userSubscriptionManagement": {
-            "title": "Gestion Utilisateurs/Abonnements",
-            "description": "Page de gestion des utilisateurs et des abonnements prête à l'emploi"
-          },
-          "modernUIDesign": {
-            "title": "Design UI Moderne",
-            "description": "Beaux composants avec Nuxt UI et TailwindCSS"
-          },
-          "i18nReady": {
-            "title": "Prêt pour l'I18n",
-            "description": "Support intégré pour plusieurs langues"
-          },
-          "responsiveLayout": {
-            "title": "Mise en Page Responsive",
-            "description": "Optimisé pour tous les appareils et tailles d'écran"
-          },
-          "developerFriendly": {
-            "title": "Adapté aux Développeurs",
-            "description": "ESLint + TypeScript pour un meilleur développement"
-          },
-          "quickSetup": {
-            "title": "Configuration Rapide",
-            "description": "Commencez à développer en quelques minutes"
-          },
-          "customizable": {
-            "title": "Personnalisable",
-            "description": "Étendez et personnalisez facilement les composants"
+          "stack": {
+            "title": "Stack Moderne",
+            "description": "Nuxt 4, Vue 3, TypeScript, PostgreSQL, Drizzle ORM, et Cloudflare (Hyperdrive, R2, Workers) pour le déploiement en périphérie."
           }
         }
       },
