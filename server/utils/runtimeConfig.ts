@@ -17,6 +17,9 @@ export const generateRuntimeConfig = () => ({
   enableYoutubeIngestion: process.env.NUXT_ENABLE_YOUTUBE_INGESTION !== 'false',
   // LLM / Cloudflare AI Gateway
   cfAiGatewayToken: process.env.NUXT_CF_AI_GATEWAY_TOKEN,
+  cfVectorizeIndex: process.env.NUXT_CF_VECTORIZE_INDEX,
+  cfVectorizeApiToken: process.env.NUXT_CF_VECTORIZE_API_TOKEN,
+  cfEmbedModel: process.env.NUXT_CF_EMBED_MODEL || '@cf/baai/bge-base-en-v1.5',
   openAiApiKey: process.env.NUXT_OPENAI_API_KEY,
   openAiBlogModel: process.env.NUXT_OPENAI_BLOG_MODEL,
   openAiBlogTemperature: (() => {

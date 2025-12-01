@@ -84,7 +84,8 @@ async function runCustomScenario() {
     console.log('User: Generate the blog post now')
     const response2 = await runner.sendMessage('Generate this blog post', {
       type: 'generate_content',
-      contentType: 'blog_post'
+      contentType: 'blog_post',
+      transcript: 'Sustainable living week recap: I explored composting, neighborhood swaps, and cutting down waste.'
     })
     console.log('Assistant:', response2.assistantMessage)
     console.log('Content created with ID:', response2.generation?.content?.id)

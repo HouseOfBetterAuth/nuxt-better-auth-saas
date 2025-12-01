@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParams, readBody } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { addChatLog, getSessionMessages } from '~~/server/services/chatSession'
+import { addChatLog, addChatMessage, getSessionMessages } from '~~/server/services/chatSession'
 import { generateContentDraft } from '~~/server/services/content/generation'
+import { createManualTranscriptSourceContent } from '~~/server/services/sourceContent/manualTranscript'
 import { requireAuth } from '~~/server/utils/auth'
 import { CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
@@ -132,13 +133,49 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const manualSource = await createManualTranscriptSourceContent({
+    db,
+    organizationId,
+    userId: user.id,
+    transcript,
+    metadata: { createdVia: 'chat_session_create_content', sessionId: session.id }
+  })
+
   const result = await generateContentDraft(db, {
     organizationId,
     userId: user.id,
-    text: transcript,
+    sourceContentId: manualSource.id,
     overrides: {
       title: body.title,
       contentType
+    },
+    onPlanReady: async ({ plan, frontmatter }) => {
+      const outlinePreview = plan.outline
+        .map((section, index) => {
+          const typeSuffix = section.type && section.type !== 'body' ? ` (${section.type})` : ''
+          return `${index + 1}. ${section.title || `Section ${index + 1}`}${typeSuffix}`
+        })
+        .join('\n')
+      const schemaSummary = frontmatter.schemaTypes.join(', ')
+      const summaryLines = [
+        'Plan preview before drafting the full blog:',
+        `Title: ${frontmatter.title}`,
+        `Schema types: ${schemaSummary}`,
+        `Slug suggestion: ${frontmatter.slugSuggestion}`,
+        outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)'
+      ]
+
+      await addChatMessage(db, {
+        sessionId: session.id,
+        organizationId,
+        role: 'assistant',
+        content: summaryLines.join('\n\n'),
+        payload: {
+          type: 'plan_preview',
+          plan,
+          frontmatter
+        }
+      })
     }
   })
 

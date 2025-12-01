@@ -70,7 +70,7 @@ export class ChatTestRunner {
       {
         type: 'generate_content',
         contentType,
-        sourceContentId: null
+        transcript: `Here is a transcript about ${topic}: ${topic} has been a key part of my routine this week.`
       }
     )
 

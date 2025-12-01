@@ -1,3 +1,12 @@
+/**
+ * Source Content Chunking Service
+ *
+ * Handles splitting source text into chunks, generating embeddings, and storing vectors.
+ *
+ * Note: This service works with Cloudflare Vectorize but metadata filtering has limitations.
+ * See docs/VECTORIZE_METADATA_ISSUE.md for full details on the metadata issue.
+ */
+
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'

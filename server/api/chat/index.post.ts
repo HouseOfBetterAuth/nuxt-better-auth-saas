@@ -1,3 +1,6 @@
+import { eq } from 'drizzle-orm'
+import { createError } from 'h3'
+import * as schema from '~~/server/database/schema'
 import {
   addChatLog,
   addChatMessage,
@@ -7,6 +10,7 @@ import {
 } from '~~/server/services/chatSession'
 import { generateContentDraft, patchContentSection } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
+import { createManualTranscriptSourceContent } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeSource } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
@@ -19,7 +23,7 @@ interface ChatActionGenerateContent {
   type: 'generate_content'
   sourceContentId?: string | null
   contentId?: string | null
-  text?: string | null
+  transcript?: string | null
   title?: string | null
   slug?: string | null
   status?: typeof CONTENT_STATUSES[number]
@@ -133,8 +137,47 @@ export default defineEventHandler(async (event) => {
     label: `Start a draft from this ${item.sourceType.replace('_', ' ')}`
   }))
 
+  let resolvedSourceContentId = body.action?.sourceContentId ?? processedSources[0]?.source.id ?? null
+
   let generationResult: Awaited<ReturnType<typeof generateContentDraft>> | null = null
   let patchSectionResult: Awaited<ReturnType<typeof patchContentSection>> | null = null
+
+  if (body.action?.type === 'generate_content') {
+    if (!resolvedSourceContentId) {
+      if (typeof body.action.transcript !== 'string' || !body.action.transcript.trim()) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Provide a transcript or select an existing source.'
+        })
+      }
+
+      const manualSource = await createManualTranscriptSourceContent({
+        db,
+        organizationId,
+        userId: user.id,
+        transcript: body.action.transcript,
+        metadata: { createdVia: 'chat_generate_action' }
+      })
+
+      resolvedSourceContentId = manualSource.id
+    }
+  }
+
+  const initialSessionContentId = typeof body.action?.contentId === 'string'
+    ? body.action.contentId
+    : null
+
+  const sessionSourceId = resolvedSourceContentId ?? null
+
+  let session = await ensureChatSession(db, {
+    organizationId,
+    contentId: initialSessionContentId,
+    sourceContentId: sessionSourceId,
+    createdByUserId: user.id,
+    metadata: {
+      lastAction: body.action?.type ?? (message.trim() ? 'message' : null)
+    }
+  })
 
   if (body.action?.type === 'generate_content') {
     let sanitizedSystemPrompt: string | undefined
@@ -170,8 +213,7 @@ export default defineEventHandler(async (event) => {
     generationResult = await generateContentDraft(db, {
       organizationId,
       userId: user.id,
-      text: body.action.text ?? null,
-      sourceContentId: body.action.sourceContentId ?? null,
+      sourceContentId: resolvedSourceContentId,
       contentId: body.action.contentId ?? null,
       overrides: {
         title: typeof body.action.title === 'string' ? body.action.title : null,
@@ -182,22 +224,36 @@ export default defineEventHandler(async (event) => {
         contentType: body.action.contentType && CONTENT_TYPES.includes(body.action.contentType) ? body.action.contentType : undefined
       },
       systemPrompt: sanitizedSystemPrompt,
-      temperature: sanitizedTemperature
+      temperature: sanitizedTemperature,
+      onPlanReady: async ({ plan, frontmatter }) => {
+        const outlinePreview = plan.outline
+          .map((section, index) => {
+            const typeSuffix = section.type && section.type !== 'body' ? ` (${section.type})` : ''
+            return `${index + 1}. ${section.title || `Section ${index + 1}`}${typeSuffix}`
+          })
+          .join('\n')
+        const schemaSummary = frontmatter.schemaTypes.join(', ')
+        const summaryLines = [
+          'Plan preview before drafting the full blog:',
+          `Title: ${frontmatter.title}`,
+          `Schema types: ${schemaSummary}`,
+          `Slug suggestion: ${frontmatter.slugSuggestion}`,
+          outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)'
+        ]
+        await addChatMessage(db, {
+          sessionId: session.id,
+          organizationId,
+          role: 'assistant',
+          content: summaryLines.join('\n\n'),
+          payload: {
+            type: 'plan_preview',
+            plan,
+            frontmatter
+          }
+        })
+      }
     })
   }
-
-  const sessionContentId = body.action?.contentId ?? generationResult?.content?.id ?? patchSectionResult?.content?.id ?? null
-  const sessionSourceId = body.action?.sourceContentId ?? processedSources[0]?.source.id ?? null
-
-  const session = await ensureChatSession(db, {
-    organizationId,
-    contentId: sessionContentId,
-    sourceContentId: sessionSourceId,
-    createdByUserId: user.id,
-    metadata: {
-      lastAction: body.action?.type ?? (message.trim() ? 'message' : null)
-    }
-  })
 
   if (body.action?.type === 'patch_section') {
     const instructions = (typeof body.action.instructions === 'string' ? body.action.instructions : message).trim()
@@ -241,6 +297,26 @@ export default defineEventHandler(async (event) => {
         sectionId: sectionIdToPatch
       }
     })
+  }
+
+  if (generationResult && session.contentId !== generationResult.content.id) {
+    const [updatedSession] = await db
+      .update(schema.contentChatSession)
+      .set({
+        contentId: generationResult.content.id,
+        metadata: {
+          ...(session.metadata ?? {}),
+          linkedContentId: generationResult.content.id,
+          linkedAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(schema.contentChatSession.id, session.id))
+      .returning()
+
+    if (updatedSession) {
+      session = updatedSession
+    }
   }
 
   if (message.trim()) {
