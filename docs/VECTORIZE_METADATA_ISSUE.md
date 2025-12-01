@@ -143,11 +143,13 @@ Since vector IDs follow the pattern `sourceContentId:chunkIndex`, we can:
 ## Environment Variables Used
 
 ```bash
-CF_ACCOUNT_ID=<YOUR_ACCOUNT_ID>
-CF_VECTORIZE_INDEX=<YOUR_INDEX>
-CF_EMBED_MODEL=<YOUR_MODEL>
-CF_VECTORIZE_API_TOKEN=<YOUR_API_TOKEN>
+CF_ACCOUNT_ID=<YOUR_ACCOUNT_ID><YOUR_ACCOUNT_ID>
+CF_VECTORIZE_INDEX=<YOUR_INDEX><YOUR_INDEX>
+CF_EMBED_MODEL=<YOUR_MODEL><YOUR_MODEL>
+CF_VECTORIZE_API_TOKEN=<YOUR_API_TOKEN><YOUR_API_TOKEN>
 ```
+
+⚠️ **SECURITY NOTE**: Never commit real credentials to version control. Store these in environment variables or a secure secret management system.
 
 ## Conclusion
 

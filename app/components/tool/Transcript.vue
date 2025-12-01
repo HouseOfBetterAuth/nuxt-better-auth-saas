@@ -33,7 +33,6 @@ function handleSubmit() {
 <template>
   <UModal
     :open="props.open"
-    :ui="{ container: 'items-end sm:items-center' }"
     @close="handleClose"
   >
     <UCard

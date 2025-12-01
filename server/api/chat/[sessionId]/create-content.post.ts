@@ -150,18 +150,19 @@ export default defineEventHandler(async (event) => {
       contentType
     },
     onPlanReady: async ({ plan, frontmatter }) => {
-      const outlinePreview = plan.outline
+      const outlineArray = Array.isArray(plan.outline) ? plan.outline : []
+      const outlinePreview = outlineArray
         .map((section, index) => {
           const typeSuffix = section.type && section.type !== 'body' ? ` (${section.type})` : ''
           return `${index + 1}. ${section.title || `Section ${index + 1}`}${typeSuffix}`
         })
         .join('\n')
-      const schemaSummary = frontmatter.schemaTypes.join(', ')
+      const schemaSummary = Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes.join(', ') : ''
       const summaryLines = [
-        'Plan preview before drafting the full blog:',
-        `Title: ${frontmatter.title}`,
-        `Schema types: ${schemaSummary}`,
-        `Slug suggestion: ${frontmatter.slugSuggestion}`,
+        `Plan preview before drafting the full ${contentType}:`,
+        `Title: ${frontmatter.title ?? 'Untitled draft'}`,
+        schemaSummary ? `Schema types: ${schemaSummary}` : 'Schema types: n/a',
+        frontmatter.slugSuggestion ? `Slug suggestion: ${frontmatter.slugSuggestion}` : 'Slug suggestion: n/a',
         outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)'
       ]
 

@@ -14,7 +14,7 @@ const emit = defineEmits<{
 const url = ref('')
 const error = ref<string | null>(null)
 
-const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)[\w-]{11}/
+const youtubeRegex = /youtube\.com\/watch|youtu\.be|youtube\.com\/embed/
 
 function validate(value: string) {
   if (!youtubeRegex.test(value.trim())) {
@@ -43,7 +43,6 @@ function handleSubmit() {
 <template>
   <UModal
     :open="props.open"
-    :ui="{ container: 'items-end sm:items-center' }"
     @close="handleClose"
   >
     <UCard

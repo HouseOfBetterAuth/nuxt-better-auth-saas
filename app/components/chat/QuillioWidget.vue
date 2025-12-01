@@ -139,14 +139,6 @@ function addLinkedSource(entry: { type: 'transcript' | 'youtube', value: string 
 }
 
 const handleTranscriptTool = async (payload: { text: string }) => {
-  addLinkedSource({ type: 'transcript', value: payload.text })
-  toast.add({
-    title: 'Transcript attached',
-    description: 'Saved for the next draft you generate.',
-    icon: 'i-lucide-file-text',
-    color: 'primary'
-  })
-
   const transcriptMessage = [
     'Transcript attachment:',
     payload.text
@@ -155,6 +147,13 @@ const handleTranscriptTool = async (payload: { text: string }) => {
   toolSubmitLoading.value = 'transcript'
   try {
     await sendMessage(transcriptMessage)
+    addLinkedSource({ type: 'transcript', value: payload.text })
+    toast.add({
+      title: 'Transcript attached',
+      description: 'Saved for the next draft you generate.',
+      icon: 'i-lucide-file-text',
+      color: 'primary'
+    })
   } catch (error: any) {
     console.error('Failed to send transcript message', error)
     toast.add({
@@ -168,17 +167,16 @@ const handleTranscriptTool = async (payload: { text: string }) => {
 }
 
 const handleYoutubeTool = async (payload: { url: string }) => {
-  addLinkedSource({ type: 'youtube', value: payload.url })
-  toast.add({
-    title: 'YouTube link saved',
-    description: 'We will ingest it when you create a draft.',
-    icon: 'i-lucide-youtube',
-    color: 'primary'
-  })
-
   toolSubmitLoading.value = 'youtube'
   try {
     await sendMessage(`Reference video: ${payload.url}`)
+    addLinkedSource({ type: 'youtube', value: payload.url })
+    toast.add({
+      title: 'YouTube link saved',
+      description: 'We will ingest it when you create a draft.',
+      icon: 'i-lucide-youtube',
+      color: 'primary'
+    })
   } catch (error: any) {
     console.error('Failed to send YouTube link', error)
     toast.add({
