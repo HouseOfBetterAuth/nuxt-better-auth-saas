@@ -15,9 +15,11 @@ const emit = defineEmits<{
 
 const transcript = ref('')
 
-function handleClose() {
-  emit('update:open', false)
-}
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) {
+    transcript.value = ''
+  }
+})
 
 function handleSubmit() {
   const text = transcript.value.trim()
@@ -25,65 +27,28 @@ function handleSubmit() {
     return
   }
   emit('submit', { text })
-  transcript.value = ''
-  handleClose()
 }
 </script>
 
 <template>
-  <UModal
-    :open="props.open"
-    @close="handleClose"
+  <div
+    v-if="props.open"
+    class="w-full flex items-start gap-2"
   >
-    <UCard
-      class="w-full sm:max-w-lg"
-      :ui="{
-        body: 'space-y-4',
-        footer: 'flex items-center justify-between gap-3'
-      }"
+    <UTextarea
+      v-model="transcript"
+      placeholder="Paste the transcript here…"
+      autofocus
+      :rows="3"
+      class="flex-1"
+    />
+    <UButton
+      color="primary"
+      :loading="props.loading"
+      :disabled="!transcript.trim()"
+      @click="handleSubmit"
     >
-      <template #header>
-        <div>
-          <p class="text-base font-semibold">
-            {{ props.title }}
-          </p>
-          <p class="text-sm text-muted-500">
-            Paste raw transcript text. We will automatically chunk and embed it for context.
-          </p>
-        </div>
-      </template>
-
-      <div class="space-y-3">
-        <UFormGroup label="Transcript">
-          <UTextarea
-            v-model="transcript"
-            placeholder="Paste the transcript here…"
-            autofocus
-            :rows="8"
-          />
-        </UFormGroup>
-        <p class="text-xs text-muted-500">
-          Tip: include speaker notes and timestamps — we&apos;ll preserve them for better retrieval later.
-        </p>
-      </div>
-
-      <template #footer>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          @click="handleClose"
-        >
-          Cancel
-        </UButton>
-        <UButton
-          color="primary"
-          :loading="props.loading"
-          :disabled="!transcript.trim()"
-          @click="handleSubmit"
-        >
-          Attach transcript
-        </UButton>
-      </template>
-    </UCard>
-  </UModal>
+      Send
+    </UButton>
+  </div>
 </template>

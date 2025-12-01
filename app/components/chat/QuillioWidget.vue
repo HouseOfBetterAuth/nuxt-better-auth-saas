@@ -86,7 +86,7 @@ const hasContent = computed(() => contentEntries.value.length > 0)
 const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
 const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceActive.value && !workspaceDetail.value)
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
-const isStreaming = computed(() => status.value === 'streaming')
+const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const toast = useToast()
 
 const createDraftCta = computed(() => {
@@ -143,10 +143,11 @@ const handleTranscriptTool = async (payload: { text: string }) => {
     'Transcript attachment:',
     payload.text
   ].join('\n\n')
+  const summary = `Transcript attached (${payload.text.length.toLocaleString()} characters)`
 
   toolSubmitLoading.value = 'transcript'
   try {
-    await sendMessage(transcriptMessage)
+    await sendMessage(transcriptMessage, { displayContent: summary })
     addLinkedSource({ type: 'transcript', value: payload.text })
     toast.add({
       title: 'Transcript attached',
@@ -154,6 +155,7 @@ const handleTranscriptTool = async (payload: { text: string }) => {
       icon: 'i-lucide-file-text',
       color: 'primary'
     })
+    quickActionsState.transcript = false
   } catch (error: any) {
     console.error('Failed to send transcript message', error)
     toast.add({
@@ -167,9 +169,11 @@ const handleTranscriptTool = async (payload: { text: string }) => {
 }
 
 const handleYoutubeTool = async (payload: { url: string }) => {
+  const summary = `YouTube source added (${payload.url})`
+
   toolSubmitLoading.value = 'youtube'
   try {
-    await sendMessage(`Reference video: ${payload.url}`)
+    await sendMessage(`Reference video: ${payload.url}`, { displayContent: summary })
     addLinkedSource({ type: 'youtube', value: payload.url })
     toast.add({
       title: 'YouTube link saved',
@@ -177,6 +181,7 @@ const handleYoutubeTool = async (payload: { url: string }) => {
       icon: 'i-lucide-youtube',
       color: 'primary'
     })
+    quickActionsState.youtube = false
   } catch (error: any) {
     console.error('Failed to send YouTube link', error)
     toast.add({
@@ -287,11 +292,23 @@ if (import.meta.client) {
   <UContainer class="py-8 space-y-8 max-w-4xl">
     <div
       v-if="!isWorkspaceActive"
-      class="text-center"
+      class="space-y-4"
     >
       <h1 class="text-3xl font-semibold">
         What should we write next?
       </h1>
+      <div class="w-full space-y-3">
+        <ToolTranscript
+          v-model:open="quickActionsState.transcript"
+          :loading="toolSubmitLoading === 'transcript'"
+          @submit="handleTranscriptTool"
+        />
+        <ToolYoutube
+          v-model:open="quickActionsState.youtube"
+          :loading="toolSubmitLoading === 'youtube'"
+          @submit="handleYoutubeTool"
+        />
+      </div>
     </div>
     <div class="space-y-6">
       <UAlert
@@ -417,7 +434,7 @@ if (import.meta.client) {
               variant="soft"
               color="primary"
               icon="i-lucide-file-text"
-              @click="quickActionsState.transcript = true"
+              @click="quickActionsState.youtube = false; quickActionsState.transcript = !quickActionsState.transcript"
             >
               Paste transcript
             </UButton>
@@ -426,7 +443,7 @@ if (import.meta.client) {
               variant="soft"
               color="neutral"
               icon="i-lucide-youtube"
-              @click="quickActionsState.youtube = true"
+              @click="quickActionsState.transcript = false; quickActionsState.youtube = !quickActionsState.youtube"
             >
               Add YouTube link
             </UButton>
@@ -577,16 +594,5 @@ if (import.meta.client) {
         No drafts yet. Turn this conversation into your first piece.
       </div>
     </section>
-
-    <ToolTranscript
-      v-model:open="quickActionsState.transcript"
-      :loading="toolSubmitLoading === 'transcript'"
-      @submit="handleTranscriptTool"
-    />
-    <ToolYoutube
-      v-model:open="quickActionsState.youtube"
-      :loading="toolSubmitLoading === 'youtube'"
-      @submit="handleYoutubeTool"
-    />
   </UContainer>
 </template>

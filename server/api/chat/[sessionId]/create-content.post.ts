@@ -150,6 +150,16 @@ export default defineEventHandler(async (event) => {
       contentType
     },
     onPlanReady: async ({ plan, frontmatter }) => {
+      if (!plan || typeof plan !== 'object') {
+        console.warn('[create-content] Missing plan data in onPlanReady callback.')
+        return
+      }
+
+      if (!frontmatter || typeof frontmatter !== 'object') {
+        console.warn('[create-content] Missing frontmatter data in onPlanReady callback.')
+        return
+      }
+
       const outlineArray = Array.isArray(plan.outline) ? plan.outline : []
       const outlinePreview = outlineArray
         .map((section, index) => {
@@ -163,7 +173,8 @@ export default defineEventHandler(async (event) => {
         `Title: ${frontmatter.title ?? 'Untitled draft'}`,
         schemaSummary ? `Schema types: ${schemaSummary}` : 'Schema types: n/a',
         frontmatter.slugSuggestion ? `Slug suggestion: ${frontmatter.slugSuggestion}` : 'Slug suggestion: n/a',
-        outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)'
+        outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)',
+        'Let me know if you’d like any outline adjustments—or click “Start draft in workspace” when you are ready.'
       ]
 
       await addChatMessage(db, {

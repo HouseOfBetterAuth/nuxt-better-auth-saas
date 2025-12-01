@@ -119,12 +119,20 @@ export const embedTexts = async (texts: string[]): Promise<number[][]> => {
     })
   }
 
-  const embeddings = rawResult.map(normalizeEmbeddingEntry).filter(vector => vector.length > 0)
+  const embeddings = rawResult.map(normalizeEmbeddingEntry)
 
   if (embeddings.length !== texts.length) {
     throw createError({
       statusCode: 502,
       statusMessage: 'Embedding count did not match requested texts.'
+    })
+  }
+
+  const emptyEmbeddings = embeddings.filter(vector => vector.length === 0)
+  if (emptyEmbeddings.length > 0) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'Received empty embeddings from Cloudflare AI'
     })
   }
 
@@ -152,6 +160,16 @@ export const upsertVectors = async (vectors: UpsertVectorInput[]) => {
       statusCode: 500,
       statusMessage: 'Vector embeddings are not configured.'
     })
+  }
+
+  for (const vector of vectors) {
+    const metadata = vector.metadata ?? {}
+    if (!metadata.sourceContentId || !metadata.organizationId) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Vector metadata missing sourceContentId or organizationId'
+      })
+    }
   }
 
   const response = await fetch(

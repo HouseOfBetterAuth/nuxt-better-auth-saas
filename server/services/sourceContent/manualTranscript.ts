@@ -35,30 +35,34 @@ export const createManualTranscriptSourceContent = async ({
     })
   }
 
-  const sourceContent = await upsertSourceContent(db, {
-    organizationId,
-    userId,
-    sourceType: MANUAL_TRANSCRIPT_SOURCE_TYPE,
-    externalId: uuidv7(),
-    title: title ?? null,
-    sourceText: normalizedTranscript,
-    metadata: {
-      ...(metadata ?? {}),
-      origin: metadata?.origin ?? 'transcript'
-    },
-    ingestStatus: 'ingested'
+  const result = await db.transaction(async (tx) => {
+    const sourceContent = await upsertSourceContent(tx, {
+      organizationId,
+      userId,
+      sourceType: MANUAL_TRANSCRIPT_SOURCE_TYPE,
+      externalId: uuidv7(),
+      title: title ?? null,
+      sourceText: normalizedTranscript,
+      metadata: {
+        ...(metadata ?? {}),
+        origin: metadata?.origin ?? 'transcript'
+      },
+      ingestStatus: 'ingested'
+    })
+
+    console.log(`✅ [MANUAL_TRANSCRIPT] Created sourceContent: ${sourceContent.id}`)
+    console.log(`🔧 [MANUAL_TRANSCRIPT] About to call chunkSourceContentText...`)
+
+    try {
+      await chunkSourceContentText({ db: tx, sourceContent })
+    } catch (error) {
+      console.error(`❌ [MANUAL_TRANSCRIPT] Chunking failed for: ${sourceContent.id}`, error)
+      throw error
+    }
+
+    console.log(`🎉 [MANUAL_TRANSCRIPT] Completed chunking for: ${sourceContent.id}`)
+    return sourceContent
   })
 
-  console.log(`✅ [MANUAL_TRANSCRIPT] Created sourceContent: ${sourceContent.id}`)
-  console.log(`🔧 [MANUAL_TRANSCRIPT] About to call chunkSourceContentText...`)
-
-  try {
-    await chunkSourceContentText({ db, sourceContent })
-  } catch (error) {
-    console.error(`❌ [MANUAL_TRANSCRIPT] Chunking failed for: ${sourceContent.id}`, error)
-    throw error
-  }
-
-  console.log(`🎉 [MANUAL_TRANSCRIPT] Completed chunking for: ${sourceContent.id}`)
-  return sourceContent
+  return result
 }

@@ -14,7 +14,7 @@ const emit = defineEmits<{
 const url = ref('')
 const error = ref<string | null>(null)
 
-const youtubeRegex = /youtube\.com\/watch|youtu\.be|youtube\.com\/embed/
+const youtubeRegex = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)\w{11}[/?&=\w-]*$/i
 
 function validate(value: string) {
   if (!youtubeRegex.test(value.trim())) {
@@ -26,6 +26,8 @@ function validate(value: string) {
 }
 
 function handleClose() {
+  error.value = null
+  url.value = ''
   emit('update:open', false)
 }
 
@@ -41,62 +43,25 @@ function handleSubmit() {
 </script>
 
 <template>
-  <UModal
-    :open="props.open"
-    @close="handleClose"
+  <div
+    v-if="props.open"
+    class="w-full flex items-center gap-2"
   >
-    <UCard
-      class="w-full sm:max-w-lg"
-      :ui="{
-        body: 'space-y-4',
-        footer: 'flex items-center justify-between gap-3'
-      }"
+    <UInput
+      v-model="url"
+      placeholder="https://www.youtube.com/watch?v=..."
+      icon="i-lucide-youtube"
+      :error="error || undefined"
+      class="flex-1"
+      @blur="url ? validate(url.trim()) : null"
+    />
+    <UButton
+      color="primary"
+      :loading="props.loading"
+      :disabled="!url.trim()"
+      @click="handleSubmit"
     >
-      <template #header>
-        <div>
-          <p class="text-base font-semibold">
-            Add YouTube source
-          </p>
-          <p class="text-sm text-muted-500">
-            We will pull the transcript automatically and keep it linked in this chat.
-          </p>
-        </div>
-      </template>
-
-      <div class="space-y-2">
-        <UFormGroup
-          label="Video URL"
-          :error="error || undefined"
-        >
-          <UInput
-            v-model="url"
-            placeholder="https://www.youtube.com/watch?v=..."
-            icon="i-lucide-youtube"
-            @blur="url ? validate(url) : null"
-          />
-        </UFormGroup>
-        <p class="text-xs text-muted-500">
-          Supports both youtube.com and youtu.be links.
-        </p>
-      </div>
-
-      <template #footer>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          @click="handleClose"
-        >
-          Cancel
-        </UButton>
-        <UButton
-          color="primary"
-          :loading="props.loading"
-          :disabled="!url.trim()"
-          @click="handleSubmit"
-        >
-          Save link
-        </UButton>
-      </template>
-    </UCard>
-  </UModal>
+      Send
+    </UButton>
+  </div>
 </template>

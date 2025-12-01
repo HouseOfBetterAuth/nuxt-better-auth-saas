@@ -234,11 +234,12 @@ export default defineEventHandler(async (event) => {
           .join('\n')
         const schemaSummary = frontmatter.schemaTypes.join(', ')
         const summaryLines = [
-          'Plan preview before drafting the full blog:',
-          `Title: ${frontmatter.title}`,
-          `Schema types: ${schemaSummary}`,
-          `Slug suggestion: ${frontmatter.slugSuggestion}`,
-          outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)'
+          `Plan preview before drafting the full ${contentType}:`,
+          `Title: ${frontmatter.title ?? 'Untitled draft'}`,
+          schemaSummary ? `Schema types: ${schemaSummary}` : 'Schema types: n/a',
+          frontmatter.slugSuggestion ? `Slug suggestion: ${frontmatter.slugSuggestion}` : 'Slug suggestion: n/a',
+          outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)',
+          'Tell me if you want any tweaks to this outline—or hit “Start draft in workspace” when you’re ready for the full article.'
         ]
         await addChatMessage(db, {
           sessionId: session.id,
