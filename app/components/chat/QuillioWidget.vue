@@ -87,13 +87,12 @@ const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => e
 const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceActive.value && !workspaceDetail.value)
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
-const toast = useToast()
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
     return 'Sign up to keep drafting'
   }
-  return loggedIn.value ? 'Start draft in workspace' : `Save draft (${remainingAnonDrafts.value} left)`
+  return loggedIn.value ? 'Create draft' : `Save draft (${remainingAnonDrafts.value} left)`
 })
 
 const handlePromptSubmit = async () => {
@@ -149,19 +148,15 @@ const handleTranscriptTool = async (payload: { text: string }) => {
   try {
     await sendMessage(transcriptMessage, { displayContent: summary })
     addLinkedSource({ type: 'transcript', value: payload.text })
-    toast.add({
-      title: 'Transcript attached',
-      description: 'Saved for the next draft you generate.',
-      icon: 'i-lucide-file-text',
-      color: 'primary'
-    })
     quickActionsState.transcript = false
   } catch (error: any) {
     console.error('Failed to send transcript message', error)
-    toast.add({
-      title: 'Unable to send transcript',
-      description: error?.data?.message || error?.message || 'Please try again.',
-      color: 'error'
+    const errorMsg = error?.data?.message || error?.message || 'Unable to send transcript. Please try again.'
+    messages.value.push({
+      id: createLocalId(),
+      role: 'assistant',
+      content: `❌ ${errorMsg}`,
+      createdAt: new Date()
     })
   } finally {
     toolSubmitLoading.value = null
@@ -169,25 +164,21 @@ const handleTranscriptTool = async (payload: { text: string }) => {
 }
 
 const handleYoutubeTool = async (payload: { url: string }) => {
-  const summary = `YouTube source added (${payload.url})`
+  const summary = `YouTube link added (${payload.url})`
 
   toolSubmitLoading.value = 'youtube'
   try {
     await sendMessage(`Reference video: ${payload.url}`, { displayContent: summary })
     addLinkedSource({ type: 'youtube', value: payload.url })
-    toast.add({
-      title: 'YouTube link saved',
-      description: 'We will ingest it when you create a draft.',
-      icon: 'i-lucide-youtube',
-      color: 'primary'
-    })
     quickActionsState.youtube = false
   } catch (error: any) {
     console.error('Failed to send YouTube link', error)
-    toast.add({
-      title: 'Unable to send link',
-      description: error?.data?.message || error?.message || 'Please try again.',
-      color: 'error'
+    const errorMsg = error?.data?.message || error?.message || 'Unable to send YouTube link. Please try again.'
+    messages.value.push({
+      id: createLocalId(),
+      role: 'assistant',
+      content: `❌ ${errorMsg}`,
+      createdAt: new Date()
     })
   } finally {
     toolSubmitLoading.value = null
@@ -287,6 +278,11 @@ const handleRegenerate = async (message: ChatMessage) => {
   await handlePromptSubmit()
 }
 
+const focusChatInput = () => {
+  const input = document.querySelector('[placeholder="Describe what you need..."]') as HTMLElement
+  input?.focus()
+}
+
 if (import.meta.client) {
   watch(loggedIn, async (value) => {
     if (!value) {
@@ -298,29 +294,63 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <UContainer class="py-8 space-y-8 max-w-4xl">
+  <UContainer class="py-4 sm:py-8 space-y-6 sm:space-y-8 max-w-4xl mx-auto px-4 sm:px-6">
     <div
       v-if="!isWorkspaceActive"
       class="space-y-4"
     >
-      <h1 class="text-3xl font-semibold">
+      <h1 class="text-2xl sm:text-3xl font-semibold text-center">
         What should we write next?
       </h1>
-      <!-- Show tools when there are NO messages yet -->
+
+      <!-- Empty state: Context-first flow with clear action buttons -->
       <div
         v-if="!messages.length"
-        class="w-full space-y-3"
+        class="space-y-4 w-full"
       >
-        <ToolTranscript
-          v-model:open="quickActionsState.transcript"
-          :loading="toolSubmitLoading === 'transcript'"
-          @submit="handleTranscriptTool"
-        />
-        <ToolYoutube
-          v-model:open="quickActionsState.youtube"
-          :loading="toolSubmitLoading === 'youtube'"
-          @submit="handleYoutubeTool"
-        />
+        <div class="flex flex-wrap items-center justify-center gap-3 w-full">
+          <UButton
+            size="lg"
+            variant="soft"
+            color="primary"
+            icon="i-lucide-file-text"
+            :disabled="toolSubmitLoading !== null"
+            @click="quickActionsState.youtube = false; quickActionsState.transcript = !quickActionsState.transcript"
+          >
+            Paste transcript
+          </UButton>
+          <UButton
+            size="lg"
+            variant="soft"
+            color="neutral"
+            icon="i-lucide-youtube"
+            :disabled="toolSubmitLoading !== null"
+            @click="quickActionsState.transcript = false; quickActionsState.youtube = !quickActionsState.youtube"
+          >
+            Add YouTube link
+          </UButton>
+          <UButton
+            size="lg"
+            variant="outline"
+            @click="focusChatInput"
+          >
+            Type your request
+          </UButton>
+        </div>
+
+        <!-- Tools appear when buttons are clicked -->
+        <div class="w-full space-y-3">
+          <ToolTranscript
+            v-model:open="quickActionsState.transcript"
+            :loading="toolSubmitLoading === 'transcript'"
+            @submit="handleTranscriptTool"
+          />
+          <ToolYoutube
+            v-model:open="quickActionsState.youtube"
+            :loading="toolSubmitLoading === 'youtube'"
+            @submit="handleYoutubeTool"
+          />
+        </div>
       </div>
     </div>
     <div class="space-y-6">
@@ -331,20 +361,17 @@ if (import.meta.client) {
         variant="soft"
         icon="i-lucide-alert-triangle"
         :description="errorMessage"
-        class="max-w-2xl mx-auto"
+        class="w-full max-w-2xl mx-auto"
       />
 
       <div
         v-if="isWorkspaceActive && activeWorkspaceEntry"
-        class="space-y-4"
+        class="space-y-4 w-full"
       >
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-muted-200/70 bg-muted/20 px-4 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-muted-200/70 bg-muted/20 px-4 py-3 w-full">
           <div>
             <p class="text-sm font-semibold">
-              {{ activeWorkspaceEntry?.title || 'Workspace draft' }}
-            </p>
-            <p class="text-xs text-muted-500">
-              Editing inline — close to jump back into the conversation.
+              {{ activeWorkspaceEntry?.title || 'Draft' }}
             </p>
           </div>
           <UButton
@@ -354,7 +381,7 @@ if (import.meta.client) {
             icon="i-lucide-x"
             @click="closeWorkspace"
           >
-            Close workspace
+            Back to chat
           </UButton>
         </div>
 
@@ -366,7 +393,7 @@ if (import.meta.client) {
             name="i-lucide-loader"
             class="h-4 w-4 animate-spin"
           />
-          Loading workspace…
+          Loading draft…
         </div>
 
         <ChatDraftWorkspace
@@ -382,9 +409,9 @@ if (import.meta.client) {
       <template v-else>
         <div
           v-if="messages.length"
-          class="space-y-4"
+          class="space-y-4 w-full"
         >
-          <div class="max-w-3xl mx-auto">
+          <div class="w-full max-w-3xl mx-auto">
             <div
               v-if="isStreaming"
               class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
@@ -401,13 +428,11 @@ if (import.meta.client) {
             </div>
           </div>
 
+          <!-- Reference material ready to use -->
           <div
             v-if="actions.length"
-            class="max-w-2xl mx-auto space-y-3"
+            class="w-full max-w-2xl mx-auto space-y-3"
           >
-            <p class="text-xs uppercase tracking-wide text-primary-600 text-center">
-              Source detected
-            </p>
             <div
               v-for="action in actions"
               :key="`${action.type}-${action.sourceContentId || ''}`"
@@ -415,32 +440,22 @@ if (import.meta.client) {
             >
               <div>
                 <p class="text-sm font-medium">
-                  {{ action.label || 'Source content detected' }}
-                </p>
-                <p class="text-xs text-muted-500">
-                  {{ action.sourceType?.replace('_', ' ') || 'Source' }}
+                  {{ action.label || 'Reference material ready' }}
                 </p>
               </div>
               <UButton
-                size="xs"
+                size="sm"
                 color="primary"
                 :loading="actionLoading === `${action.type}-${action.sourceContentId || ''}`"
                 @click="handleAction(action)"
               >
-                Use source
+                Use this
               </UButton>
             </div>
           </div>
         </div>
 
-        <div
-          v-else
-          class="text-sm text-muted-500 text-center py-10"
-        >
-          Send your first message above to start a conversation.
-        </div>
-
-        <div class="max-w-2xl mx-auto space-y-4">
+        <div class="w-full max-w-2xl mx-auto space-y-4">
           <!-- Show linked sources if any -->
           <div
             v-if="linkedSources.length"
@@ -466,14 +481,13 @@ if (import.meta.client) {
             </UBadge>
           </div>
 
-          <!-- Context tools - only show when there are messages -->
+          <!-- Add more information -->
           <div
             v-if="messages.length"
-            class="flex flex-wrap items-center gap-2 text-xs text-muted-500"
+            class="flex flex-wrap items-center gap-2"
           >
-            <span>Add more context:</span>
             <UButton
-              size="xs"
+              size="sm"
               variant="soft"
               color="primary"
               icon="i-lucide-file-text"
@@ -482,7 +496,7 @@ if (import.meta.client) {
               Paste transcript
             </UButton>
             <UButton
-              size="xs"
+              size="sm"
               variant="soft"
               color="neutral"
               icon="i-lucide-youtube"
@@ -510,13 +524,13 @@ if (import.meta.client) {
           </div>
 
           <!-- Main chat input -->
-          <div class="flex flex-col gap-3 sm:flex-row">
+          <div class="flex flex-col gap-3 sm:flex-row w-full">
             <UChatPrompt
               v-model="prompt"
               placeholder="Describe what you need..."
               variant="subtle"
               :disabled="isBusy || promptSubmitting"
-              class="flex-1"
+              class="flex-1 w-full"
               @submit="handlePromptSubmit"
             >
               <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : status" />
@@ -526,7 +540,7 @@ if (import.meta.client) {
               v-model="selectedContentType"
               :items="CONTENT_TYPE_OPTIONS"
               value-key="value"
-              class="sm:w-[160px]"
+              class="w-full sm:w-[160px]"
               size="md"
             />
           </div>
@@ -545,14 +559,11 @@ if (import.meta.client) {
             >
               {{ createDraftCta }}
             </UButton>
-            <p class="text-xs text-muted-500 text-center">
-              We'll load the draft in-place so you can open the workspace only when you're ready.
-            </p>
             <p
               v-if="!loggedIn && remainingAnonDrafts < ANON_DRAFT_LIMIT"
               class="text-xs text-muted-500 text-center"
             >
-              {{ remainingAnonDrafts > 0 ? `You can save ${remainingAnonDrafts} more draft${remainingAnonDrafts === 1 ? '' : 's'} anonymously.` : 'Create a free account to keep saving drafts.' }}
+              {{ remainingAnonDrafts > 0 ? `${remainingAnonDrafts} draft${remainingAnonDrafts === 1 ? '' : 's'} left` : 'Sign up to save more' }}
             </p>
 
             <UAlert
@@ -566,10 +577,10 @@ if (import.meta.client) {
         </div>
       </template>
     </div>
-    <section class="space-y-3">
-      <div class="flex items-center justify-between">
+    <section class="space-y-3 w-full">
+      <div class="flex items-center justify-between w-full">
         <p class="text-sm font-semibold">
-          Workspace drafts
+          Your drafts
         </p>
         <UButton
           size="xs"
@@ -613,7 +624,7 @@ if (import.meta.client) {
               variant="soft"
               @click="openWorkspace(entry)"
             >
-              Open workspace
+              Open draft
             </UButton>
           </div>
           <div class="flex flex-wrap gap-4 text-xs text-muted-500">
@@ -625,7 +636,7 @@ if (import.meta.client) {
               v-if="entry.sourceType"
               class="capitalize"
             >
-              Source: {{ entry.sourceType.replace('_', ' ') }}
+              From: {{ entry.sourceType.replace('_', ' ') }}
             </span>
           </div>
         </article>
@@ -634,7 +645,7 @@ if (import.meta.client) {
         v-else
         class="rounded-2xl border border-dashed border-muted-200/70 p-5 text-center text-sm text-muted-500"
       >
-        No drafts yet. Turn this conversation into your first piece.
+        No drafts yet
       </div>
     </section>
   </UContainer>

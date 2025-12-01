@@ -6,7 +6,6 @@ import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import * as schema from '../../database/schema'
 import { chunkSourceContentText } from './chunkSourceContent'
 
-const YOUTUBE_SCOPE_KEYWORDS = ['youtube', 'youtube.force-ssl']
 const TOKEN_REFRESH_BUFFER_MS = 60_000
 
 interface IngestYouTubeOptions {
@@ -21,7 +20,9 @@ function hasYouTubeScopes(scope: string | null | undefined) {
   if (!scope) {
     return false
   }
-  return YOUTUBE_SCOPE_KEYWORDS.some(keyword => scope.includes(keyword))
+  // Check for full YouTube API scope URLs (more explicit and reliable)
+  return scope.includes('https://www.googleapis.com/auth/youtube') ||
+    scope.includes('https://www.googleapis.com/auth/youtube.force-ssl')
 }
 
 function stripVttToPlainText(vtt: string) {
@@ -120,40 +121,66 @@ async function ensureAccessToken(db: NodePgDatabase<typeof schema>, account: typ
 }
 
 async function downloadCaption(accessToken: string, captionId: string) {
-  return await $fetch<string>(`https://youtube.googleapis.com/youtube/v3/captions/${captionId}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'text/plain'
-    },
-    query: {
-      tfmt: 'vtt',
-      alt: 'media'
-    },
-    responseType: 'text'
-  })
+  try {
+    return await $fetch<string>(`https://youtube.googleapis.com/youtube/v3/captions/${captionId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'text/plain'
+      },
+      query: {
+        tfmt: 'vtt',
+        alt: 'media'
+      },
+      responseType: 'text'
+    })
+  } catch (error: any) {
+    // Provide more helpful error messages for caption download errors
+    if (error?.statusCode === 403 || error?.data?.error?.code === 403) {
+      throw new Error('Permission denied when downloading captions. Please ensure you have access to manage this video\'s captions.')
+    }
+    if (error?.statusCode === 401 || error?.data?.error?.code === 401) {
+      throw new Error('Authentication failed when downloading captions. The access token may be invalid or expired.')
+    }
+    throw error
+  }
 }
 
 async function fetchCaptionMetadata(accessToken: string, videoId: string) {
-  const response = await $fetch<any>('https://youtube.googleapis.com/youtube/v3/captions', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    },
-    query: {
-      part: 'id,snippet',
-      videoId
+  try {
+    const response = await $fetch<any>('https://youtube.googleapis.com/youtube/v3/captions', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      query: {
+        part: 'id,snippet',
+        videoId
+      }
+    })
+
+    const items = response?.items || []
+    if (!items.length) {
+      throw new Error('No captions available for this video. The video may not have captions, or you may not have permission to access them. Note: You must own the video or have been granted caption management access.')
     }
-  })
 
-  const items = response?.items || []
-  if (!items.length) {
-    throw new Error('No captions available for this video. Ensure the video has public captions.')
+    const preferred = items.find((item: any) => item?.snippet?.language?.startsWith('en') && item?.snippet?.trackKind !== 'ASR')
+      || items.find((item: any) => item?.snippet?.trackKind !== 'ASR')
+      || items[0]
+
+    return preferred
+  } catch (error: any) {
+    // Provide more helpful error messages for common API errors
+    if (error?.statusCode === 403 || error?.data?.error?.code === 403) {
+      throw new Error('Permission denied. You must own the YouTube video or have been granted caption management access. The YouTube Data API v3 requires ownership or explicit permission to access captions.')
+    }
+    if (error?.statusCode === 401 || error?.data?.error?.code === 401) {
+      throw new Error('Authentication failed. The access token may be invalid or expired. Please reconnect your YouTube integration.')
+    }
+    if (error?.statusCode === 404 || error?.data?.error?.code === 404) {
+      throw new Error('Video not found. Please verify the video ID is correct and the video exists.')
+    }
+    // Re-throw with original message if it's a different error
+    throw error
   }
-
-  const preferred = items.find((item: any) => item?.snippet?.language?.startsWith('en') && item?.snippet?.trackKind !== 'ASR')
-    || items.find((item: any) => item?.snippet?.trackKind !== 'ASR')
-    || items[0]
-
-  return preferred
 }
 
 async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, organizationId: string, userId: string) {
