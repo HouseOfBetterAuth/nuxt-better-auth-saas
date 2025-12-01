@@ -26,6 +26,12 @@ const createDraftLoading = ref(false)
 const createDraftError = ref<string | null>(null)
 const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
 const actionLoading = ref<string | null>(null)
+const quickActionsState = reactive({
+  transcript: false,
+  youtube: false
+})
+const linkedSources = ref<Array<{ id: string, type: 'transcript' | 'youtube', value: string }>>([])
+const toolSubmitLoading = ref<'transcript' | 'youtube' | null>(null)
 
 const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = ref<any | null>(null)
@@ -80,7 +86,8 @@ const hasContent = computed(() => contentEntries.value.length > 0)
 const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
 const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceActive.value && !workspaceDetail.value)
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
-const isStreaming = computed(() => status.value === 'streaming')
+const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
+const toast = useToast()
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
@@ -111,6 +118,84 @@ const handleAction = async (action: ChatActionSuggestion) => {
   } finally {
     actionLoading.value = null
   }
+}
+
+function createLocalId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).slice(2)
+}
+
+function addLinkedSource(entry: { type: 'transcript' | 'youtube', value: string }) {
+  linkedSources.value = [
+    ...linkedSources.value,
+    {
+      id: createLocalId(),
+      type: entry.type,
+      value: entry.value
+    }
+  ]
+}
+
+const handleTranscriptTool = async (payload: { text: string }) => {
+  const transcriptMessage = [
+    'Transcript attachment:',
+    payload.text
+  ].join('\n\n')
+  const summary = `Transcript attached (${payload.text.length.toLocaleString()} characters)`
+
+  toolSubmitLoading.value = 'transcript'
+  try {
+    await sendMessage(transcriptMessage, { displayContent: summary })
+    addLinkedSource({ type: 'transcript', value: payload.text })
+    toast.add({
+      title: 'Transcript attached',
+      description: 'Saved for the next draft you generate.',
+      icon: 'i-lucide-file-text',
+      color: 'primary'
+    })
+    quickActionsState.transcript = false
+  } catch (error: any) {
+    console.error('Failed to send transcript message', error)
+    toast.add({
+      title: 'Unable to send transcript',
+      description: error?.data?.message || error?.message || 'Please try again.',
+      color: 'error'
+    })
+  } finally {
+    toolSubmitLoading.value = null
+  }
+}
+
+const handleYoutubeTool = async (payload: { url: string }) => {
+  const summary = `YouTube source added (${payload.url})`
+
+  toolSubmitLoading.value = 'youtube'
+  try {
+    await sendMessage(`Reference video: ${payload.url}`, { displayContent: summary })
+    addLinkedSource({ type: 'youtube', value: payload.url })
+    toast.add({
+      title: 'YouTube link saved',
+      description: 'We will ingest it when you create a draft.',
+      icon: 'i-lucide-youtube',
+      color: 'primary'
+    })
+    quickActionsState.youtube = false
+  } catch (error: any) {
+    console.error('Failed to send YouTube link', error)
+    toast.add({
+      title: 'Unable to send link',
+      description: error?.data?.message || error?.message || 'Please try again.',
+      color: 'error'
+    })
+  } finally {
+    toolSubmitLoading.value = null
+  }
+}
+
+function removeLinkedSource(id: string) {
+  linkedSources.value = linkedSources.value.filter(entry => entry.id !== id)
 }
 
 const loadWorkspaceDetail = async (contentId: string) => {
@@ -207,11 +292,23 @@ if (import.meta.client) {
   <UContainer class="py-8 space-y-8 max-w-4xl">
     <div
       v-if="!isWorkspaceActive"
-      class="text-center"
+      class="space-y-4"
     >
       <h1 class="text-3xl font-semibold">
         What should we write next?
       </h1>
+      <div class="w-full space-y-3">
+        <ToolTranscript
+          v-model:open="quickActionsState.transcript"
+          :loading="toolSubmitLoading === 'transcript'"
+          @submit="handleTranscriptTool"
+        />
+        <ToolYoutube
+          v-model:open="quickActionsState.youtube"
+          :loading="toolSubmitLoading === 'youtube'"
+          @submit="handleYoutubeTool"
+        />
+      </div>
     </div>
     <div class="space-y-6">
       <UAlert
@@ -330,6 +427,52 @@ if (import.meta.client) {
         </div>
 
         <div class="max-w-2xl mx-auto space-y-4">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-500">
+            <span>Attach context:</span>
+            <UButton
+              size="xs"
+              variant="soft"
+              color="primary"
+              icon="i-lucide-file-text"
+              @click="quickActionsState.youtube = false; quickActionsState.transcript = !quickActionsState.transcript"
+            >
+              Paste transcript
+            </UButton>
+            <UButton
+              size="xs"
+              variant="soft"
+              color="neutral"
+              icon="i-lucide-youtube"
+              @click="quickActionsState.transcript = false; quickActionsState.youtube = !quickActionsState.youtube"
+            >
+              Add YouTube link
+            </UButton>
+          </div>
+
+          <div
+            v-if="linkedSources.length"
+            class="flex flex-wrap gap-2"
+          >
+            <UBadge
+              v-for="source in linkedSources"
+              :key="source.id"
+              size="sm"
+              :color="source.type === 'transcript' ? 'primary' : 'neutral'"
+              class="flex items-center gap-1"
+            >
+              <UIcon
+                :name="source.type === 'transcript' ? 'i-lucide-file-text' : 'i-lucide-youtube'"
+              />
+              {{ source.type === 'transcript' ? 'Transcript' : 'YouTube link' }}
+              <UButton
+                variant="link"
+                size="xs"
+                icon="i-lucide-x"
+                @click.stop="removeLinkedSource(source.id)"
+              />
+            </UBadge>
+          </div>
+
           <div class="flex flex-col gap-3 sm:flex-row">
             <UChatPrompt
               v-model="prompt"

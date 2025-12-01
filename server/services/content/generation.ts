@@ -4,6 +4,14 @@ import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 import { chunkSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
+import {
+  buildVectorId,
+  embedText,
+  embedTexts,
+  isVectorizeConfigured,
+  queryVectorMatches,
+  upsertVectors
+} from '~~/server/services/vectorize'
 import { callChatCompletions } from '~~/server/utils/aiGateway'
 import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 
@@ -14,17 +22,18 @@ interface GenerateContentOverrides {
   primaryKeyword?: string | null
   targetLocale?: string | null
   contentType?: typeof CONTENT_TYPES[number]
+  schemaTypes?: string[] | null
 }
 
 export interface GenerateContentInput {
   organizationId: string
   userId: string
-  text?: string | null
   sourceContentId?: string | null
   contentId?: string | null
   overrides?: GenerateContentOverrides
   systemPrompt?: string
   temperature?: number
+  onPlanReady?: (details: PlanReadyDetails) => Promise<void> | void
 }
 
 export interface GenerateContentResult {
@@ -58,6 +67,8 @@ interface PipelineChunk {
   chunkIndex: number
   text: string
   textPreview: string
+  sourceContentId?: string | null
+  embedding?: number[] | null
 }
 
 interface OutlineSection {
@@ -75,6 +86,7 @@ interface ContentPlanResult {
     description?: string
     keywords?: string[]
     schemaType?: string
+    schemaTypes?: string[]
     slugSuggestion?: string
   }
 }
@@ -86,9 +98,15 @@ interface FrontmatterResult {
   tags?: string[]
   status: typeof CONTENT_STATUSES[number]
   contentType: typeof CONTENT_TYPES[number]
+  schemaTypes: string[]
   primaryKeyword?: string | null
   targetLocale?: string | null
   sourceContentId?: string | null
+}
+
+interface PlanReadyDetails {
+  plan: ContentPlanResult
+  frontmatter: FrontmatterResult
 }
 
 interface GeneratedSection {
@@ -109,6 +127,43 @@ const SECTION_SYSTEM_PROMPT = 'You are a skilled writer who preserves the origin
 const SECTION_PATCH_SYSTEM_PROMPT = 'You are revising a single section of an existing article. Only update that section using the author instructions and contextual transcript snippets. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
 const PLAN_SECTION_LIMIT = 10
 const SECTION_CONTEXT_LIMIT = 3
+
+const BASE_SCHEMA_TYPE = 'BlogPosting'
+const CONTENT_TYPE_SCHEMA_EXTENSIONS: Partial<Record<typeof CONTENT_TYPES[number], string[]>> = {
+  recipe: ['Recipe'],
+  how_to: ['HowTo'],
+  faq_page: ['FAQPage'],
+  course: ['Course']
+}
+
+const normalizeSchemaTypes = (
+  ...candidates: Array<string | string[] | null | undefined>
+) => {
+  const set = new Set<string>()
+  const push = (value?: string | null) => {
+    const trimmed = (value ?? '').trim()
+    if (trimmed) {
+      set.add(trimmed)
+    }
+  }
+
+  push(BASE_SCHEMA_TYPE)
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue
+    }
+
+    if (Array.isArray(candidate)) {
+      candidate.forEach(push)
+      continue
+    }
+
+    push(candidate)
+  }
+
+  return Array.from(set)
+}
 
 const parseJSONResponse = <T>(raw: string, label: string): T => {
   const trimmed = raw.trim()
@@ -162,7 +217,9 @@ const buildVirtualChunksFromText = (text: string, chunkSize = 1200, overlap = 20
       segments.push({
         chunkIndex: index,
         text: slice,
-        textPreview: slice.slice(0, 280)
+        textPreview: slice.slice(0, 280),
+        sourceContentId: null,
+        embedding: null
       })
       index += 1
     }
@@ -231,9 +288,79 @@ const scoreChunk = (chunk: PipelineChunk, tokens: string[]) => {
   return score
 }
 
-const selectRelevantChunks = (chunks: PipelineChunk[], outline: OutlineSection) => {
+const selectRelevantChunks = async (params: {
+  chunks: PipelineChunk[]
+  outline: OutlineSection
+  organizationId: string
+  sourceContentId?: string | null
+}): Promise<PipelineChunk[]> => {
+  const { chunks, outline, organizationId, sourceContentId } = params
+
   if (!chunks.length) {
     return []
+  }
+
+  let queryEmbedding: number[] | null = null
+
+  if (isVectorizeConfigured && sourceContentId) {
+    try {
+      queryEmbedding = await embedText(`${outline.title} ${outline.notes ?? ''}`)
+      const matches = await queryVectorMatches({
+        vector: queryEmbedding,
+        topK: SECTION_CONTEXT_LIMIT,
+        filter: {
+          sourceContentId,
+          organizationId
+        }
+      })
+
+      if (matches.length) {
+        const chunkMap = new Map(
+          chunks.map(item => [buildVectorId(item.sourceContentId || sourceContentId, item.chunkIndex), item])
+        )
+
+        const resolvedMatches = matches
+          .map(match => chunkMap.get(match.id))
+          .filter((item): item is PipelineChunk => Boolean(item))
+
+        if (resolvedMatches.length) {
+          return resolvedMatches
+        }
+      }
+    } catch (error) {
+      console.error('Vector match failed, falling back to lexical scores', {
+        outlineTitle: outline.title,
+        error
+      })
+    }
+  }
+
+  const chunksWithEmbeddings = isVectorizeConfigured
+    ? chunks.filter(chunk => Array.isArray(chunk.embedding) && chunk.embedding.length > 0)
+    : []
+
+  if (isVectorizeConfigured && chunksWithEmbeddings.length) {
+    try {
+      if (!queryEmbedding) {
+        queryEmbedding = await embedText(`${outline.title} ${outline.notes ?? ''}`)
+      }
+
+      if (queryEmbedding?.length) {
+        const scored = chunksWithEmbeddings
+          .map(chunk => ({
+            chunk,
+            score: cosineSimilarity(queryEmbedding!, chunk.embedding as number[])
+          }))
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+          .slice(0, SECTION_CONTEXT_LIMIT)
+
+        if (scored.length && scored[0].score > 0) {
+          return scored.map(item => item.chunk)
+        }
+      }
+    } catch (error) {
+      console.error('Local embedding similarity failed', { error })
+    }
   }
 
   const tokens = tokenize(`${outline.title} ${outline.notes ?? ''}`)
@@ -255,6 +382,30 @@ const computeWordCount = (value: string) => {
     .length
 }
 
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA.length || !vecB.length || vecA.length !== vecB.length) {
+    return 0
+  }
+
+  let dot = 0
+  let normA = 0
+  let normB = 0
+
+  for (let i = 0; i < vecA.length; i += 1) {
+    const valueA = vecA[i]
+    const valueB = vecB[i]
+    dot += valueA * valueB
+    normA += valueA * valueA
+    normB += valueB * valueB
+  }
+
+  if (!normA || !normB) {
+    return 0
+  }
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB))
+}
+
 const defaultPlan = (sourceTitle?: string): ContentPlanResult => ({
   outline: [
     { id: uuidv7(), index: 0, title: 'Introduction', type: 'intro', notes: `Set up the topic ${sourceTitle ? `based on ${sourceTitle}` : ''}`.trim() },
@@ -266,7 +417,8 @@ const defaultPlan = (sourceTitle?: string): ContentPlanResult => ({
     title: sourceTitle || 'New Codex Draft',
     description: 'Draft generated from a Codex pipeline.',
     keywords: [],
-    slugSuggestion: slugifyTitle(sourceTitle || 'new-codex-draft')
+    slugSuggestion: slugifyTitle(sourceTitle || 'new-codex-draft'),
+    schemaTypes: normalizeSchemaTypes()
   }
 })
 
@@ -284,7 +436,8 @@ const generateContentPlan = async (params: {
     preview,
     params.instructions ? `Writer instructions: ${params.instructions}` : 'Writer instructions: Maintain the original speaker\'s authentic voice, casual expressions, and personal storytelling style.',
     'Create an outline that reflects the natural flow and personality of the original content. Section titles should capture the speaker\'s authentic way of discussing topics.',
-    'Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaType": string? }}.',
+    'Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaTypes": string[] }}.',
+    'Always include "BlogPosting" in schemaTypes, then append any additional schema.org types (e.g., Recipe, HowTo, FAQPage) when the content genuinely needs those structures.',
     `Limit outline to ${PLAN_SECTION_LIMIT} sections.`
   ].join('\n\n')
 
@@ -307,13 +460,16 @@ const generateContentPlan = async (params: {
         }))
       : []
 
+    const parsedSchemaTypes = normalizeSchemaTypes(parsed.seo?.schemaTypes, parsed.seo?.schemaType)
+
     plan = {
       outline: outline.length ? outline : defaultPlan(params.sourceTitle ?? undefined).outline,
       seo: {
         title: parsed.seo?.title?.trim() || params.sourceTitle || 'New Codex Draft',
         description: parsed.seo?.description?.trim() || 'Draft generated from Codex pipeline.',
         keywords: Array.isArray(parsed.seo?.keywords) ? parsed.seo?.keywords : [],
-        schemaType: parsed.seo?.schemaType?.trim(),
+        schemaType: parsedSchemaTypes[0],
+        schemaTypes: parsedSchemaTypes,
         slugSuggestion: slugifyTitle(parsed.seo?.slugSuggestion || parsed.seo?.title || params.sourceTitle || 'new-codex-draft')
       }
     }
@@ -344,6 +500,13 @@ const buildFrontmatterFromPlan = (params: {
     ? overrides.contentType
     : (existingContent?.contentType ?? 'blog_post')
 
+  const resolvedSchemaTypes = normalizeSchemaTypes(
+    params.plan.seo.schemaTypes,
+    params.plan.seo.schemaType,
+    overrides?.schemaTypes,
+    CONTENT_TYPE_SCHEMA_EXTENSIONS[contentTypeCandidate]
+  )
+
   return {
     title: resolvedTitle,
     description: plan.seo.description || sourceContent?.metadata?.description || undefined,
@@ -351,6 +514,7 @@ const buildFrontmatterFromPlan = (params: {
     tags: plan.seo.keywords,
     status: statusCandidate,
     contentType: contentTypeCandidate,
+    schemaTypes: resolvedSchemaTypes,
     primaryKeyword: overrides?.primaryKeyword ?? existingContent?.primaryKeyword ?? plan.seo.keywords?.[0] ?? null,
     targetLocale: overrides?.targetLocale ?? existingContent?.targetLocale ?? null,
     sourceContentId: sourceContent?.id ?? existingContent?.sourceContentId ?? null
@@ -370,6 +534,11 @@ const buildFrontmatterFromVersion = (params: {
   const contentTypeCandidate = versionFrontmatter.contentType && CONTENT_TYPES.includes(versionFrontmatter.contentType)
     ? versionFrontmatter.contentType
     : (params.content.contentType ?? 'blog_post')
+  const schemaTypes = normalizeSchemaTypes(
+    versionFrontmatter.schemaTypes,
+    versionFrontmatter.schemaType,
+    CONTENT_TYPE_SCHEMA_EXTENSIONS[contentTypeCandidate]
+  )
 
   return {
     title: resolvedTitle,
@@ -378,6 +547,7 @@ const buildFrontmatterFromVersion = (params: {
     tags: Array.isArray(versionFrontmatter.tags) ? versionFrontmatter.tags : undefined,
     status: statusCandidate,
     contentType: contentTypeCandidate,
+    schemaTypes,
     primaryKeyword: versionFrontmatter.primaryKeyword ?? params.content.primaryKeyword ?? null,
     targetLocale: versionFrontmatter.targetLocale ?? params.content.targetLocale ?? null,
     sourceContentId: versionFrontmatter.sourceContentId ?? params.content.sourceContentId ?? null
@@ -390,11 +560,18 @@ const generateSectionsFromOutline = async (params: {
   chunks: PipelineChunk[]
   instructions?: string
   temperature?: number
+  organizationId: string
+  sourceContentId?: string | null
 }): Promise<GeneratedSection[]> => {
   const sections: GeneratedSection[] = []
 
   for (const item of params.outline) {
-    const relevantChunks = selectRelevantChunks(params.chunks, item)
+    const relevantChunks = await selectRelevantChunks({
+      chunks: params.chunks,
+      outline: item,
+      organizationId: params.organizationId,
+      sourceContentId: params.sourceContentId
+    })
     const contextBlock = relevantChunks.length
       ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
       : 'No transcript context available.'
@@ -407,7 +584,8 @@ const generateSectionsFromOutline = async (params: {
         title: params.frontmatter.title,
         description: params.frontmatter.description,
         tags: params.frontmatter.tags,
-        contentType: params.frontmatter.contentType
+        contentType: params.frontmatter.contentType,
+        schemaTypes: params.frontmatter.schemaTypes
       })}`,
       params.instructions ? `Additional voice instructions: ${params.instructions}` : 'Voice instructions: Preserve the original speaker\'s authentic voice, personality, casual expressions, personal anecdotes, and unique phrasing. Maintain their natural speaking style and tone rather than converting to formal editorial language.',
       'Transcript context to ground this section:',
@@ -586,11 +764,30 @@ const fetchOrCreateChunks = async (
   fallbackText: string | null
 ): Promise<PipelineChunk[]> => {
   if (!sourceContent?.id) {
-    return fallbackText ? buildVirtualChunksFromText(fallbackText) : []
+    const virtualChunks = fallbackText ? buildVirtualChunksFromText(fallbackText) : []
+    if (virtualChunks.length && isVectorizeConfigured) {
+      try {
+        const embeddings = await embedTexts(virtualChunks.map(chunk => chunk.text))
+        virtualChunks.forEach((chunk, idx) => {
+          chunk.embedding = embeddings[idx] ?? null
+        })
+      } catch (error) {
+        console.error('Failed to embed ad-hoc chunks', { error })
+      }
+    }
+    return virtualChunks
   }
 
   let chunks = await db
-    .select()
+    .select({
+      id: schema.chunk.id,
+      chunkIndex: schema.chunk.chunkIndex,
+      text: schema.chunk.text,
+      textPreview: schema.chunk.textPreview,
+      embedding: schema.chunk.embedding,
+      sourceContentId: schema.chunk.sourceContentId,
+      organizationId: schema.chunk.organizationId
+    })
     .from(schema.chunk)
     .where(eq(schema.chunk.sourceContentId, sourceContent.id))
     .orderBy(asc(schema.chunk.chunkIndex))
@@ -608,10 +805,40 @@ const fetchOrCreateChunks = async (
     return fallbackText ? buildVirtualChunksFromText(fallbackText) : []
   }
 
+  if (isVectorizeConfigured) {
+    const missingEmbeddings = chunks.filter(chunk => !Array.isArray(chunk.embedding) || chunk.embedding.length === 0)
+    if (missingEmbeddings.length) {
+      try {
+        const embeddings = await embedTexts(missingEmbeddings.map(chunk => chunk.text))
+        await Promise.all(missingEmbeddings.map((chunk, idx) => {
+          chunk.embedding = embeddings[idx]
+          return db
+            .update(schema.chunk)
+            .set({ embedding: embeddings[idx] })
+            .where(eq(schema.chunk.id, chunk.id))
+        }))
+
+        await upsertVectors(missingEmbeddings.map((chunk, idx) => ({
+          id: buildVectorId(chunk.sourceContentId, chunk.chunkIndex),
+          values: embeddings[idx],
+          metadata: {
+            sourceContentId: chunk.sourceContentId,
+            organizationId: chunk.organizationId,
+            chunkIndex: chunk.chunkIndex
+          }
+        })))
+      } catch (error) {
+        console.error('Failed to backfill embeddings for chunks', { error, sourceContentId: sourceContent.id })
+      }
+    }
+  }
+
   return chunks.map(item => ({
     chunkIndex: item.chunkIndex,
     text: item.text,
-    textPreview: item.textPreview ?? item.text.slice(0, 280)
+    textPreview: item.textPreview ?? item.text.slice(0, 280),
+    sourceContentId: item.sourceContentId,
+    embedding: item.embedding ?? null
   }))
 }
 
@@ -622,7 +849,6 @@ export const generateContentDraft = async (
   const {
     organizationId,
     userId,
-    text,
     sourceContentId,
     contentId,
     overrides,
@@ -675,21 +901,14 @@ export const generateContentDraft = async (
     existingContent = row
   }
 
-  const explicitText = typeof text === 'string' && text.trim().length > 0 ? text.trim() : null
-  const sourceText = typeof sourceContent?.sourceText === 'string' && sourceContent.sourceText.trim().length > 0
-    ? sourceContent.sourceText.trim()
-    : null
-
-  const inputText = explicitText || sourceText
-
-  if (!inputText) {
+  if (!sourceContentId || !sourceContent?.sourceText?.trim()) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'text or sourceContentId with source_text is required'
+      statusMessage: 'A source transcript is required to create a draft'
     })
   }
 
-  const chunks = await fetchOrCreateChunks(db, sourceContent, inputText)
+  const chunks = await fetchOrCreateChunks(db, sourceContent, sourceContent.sourceText)
 
   const contentType = overrides?.contentType && CONTENT_TYPES.includes(overrides.contentType)
     ? overrides.contentType
@@ -709,12 +928,18 @@ export const generateContentDraft = async (
     sourceContent
   })
 
+  if (input.onPlanReady) {
+    await input.onPlanReady({ plan, frontmatter })
+  }
+
   const sections = await generateSectionsFromOutline({
     outline: plan.outline,
     frontmatter,
     chunks,
     instructions: systemPrompt,
-    temperature
+    temperature,
+    organizationId,
+    sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null
   })
 
   const assembled = assembleMarkdownFromSections({
@@ -733,7 +958,8 @@ export const generateContentDraft = async (
     plan: plan.seo,
     primaryKeyword,
     targetLocale,
-    contentType: selectedContentType
+    contentType: selectedContentType,
+    schemaTypes: frontmatter.schemaTypes
   }
 
   const result = await db.transaction(async (tx) => {
@@ -844,6 +1070,7 @@ export const generateContentDraft = async (
           tags: frontmatter.tags,
           status: selectedStatus,
           contentType: selectedContentType,
+          schemaTypes: frontmatter.schemaTypes,
           sourceContentId: resolvedSourceContentId,
           primaryKeyword,
           targetLocale
@@ -977,12 +1204,17 @@ export const patchContentSection = async (
     record.sourceContent?.sourceText ?? null
   )
 
-  const relevantChunks = selectRelevantChunks(chunks, {
-    id: targetSection.id,
-    index: targetSection.index,
-    title: targetSection.title,
-    type: targetSection.type,
-    notes: trimmedInstructions
+  const relevantChunks = await selectRelevantChunks({
+    chunks,
+    outline: {
+      id: targetSection.id,
+      index: targetSection.index,
+      title: targetSection.title,
+      type: targetSection.type,
+      notes: trimmedInstructions
+    },
+    organizationId,
+    sourceContentId: record.sourceContent?.id ?? frontmatter.sourceContentId ?? null
   })
 
   const contextBlock = relevantChunks.length
@@ -999,6 +1231,7 @@ export const patchContentSection = async (
       description: frontmatter.description,
       tags: frontmatter.tags,
       contentType: frontmatter.contentType,
+      schemaTypes: frontmatter.schemaTypes,
       primaryKeyword: frontmatter.primaryKeyword,
       targetLocale: frontmatter.targetLocale
     })}`,
@@ -1054,6 +1287,7 @@ export const patchContentSection = async (
     primaryKeyword: frontmatter.primaryKeyword,
     targetLocale: frontmatter.targetLocale,
     contentType: frontmatter.contentType,
+    schemaTypes: frontmatter.schemaTypes,
     lastPatchedSectionId: targetSection.id,
     patchedAt: new Date().toISOString()
   }
@@ -1082,6 +1316,7 @@ export const patchContentSection = async (
           tags: frontmatter.tags,
           status: frontmatter.status,
           contentType: frontmatter.contentType,
+          schemaTypes: frontmatter.schemaTypes,
           sourceContentId: frontmatter.sourceContentId,
           primaryKeyword: frontmatter.primaryKeyword,
           targetLocale: frontmatter.targetLocale

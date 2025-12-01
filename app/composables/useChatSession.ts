@@ -124,6 +124,7 @@ export function useChatSession() {
     errorMessage.value = null
 
     try {
+      status.value = 'streaming'
       const response = await $fetch<ChatResponse>('/api/chat', {
         method: 'POST',
         body: withSelectedContentType(body)
@@ -163,7 +164,7 @@ export function useChatSession() {
     }
   }
 
-  async function sendMessage(prompt: string) {
+  async function sendMessage(prompt: string, options?: { displayContent?: string }) {
     const trimmed = prompt.trim()
     if (!trimmed) {
       return null
@@ -172,7 +173,7 @@ export function useChatSession() {
     messages.value.push({
       id: createId(),
       role: 'user',
-      content: trimmed,
+      content: options?.displayContent?.trim() || trimmed,
       createdAt: new Date()
     })
 

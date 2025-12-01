@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParams, readBody } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { addChatLog, getSessionMessages } from '~~/server/services/chatSession'
+import { addChatLog, addChatMessage, getSessionMessages } from '~~/server/services/chatSession'
 import { generateContentDraft } from '~~/server/services/content/generation'
+import { createManualTranscriptSourceContent } from '~~/server/services/sourceContent/manualTranscript'
 import { requireAuth } from '~~/server/utils/auth'
 import { CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
@@ -132,13 +133,87 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const manualSource = await createManualTranscriptSourceContent({
+    db,
+    organizationId,
+    userId: user.id,
+    transcript,
+    metadata: { createdVia: 'chat_session_create_content', sessionId: session.id }
+  })
+
   const result = await generateContentDraft(db, {
     organizationId,
     userId: user.id,
-    text: transcript,
+    sourceContentId: manualSource.id,
     overrides: {
       title: body.title,
       contentType
+    },
+    onPlanReady: async ({ plan, frontmatter }) => {
+      if (!plan || typeof plan !== 'object') {
+        const errorMessage = 'Failed to generate content plan. The plan data is missing. Please try again.'
+        console.error('[create-content] Missing plan data in onPlanReady callback.', {
+          sessionId: session.id,
+          userId: user.id
+        })
+        await addChatMessage(db, {
+          sessionId: session.id,
+          organizationId,
+          role: 'assistant',
+          content: errorMessage
+        })
+        throw createError({
+          statusCode: 500,
+          statusMessage: errorMessage
+        })
+      }
+
+      if (!frontmatter || typeof frontmatter !== 'object') {
+        const errorMessage = 'Failed to generate content plan. The frontmatter data is missing. Please try again.'
+        console.error('[create-content] Missing frontmatter data in onPlanReady callback.', {
+          sessionId: session.id,
+          userId: user.id
+        })
+        await addChatMessage(db, {
+          sessionId: session.id,
+          organizationId,
+          role: 'assistant',
+          content: errorMessage
+        })
+        throw createError({
+          statusCode: 500,
+          statusMessage: errorMessage
+        })
+      }
+
+      const outlineArray = Array.isArray(plan.outline) ? plan.outline : []
+      const outlinePreview = outlineArray
+        .map((section, index) => {
+          const typeSuffix = section.type && section.type !== 'body' ? ` (${section.type})` : ''
+          return `${index + 1}. ${section.title || `Section ${index + 1}`}${typeSuffix}`
+        })
+        .join('\n')
+      const schemaSummary = Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes.join(', ') : ''
+      const summaryLines = [
+        `Plan preview before drafting the full ${contentType}:`,
+        `Title: ${frontmatter.title ?? 'Untitled draft'}`,
+        schemaSummary ? `Schema types: ${schemaSummary}` : 'Schema types: n/a',
+        frontmatter.slugSuggestion ? `Slug suggestion: ${frontmatter.slugSuggestion}` : 'Slug suggestion: n/a',
+        outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)',
+        'Let me know if you’d like any outline adjustments—or click “Start draft in workspace” when you are ready.'
+      ]
+
+      await addChatMessage(db, {
+        sessionId: session.id,
+        organizationId,
+        role: 'assistant',
+        content: summaryLines.join('\n\n'),
+        payload: {
+          type: 'plan_preview',
+          plan,
+          frontmatter
+        }
+      })
     }
   })
 

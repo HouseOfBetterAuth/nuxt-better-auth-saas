@@ -1,11 +1,13 @@
+import { createError } from 'h3'
 import { generateContentDraft } from '~~/server/services/content/generation'
+import { createManualTranscriptSourceContent } from '~~/server/services/sourceContent/manualTranscript'
 import { requireAuth } from '~~/server/utils/auth'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 
 interface GenerateContentBody {
-  text?: string
+  transcript?: string
   sourceContentId?: string | null
   contentId?: string | null
   title?: string | null
@@ -40,11 +42,31 @@ export default defineEventHandler(async (event) => {
     contentType: body.contentType && CONTENT_TYPES.includes(body.contentType) ? body.contentType : undefined
   }
 
+  let resolvedSourceContentId = typeof body.sourceContentId === 'string' ? body.sourceContentId : null
+
+  if (!resolvedSourceContentId) {
+    const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
+    if (!transcript) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Provide a transcript or an existing sourceContentId.'
+      })
+    }
+
+    const manualSource = await createManualTranscriptSourceContent({
+      db,
+      organizationId,
+      userId: user.id,
+      transcript,
+      metadata: { createdVia: 'content_generate_api' }
+    })
+    resolvedSourceContentId = manualSource.id
+  }
+
   const result = await generateContentDraft(db, {
     organizationId,
     userId: user.id,
-    text: body.text,
-    sourceContentId: body.sourceContentId ?? null,
+    sourceContentId: resolvedSourceContentId,
     contentId: body.contentId ?? null,
     overrides,
     systemPrompt: body.systemPrompt,

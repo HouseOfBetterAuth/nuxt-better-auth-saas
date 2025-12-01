@@ -347,12 +347,11 @@ const _sourceLink = computed(() => {
   return null
 })
 
-const seoPlan = computed(() => {
+const _seoPlan = computed(() => {
   const snapshot = seoSnapshot.value
   const plan = snapshot && typeof snapshot === 'object' ? snapshot.plan : null
   return plan && typeof plan === 'object' ? plan : null
 })
-
 
 const publicContentUrl = computed(() => {
   if (!frontmatter.value?.slug) {
@@ -421,13 +420,12 @@ function sectionPreview(body: string, limit = 320) {
 const selectedSectionId = ref<string | null>(null)
 const selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
 
-
-function formatTranscriptText(raw: string) {
-  if (!raw) {
+const _formatTranscriptText = (text: string) => {
+  if (!text) {
     return ''
   }
 
-  let cleaned = raw
+  let cleaned = text
     .replace(/Kind:\s*captions\s*Language:\s*\w+/i, ' ')
     .replace(/<\d{2}:\d{2}:\d{2}(?:\.\d+)?>/g, ' ')
     .replace(/<\/c>/gi, ' ')
@@ -489,7 +487,6 @@ function focusSection(sectionId: string) {
     }
   })
 }
-
 
 async function _handleSubmit() {
   const trimmed = prompt.value.trim()

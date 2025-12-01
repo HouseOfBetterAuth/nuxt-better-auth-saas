@@ -33,3 +33,7 @@ uploads/
 # Cookie files and credentials
 *_cookies.txt
 *.cookies
+.cookies
+*.cookie
+cookies.txt
+cookie.txt
