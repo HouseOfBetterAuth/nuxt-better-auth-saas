@@ -16,7 +16,7 @@ interface CreateContentFromChatBody {
 }
 
 const MAX_MESSAGE_COUNT = 200
-const MAX_TRANSCRIPT_LENGTH = 12000
+// Removed MAX_TRANSCRIPT_LENGTH - transcripts are chunked and vectorized, so length limits are unnecessary
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
@@ -126,12 +126,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (transcript.length > MAX_TRANSCRIPT_LENGTH) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Transcript is too long. Deselect some messages and try again.'
-    })
-  }
+  // Transcript length check removed - transcripts are automatically chunked and vectorized
+  // regardless of length, so no artificial limits are needed
 
   const manualSource = await createManualTranscriptSourceContent({
     db,

@@ -297,7 +297,11 @@ if (import.meta.client) {
       <h1 class="text-3xl font-semibold">
         What should we write next?
       </h1>
-      <div class="w-full space-y-3">
+      <!-- Only show tools when there are NO messages yet -->
+      <div
+        v-if="!messages.length"
+        class="w-full space-y-3"
+      >
         <ToolTranscript
           v-model:open="quickActionsState.transcript"
           :loading="toolSubmitLoading === 'transcript'"
@@ -427,28 +431,7 @@ if (import.meta.client) {
         </div>
 
         <div class="max-w-2xl mx-auto space-y-4">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-500">
-            <span>Attach context:</span>
-            <UButton
-              size="xs"
-              variant="soft"
-              color="primary"
-              icon="i-lucide-file-text"
-              @click="quickActionsState.youtube = false; quickActionsState.transcript = !quickActionsState.transcript"
-            >
-              Paste transcript
-            </UButton>
-            <UButton
-              size="xs"
-              variant="soft"
-              color="neutral"
-              icon="i-lucide-youtube"
-              @click="quickActionsState.transcript = false; quickActionsState.youtube = !quickActionsState.youtube"
-            >
-              Add YouTube link
-            </UButton>
-          </div>
-
+          <!-- Show linked sources if any -->
           <div
             v-if="linkedSources.length"
             class="flex flex-wrap gap-2"
@@ -473,6 +456,50 @@ if (import.meta.client) {
             </UBadge>
           </div>
 
+          <!-- Context tools - only show when there are messages -->
+          <div
+            v-if="messages.length"
+            class="flex flex-wrap items-center gap-2 text-xs text-muted-500"
+          >
+            <span>Add more context:</span>
+            <UButton
+              size="xs"
+              variant="soft"
+              color="primary"
+              icon="i-lucide-file-text"
+              @click="quickActionsState.youtube = false; quickActionsState.transcript = !quickActionsState.transcript"
+            >
+              Paste transcript
+            </UButton>
+            <UButton
+              size="xs"
+              variant="soft"
+              color="neutral"
+              icon="i-lucide-youtube"
+              @click="quickActionsState.transcript = false; quickActionsState.youtube = !quickActionsState.youtube"
+            >
+              Add YouTube link
+            </UButton>
+          </div>
+
+          <!-- Tools appear here when clicked (only when messages exist) -->
+          <div
+            v-if="messages.length"
+            class="w-full space-y-3"
+          >
+            <ToolTranscript
+              v-model:open="quickActionsState.transcript"
+              :loading="toolSubmitLoading === 'transcript'"
+              @submit="handleTranscriptTool"
+            />
+            <ToolYoutube
+              v-model:open="quickActionsState.youtube"
+              :loading="toolSubmitLoading === 'youtube'"
+              @submit="handleYoutubeTool"
+            />
+          </div>
+
+          <!-- Main chat input -->
           <div class="flex flex-col gap-3 sm:flex-row">
             <UChatPrompt
               v-model="prompt"
@@ -494,32 +521,38 @@ if (import.meta.client) {
             />
           </div>
 
-          <UButton
-            block
-            color="primary"
-            :loading="createDraftLoading"
-            :disabled="!canStartDraft"
-            @click="handleCreateDraft"
+          <!-- Draft creation - only show when there are messages -->
+          <div
+            v-if="messages.length"
+            class="space-y-2"
           >
-            {{ createDraftCta }}
-          </UButton>
-          <p class="text-xs text-muted-500 text-center">
-            We'll load the draft in-place so you can open the workspace only when you're ready.
-          </p>
-          <p
-            v-if="!loggedIn && remainingAnonDrafts < ANON_DRAFT_LIMIT"
-            class="text-xs text-muted-500 text-center"
-          >
-            {{ remainingAnonDrafts > 0 ? `You can save ${remainingAnonDrafts} more draft${remainingAnonDrafts === 1 ? '' : 's'} anonymously.` : 'Create a free account to keep saving drafts.' }}
-          </p>
+            <UButton
+              block
+              color="primary"
+              :loading="createDraftLoading"
+              :disabled="!canStartDraft"
+              @click="handleCreateDraft"
+            >
+              {{ createDraftCta }}
+            </UButton>
+            <p class="text-xs text-muted-500 text-center">
+              We'll load the draft in-place so you can open the workspace only when you're ready.
+            </p>
+            <p
+              v-if="!loggedIn && remainingAnonDrafts < ANON_DRAFT_LIMIT"
+              class="text-xs text-muted-500 text-center"
+            >
+              {{ remainingAnonDrafts > 0 ? `You can save ${remainingAnonDrafts} more draft${remainingAnonDrafts === 1 ? '' : 's'} anonymously.` : 'Create a free account to keep saving drafts.' }}
+            </p>
 
-          <UAlert
-            v-if="createDraftError"
-            color="error"
-            variant="soft"
-            icon="i-lucide-alert-triangle"
-            :description="createDraftError"
-          />
+            <UAlert
+              v-if="createDraftError"
+              color="error"
+              variant="soft"
+              icon="i-lucide-alert-triangle"
+              :description="createDraftError"
+            />
+          </div>
         </div>
       </template>
     </div>
