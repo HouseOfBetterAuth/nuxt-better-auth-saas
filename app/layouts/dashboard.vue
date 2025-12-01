@@ -70,7 +70,9 @@ if (layoutOrgData.value) {
   // Flatten the structure: org data + subscriptions at top level
   const flattenedData = {
     ...layoutOrgData.value.organization,
-    subscriptions: layoutOrgData.value.subscriptions
+    subscriptions: layoutOrgData.value.subscriptions,
+    needsUpgrade: layoutOrgData.value.needsUpgrade,
+    userOwnsMultipleOrgs: layoutOrgData.value.userOwnsMultipleOrgs
   }
 
   if (!activeOrg.value) {
@@ -97,7 +99,9 @@ watch(() => layoutOrgData.value, (newOrg) => {
     if ((newOrg as any).organization) {
       flattenedData = {
         ...(newOrg as any).organization,
-        subscriptions: (newOrg as any).subscriptions
+        subscriptions: (newOrg as any).subscriptions,
+        needsUpgrade: (newOrg as any).needsUpgrade,
+        userOwnsMultipleOrgs: (newOrg as any).userOwnsMultipleOrgs
       }
     }
 
@@ -127,6 +131,7 @@ const showUpgradeModal = ref(false)
 const upgradeOrgId = ref<string | undefined>(undefined)
 const newTeamName = ref('')
 const newTeamSlug = ref('')
+
 const isSlugManuallyEdited = ref(false)
 const creatingTeam = ref(false)
 const slugError = ref('')
@@ -210,9 +215,6 @@ watch(newTeamSlug, (newSlug) => {
 onMounted(async () => {
   window.addEventListener('open-create-team-modal', handleOpenCreateModal)
 
-  // Prefetch owned count for smoother UI
-  fetchOwnedCount()
-
   // Organization sync is now handled by app/middleware/organization.global.ts
 })
 
@@ -282,6 +284,51 @@ const activeOrgSlug = computed(() => {
   return activeOrg.value?.data?.slug || 't'
 })
 
+// Avatar initials fallback
+const userInitials = computed(() => {
+  if (!user.value?.name)
+    return '?'
+  return user.value.name
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+})
+
+// Get needsUpgrade from the SSR data
+const needsUpgrade = computed(() => {
+  // activeOrg.data is the flattened object. The server returns { organization: {...}, subscriptions: [], needsUpgrade: boolean }
+  // But the watcher flattens it into activeOrg.value.data
+  // We need to make sure needsUpgrade is preserved during flattening or accessed from layoutOrgData directly
+
+  if (activeOrg.value?.data?.needsUpgrade !== undefined) {
+    return activeOrg.value.data.needsUpgrade
+  }
+
+  // Fallback to layoutOrgData if activeOrg structure is different
+  if (layoutOrgData.value && 'needsUpgrade' in layoutOrgData.value) {
+    return (layoutOrgData.value as any).needsUpgrade
+  }
+
+  return false
+})
+
+// Redirect to billing if needsUpgrade and on a restricted page
+watch([needsUpgrade, () => route.path], ([upgradeNeeded, currentPath]) => {
+  if (!upgradeNeeded || !import.meta.client)
+    return
+
+  // Pages that are allowed even when needsUpgrade
+  const allowedPaths = ['/billing', '/settings', '/profile']
+  const isAllowedPage = allowedPaths.some(p => currentPath.includes(p))
+
+  if (!isAllowedPage) {
+    // Redirect to billing page with upgrade modal
+    router.replace(localePath(`/${activeOrgSlug.value}/billing?showUpgrade=true`))
+  }
+}, { immediate: true })
+
 defineShortcuts({
   'g-1': () => router.push(localePath(`/${activeOrgSlug.value}/dashboard`))
 })
@@ -289,7 +336,7 @@ const pathNameItemMap: StringDict<NavigationMenuItem> = {}
 const pathNameParentMap: StringDict<NavigationMenuItem | undefined> = {}
 
 // Pass user role to menu instead of boolean flags
-const menus = computed(() => getUserMenus(t, localePath, runtimeConfig.public.appRepo, activeOrgSlug.value, currentUserRole.value))
+const menus = computed(() => getUserMenus(t, localePath, runtimeConfig.public.appRepo, activeOrgSlug.value, currentUserRole.value, needsUpgrade.value))
 
 const menuIterator = (menus: NavigationMenuItem[], parent?: NavigationMenuItem) => {
   for (const menu of menus) {
@@ -404,16 +451,16 @@ async function createTeam() {
       class="fixed top-0 left-0 transition-all duration-300 hidden sm:block"
       :class="[isCollapsed ? 'w-15' : 'w-64']"
     >
-      <div class="h-screen flex flex-col px-3 py-4 bg-neutral-100 dark:bg-neutral-800">
+      <div class="h-screen-safe flex flex-col px-3 py-4 bg-neutral-100 dark:bg-neutral-800">
         <a
           v-if="!isCollapsed"
           class="flex items-center ps-2.5"
         >
-          <Logo class="h-6 w-6" />
+          <Logo class="h-9 w-7" />
           <span
             class="self-center ml-2 text-xl font-semibold whitespace-nowrap dark:text-white"
           >
-            {{ t('global.appName') }}
+            {{ t('global.appNameShort') }}
           </span>
         </a>
         <Logo
@@ -446,16 +493,26 @@ async function createTeam() {
             :disable-closing-trigger="true"
           >
             <template #content>
-              <UButton
-                icon="i-lucide-log-out"
-                size="sm"
-                color="neutral"
-                variant="link"
-                class="w-full p-[10px]"
+              <NuxtLink
+                :to="localePath(`/${activeOrgSlug}/profile`)"
+                class="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors w-full"
+              >
+                <UIcon
+                  name="i-lucide-user-cog"
+                  class="w-4 h-4"
+                />
+                Profile Settings
+              </NuxtLink>
+              <button
+                class="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors w-full text-left"
                 @click="clickSignOut"
               >
+                <UIcon
+                  name="i-lucide-log-out"
+                  class="w-4 h-4"
+                />
                 {{ t('global.auth.signOut') }}
-              </UButton>
+              </button>
             </template>
             <div
               class="w-full flex items-center justify-between mt-2 pt-2 pb-2"
@@ -466,7 +523,14 @@ async function createTeam() {
                   :src="user?.image || undefined"
                   size="xs"
                   class="border border-neutral-300 dark:border-neutral-700"
-                />
+                >
+                  <template
+                    v-if="!user?.image"
+                    #fallback
+                  >
+                    <span class="text-[10px] font-medium">{{ userInitials }}</span>
+                  </template>
+                </UAvatar>
                 <span
                   v-if="!isCollapsed"
                   class="text-xs ml-2"
@@ -484,7 +548,7 @@ async function createTeam() {
       </div>
     </aside>
     <div
-      class="p-2 h-screen bg-white dark:bg-neutral-900 transition-all duration-300 overflow-hidden flex flex-col"
+      class="p-2 h-screen-safe bg-white dark:bg-neutral-900 transition-all duration-300 overflow-hidden flex flex-col"
       :class="[isCollapsed ? 'sm:ml-15' : 'sm:ml-64']"
     >
       <FlexThreeColumn class="mb-2 flex-none">
@@ -502,15 +566,60 @@ async function createTeam() {
               variant="ghost"
             />
             <template #content>
-              <div class="w-[60vw] p-4">
+              <div class="w-[70vw] h-full flex flex-col p-4">
                 <div class="mb-4">
                   <OrganizationSwitcher />
                 </div>
                 <UNavigationMenu
                   orientation="vertical"
                   :items="menus"
-                  class="data-[orientation=vertical]:w-full"
+                  class="data-[orientation=vertical]:w-full flex-1"
                 />
+                <!-- User Profile Section -->
+                <div class="mt-auto pt-4 border-t border-neutral-200 dark:border-neutral-700">
+                  <UButton
+                    variant="ghost"
+                    color="neutral"
+                    class="w-full justify-start h-auto py-2 px-2 mb-2"
+                    :to="localePath(`/${activeOrgSlug}/profile`)"
+                  >
+                    <div class="flex items-center gap-3 w-full">
+                      <UAvatar
+                        :src="user?.image || undefined"
+                        size="sm"
+                        class="border border-neutral-300 dark:border-neutral-700"
+                      >
+                        <template
+                          v-if="!user?.image"
+                          #fallback
+                        >
+                          <span class="text-xs font-medium">{{ userInitials }}</span>
+                        </template>
+                      </UAvatar>
+                      <div class="flex-1 min-w-0 text-left">
+                        <p class="text-sm font-medium truncate">
+                          {{ user?.name }}
+                        </p>
+                        <p class="text-xs text-muted-foreground truncate">
+                          {{ user?.email }}
+                        </p>
+                      </div>
+                      <UIcon
+                        name="i-lucide-chevron-right"
+                        class="w-4 h-4 text-muted-foreground"
+                      />
+                    </div>
+                  </UButton>
+                  <UButton
+                    icon="i-lucide-log-out"
+                    color="neutral"
+                    variant="ghost"
+                    class="w-full justify-start"
+                    @click="clickSignOut"
+                  >
+                    {{ t('global.auth.signOut') }}
+                  </UButton>
+                </div>
               </div>
             </template>
           </UDrawer>
@@ -536,6 +645,10 @@ async function createTeam() {
           </ClientOnly>
         </template>
       </FlexThreeColumn>
+
+      <!-- Global Payment Failed Warning -->
+      <BillingPaymentFailedBanner />
+
       <div class="p-2 border-2 border-neutral-200 border-dashed rounded-lg dark:border-neutral-700 flex-1 overflow-auto">
         <slot />
       </div>
@@ -557,6 +670,7 @@ async function createTeam() {
               v-model="newTeamName"
               placeholder="Acme Inc"
               icon="i-lucide-building-2"
+              @keyup.enter="createTeam"
             />
           </UFormField>
           <UFormField
@@ -607,7 +721,7 @@ async function createTeam() {
     </UModal>
 
     <!-- Upgrade Modal for Creating Second Org -->
-    <UpgradeModal
+    <BillingUpgradeModal
       v-model:open="showUpgradeModal"
       reason="create-org"
       :organization-id="upgradeOrgId"

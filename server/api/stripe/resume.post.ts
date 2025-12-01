@@ -5,6 +5,7 @@ import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { addPaymentLog } from '~~/server/utils/stripe'
+import { sendSubscriptionResumedEmail } from '~~/server/utils/stripeEmails'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -131,6 +132,9 @@ export default defineEventHandler(async (event) => {
     } catch (logError) {
       console.warn('Failed to log subscription resume event', logError)
     }
+
+    // Send resumed email
+    await sendSubscriptionResumedEmail(referenceId, subscription)
 
     return {
       success: true,

@@ -9,11 +9,6 @@ const { loggedIn, signOut, user, activeStripeSubscription } = useAuth()
     <UDropdownMenu
       :items="[
         {
-          label: t('global.auth.profile'),
-          icon: 'i-lucide-user',
-          to: localePath('/profile')
-        },
-        {
           label: t('global.auth.signOut'),
           icon: 'i-lucide-log-out',
           onSelect: () => signOut()

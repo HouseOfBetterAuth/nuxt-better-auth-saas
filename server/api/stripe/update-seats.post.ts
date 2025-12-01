@@ -3,7 +3,8 @@ import Stripe from 'stripe'
 import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/database/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'
+import { PLANS } from '~~/shared/utils/plans'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -78,8 +79,8 @@ export default defineEventHandler(async (event) => {
   let newPriceId
   if (newInterval) {
     newPriceId = newInterval === 'month'
-      ? runtimeConfig.stripePriceIdProMonth
-      : runtimeConfig.stripePriceIdProYear
+      ? PLANS.PRO_MONTHLY.priceId
+      : PLANS.PRO_YEARLY.priceId
   }
 
   const subscriptionItemId = subscription.items.data[0].id
@@ -91,24 +92,49 @@ export default defineEventHandler(async (event) => {
       quantity: seats,
       ...(newPriceId ? { price: newPriceId } : {})
     }],
-    proration_behavior: 'always_invoice'
+    proration_behavior: 'always_invoice',
+    payment_behavior: 'error_if_incomplete' // This will throw an error if payment fails instead of leaving subscription in bad state
   }
 
   if (endTrial) {
     updateParams.trial_end = 'now'
   }
 
-  const updatedSubscription = await stripe.subscriptions.update(subscription.id, updateParams)
+  let updatedSubscription: any
+  try {
+    updatedSubscription = await stripe.subscriptions.update(subscription.id, updateParams)
+  } catch (stripeError: any) {
+    console.error('[update-seats] Stripe error:', stripeError.message)
 
-  console.log('[update-seats] Stripe Updated:', {
+    // Check if it's a card/payment error
+    if (stripeError.type === 'StripeCardError' || stripeError.code === 'card_declined') {
+      throw createError({
+        statusCode: 402,
+        statusMessage: 'Your card was declined. Please update your payment method.'
+      })
+    }
+
+    // Re-throw other errors
+    throw createError({
+      statusCode: 500,
+      statusMessage: stripeError.message || 'Failed to update subscription'
+    })
+  }
+
+  console.log('[update-seats] Stripe Updated Raw:', {
     id: updatedSubscription.id,
-    status: updatedSubscription.status,
-    cancel_at_period_end: updatedSubscription.cancel_at_period_end
+    current_period_end: updatedSubscription.current_period_end,
+    status: updatedSubscription.status
   })
 
   // Update local database immediately
+  const periodEnd = updatedSubscription.current_period_end
+    ? new Date(updatedSubscription.current_period_end * 1000)
+    : undefined
+
   const updateData: any = {
-    seats: updatedSubscription.items.data[0].quantity
+    seats: updatedSubscription.items?.data?.[0]?.quantity || seats,
+    periodEnd: (periodEnd && !Number.isNaN(periodEnd.getTime())) ? periodEnd : undefined
   }
 
   if (endTrial || updatedSubscription.status === 'active') {
@@ -141,6 +167,13 @@ export default defineEventHandler(async (event) => {
   await db.update(subscriptionTable)
     .set(updateData)
     .where(eq(subscriptionTable.stripeSubscriptionId, subscription.id))
+
+  // Send updated email for seat/plan changes
+  if (updatedSubscription.status === 'active') {
+    const previousSeats = subscription.items.data[0].quantity
+    const newSeats = updatedSubscription.items.data[0].quantity
+    await sendSubscriptionUpdatedEmail(organizationId, updatedSubscription, previousSeats, newSeats)
+  }
 
   return { success: true, seats: updatedSubscription.items.data[0].quantity }
 })

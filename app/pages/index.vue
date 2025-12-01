@@ -27,99 +27,49 @@ useSeoMeta({
   twitterImage: '/screenshots/home.webp'
 })
 
-const features = {
-  foundation: [
-    {
-      icon: 'i-lucide-layout-template',
-      title: t('home.features.items.modernTechStack.title'),
-      description: t('home.features.items.modernTechStack.description')
-    },
-    {
-      icon: 'i-lucide-shield-check',
-      title: t('home.features.items.secureAuth.title'),
-      description: t('home.features.items.secureAuth.description')
-    },
-    {
-      icon: 'i-lucide-database',
-      title: t('home.features.items.enterpriseDatabase.title'),
-      description: t('home.features.items.enterpriseDatabase.description')
-    }
-  ],
-  integration: [
-    {
-      icon: 'i-lucide-mail',
-      title: t('home.features.items.emailIntegration.title'),
-      description: t('home.features.items.emailIntegration.description')
-    },
-    {
-      icon: 'i-lucide-credit-card',
-      title: t('home.features.items.paymentReady.title'),
-      description: t('home.features.items.paymentReady.description')
-    },
-    {
-      icon: 'i-lucide-box',
-      title: t('home.features.items.noVendorLockIn.title'),
-      description: t('home.features.items.noVendorLockIn.description')
-    }
-  ],
-  admin: [
-    {
-      icon: 'i-lucide-grid',
-      title: t('home.features.items.dashboard.title'),
-      description: t('home.features.items.dashboard.description')
-    },
-    {
-      icon: 'i-lucide-users',
-      title: t('home.features.items.advancedTables.title'),
-      description: t('home.features.items.advancedTables.description')
-    },
-    {
-      icon: 'i-lucide-file-text',
-      title: t('home.features.items.userSubscriptionManagement.title'),
-      description: t('home.features.items.userSubscriptionManagement.description')
-    }
-  ],
-  experience: [
-    {
-      icon: 'i-lucide-palette',
-      title: t('home.features.items.modernUIDesign.title'),
-      description: t('home.features.items.modernUIDesign.description')
-    },
-    {
-      icon: 'i-lucide-languages',
-      title: t('home.features.items.i18nReady.title'),
-      description: t('home.features.items.i18nReady.description')
-    },
-    {
-      icon: 'i-lucide-smartphone',
-      title: t('home.features.items.responsiveLayout.title'),
-      description: t('home.features.items.responsiveLayout.description')
-    }
-  ],
-  developer: [
-    {
-      icon: 'i-lucide-code',
-      title: t('home.features.items.developerFriendly.title'),
-      description: t('home.features.items.developerFriendly.description')
-    },
-    {
-      icon: 'i-lucide-timer',
-      title: t('home.features.items.quickSetup.title'),
-      description: t('home.features.items.quickSetup.description')
-    },
-    {
-      icon: 'i-lucide-settings',
-      title: t('home.features.items.customizable.title'),
-      description: t('home.features.items.customizable.description')
-    }
-  ]
-}
+const features = [
+  {
+    icon: 'i-lucide-credit-card',
+    title: t('home.features.items.billing.title'),
+    description: t('home.features.items.billing.description')
+  },
+  {
+    icon: 'i-lucide-mail',
+    title: t('home.features.items.emails.title'),
+    description: t('home.features.items.emails.description')
+  },
+  {
+    icon: 'i-lucide-users',
+    title: t('home.features.items.teams.title'),
+    description: t('home.features.items.teams.description')
+  },
+  {
+    icon: 'i-lucide-shield-check',
+    title: t('home.features.items.auth.title'),
+    description: t('home.features.items.auth.description')
+  },
+  {
+    icon: 'i-lucide-user-cog',
+    title: t('home.features.items.admin.title'),
+    description: t('home.features.items.admin.description')
+  },
+  {
+    icon: 'i-lucide-zap',
+    title: t('home.features.items.ssr.title'),
+    description: t('home.features.items.ssr.description')
+  },
+  {
+    icon: 'i-lucide-layers',
+    title: t('home.features.items.stack.title'),
+    description: t('home.features.items.stack.description')
+  }
+]
 
 const screenshots = [
   {
     label: t('home.screenshots.dashboard'),
     key: 'dashboard',
-    src: '/screenshots/dashboard.webp'
+    src: '/screenshots/dashboard.png'
   },
   {
     label: t('home.screenshots.users'),
@@ -129,17 +79,17 @@ const screenshots = [
   {
     label: t('home.screenshots.subscription'),
     key: 'subscription',
-    src: '/screenshots/subscription.webp'
+    src: '/screenshots/subscription.png'
   },
   {
     label: t('home.screenshots.pricing'),
     key: 'pricing',
-    src: '/screenshots/pricing.webp'
+    src: '/screenshots/pricing.png'
   },
   {
     label: t('home.screenshots.signin'),
     key: 'signin',
-    src: '/screenshots/signin.webp'
+    src: '/screenshots/signin.png'
   }
 ]
 const activeScreenshot = ref('0')
@@ -271,43 +221,31 @@ const activeScreenshot = ref('0')
               {{ t('home.features.title') }}
             </h2>
           </div>
-          <!-- Feature Groups -->
-          <div class="space-y-24">
-            <div
-              v-for="(group, key) in features"
-              :key="key"
-              class="space-y-8"
+          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <UCard
+              v-for="feature in features"
+              :key="feature.title"
+              class="bg-white/80 dark:bg-neutral-800/80 backdrop-blur border-0 shadow hover:shadow-lg transition-shadow duration-200"
             >
-              <h3 class="text-xl font-semibold capitalize text-center">
-                {{ t(`home.features.categories.${key}`) }}
-              </h3>
-              <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <UCard
-                  v-for="feature in group"
-                  :key="feature.title"
-                  class="bg-white/80 dark:bg-neutral-800/80 backdrop-blur border-0 shadow hover:shadow-lg transition-shadow duration-200"
-                >
-                  <div class="flex gap-4 items-start p-2">
-                    <div class="shrink-0">
-                      <div class="p-3 bg-primary-50 dark:bg-primary-900/50 rounded-lg">
-                        <UIcon
-                          :name="feature.icon"
-                          class="text-primary-500 w-5 h-5"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <h4 class="font-medium mb-2">
-                        {{ feature.title }}
-                      </h4>
-                      <p class="text-sm text-neutral-600 dark:text-neutral-400">
-                        {{ feature.description }}
-                      </p>
-                    </div>
+              <div class="flex gap-4 items-start p-2">
+                <div class="shrink-0">
+                  <div class="p-3 bg-primary-50 dark:bg-primary-900/50 rounded-lg">
+                    <UIcon
+                      :name="feature.icon"
+                      class="text-primary-500 w-6 h-6"
+                    />
                   </div>
-                </UCard>
+                </div>
+                <div>
+                  <h4 class="font-semibold mb-2">
+                    {{ feature.title }}
+                  </h4>
+                  <p class="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                    {{ feature.description }}
+                  </p>
+                </div>
               </div>
-            </div>
+            </UCard>
           </div>
         </UContainer>
       </section>

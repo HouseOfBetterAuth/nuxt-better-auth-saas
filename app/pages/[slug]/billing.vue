@@ -13,12 +13,13 @@ const loading = ref(false)
 const billingInterval = ref<'month' | 'year'>('month')
 const route = useRoute()
 const showDowngradeModal = ref(false)
-const downgradeData = ref<{ membersToRemove: any[], nextChargeDate: string }>({ membersToRemove: [], nextChargeDate: '' })
+const downgradeData = ref<{ membersToRemove: any[], nextChargeDate: string, legacyWarning?: string | null }>({ membersToRemove: [], nextChargeDate: '' })
 const showUpgradeModal = ref(false)
 
-// Show upgrade modal if showUpgrade query param is present
+// Show upgrade modal if showUpgrade query param is present or if upgrade is needed
 watchEffect(() => {
-  if (route.query.showUpgrade === 'true') {
+  const needsUpgrade = (activeOrg.value?.data as any)?.needsUpgrade
+  if (route.query.showUpgrade === 'true' || needsUpgrade) {
     showUpgradeModal.value = true
   }
 })
@@ -31,40 +32,54 @@ onMounted(async () => {
     // Poll for up to 10 seconds (5 attempts x 2s)
     let attempts = 0
     const maxAttempts = 5
-    let hasPro = false
 
-    while (attempts < maxAttempts && !hasPro) {
+    while (attempts < maxAttempts) {
+      // Wait 2s between checks
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       console.log(`Checking for subscription update... (Attempt ${attempts + 1}/${maxAttempts})`)
       await refreshActiveOrg()
 
+      // Check if we have a Pro subscription now
       const currentSubs = (activeOrg.value?.data as any)?.subscriptions || []
-      hasPro = currentSubs.some((s: any) => s.status === 'active' || s.status === 'trialing')
+      const hasPro = currentSubs.some((s: any) => s.status === 'active' || s.status === 'trialing')
 
-      if (!hasPro)
-        attempts++
+      if (hasPro) {
+        console.log('Pro subscription found!')
+        break
+      }
+
+      attempts++
     }
 
     loading.value = false
 
-    if (hasPro) {
-      const newQuery = { ...route.query }
-      delete newQuery.success
-      router.replace({ query: newQuery })
+    // Clear the success param to clean up URL
+    const newQuery = { ...route.query }
+    delete newQuery.success
 
-      toast.add({
-        title: 'Subscription updated',
-        description: 'Your plan has been successfully updated.',
-        color: 'success'
-      })
-    } else {
-      toast.add({
-        title: 'Still processing',
-        description: 'We are still finalizing your subscription. Please refresh or try again shortly.',
-        color: 'warning'
-      })
+    // Handle redirect if present
+    const redirectUrl = newQuery.redirect
+    if (redirectUrl) {
+      delete newQuery.redirect
+      const target = decodeURIComponent(redirectUrl as string)
+
+      if (target.startsWith('http')) {
+        window.location.href = target
+        return
+      } else {
+        router.push(target)
+        return
+      }
     }
+
+    router.replace({ query: newQuery })
+
+    toast.add({
+      title: 'Subscription updated',
+      description: 'Your plan has been successfully updated.',
+      color: 'success'
+    })
   }
 })
 
@@ -73,7 +88,7 @@ onMounted(async () => {
 // 2. That endpoint includes subscriptions
 // 3. We just fixed useActiveOrganization() to use global state populated by the layout
 // So we can just read the data directly!
-const subscriptions = computed(() => {
+const _subscriptions = computed(() => {
   const data = activeOrg.value?.data
   // Check both direct subscriptions property (from get-full-organization response)
   // and if it's nested inside data (depending on how activeOrg is structured)
@@ -85,14 +100,8 @@ const refresh = async () => {
   await refreshActiveOrg()
 }
 
-const activeSub = computed(() => {
-  if (!subscriptions.value)
-    return null
-  const subArray = Array.isArray(subscriptions.value) ? subscriptions.value : []
-  return (subArray as any[]).find(
-    sub => sub.status === 'active' || sub.status === 'trialing'
-  )
-})
+// Use shared payment status composable for consistent behavior
+const { activeSub, hasUsedTrial: _hasUsedTrial, isPaymentFailed } = usePaymentStatus()
 
 // Sync billingInterval with active subscription
 watch(activeSub, (sub) => {
@@ -105,12 +114,25 @@ const activePlan = computed(() => {
   return billingInterval.value === 'month' ? PLANS.PRO_MONTHLY : PLANS.PRO_YEARLY
 })
 
+// Find the config for the user's actual current plan
+const currentSubPlanConfig = computed(() => {
+  if (!activeSub.value)
+    return null
+  // Try to find exact match in PLANS by ID
+  const match = Object.values(PLANS).find(p => p.id === activeSub.value?.plan)
+  // Fallback to activePlan (current public plan) if legacy plan not found in config
+  return match || activePlan.value
+})
+
 const currentPlan = computed(() => {
   if (activeSub.value) {
     return 'pro'
   }
   return 'free'
 })
+
+// hasUsedTrial comes from usePaymentStatus composable (aliased as _hasUsedTrial above)
+const hasUsedTrial = _hasUsedTrial
 
 const isCanceled = computed(() => {
   return activeSub.value?.cancelAtPeriodEnd
@@ -137,18 +159,14 @@ const nextChargeDate = computed(() => {
 })
 
 // Cost breakdown
-const resolvePlanFromSubscription = () => {
-  if (!activeSub.value?.plan)
-    return null
-  const planKey = activeSub.value.plan.includes('year') ? 'PRO_YEARLY' : 'PRO_MONTHLY'
-  return PLANS[planKey as keyof typeof PLANS]
-}
-
 const costBreakdown = computed(() => {
   if (!activeSub.value)
     return null
 
-  const plan = resolvePlanFromSubscription() ?? activePlan.value
+  const plan = currentSubPlanConfig.value
+  if (!plan)
+    return null // Added safety check
+
   const seats = activeSub.value.seats || 1
   const additionalSeats = Math.max(0, seats - 1)
 
@@ -173,6 +191,7 @@ const modal = reactive({
   message: '',
   confirmLabel: 'Confirm',
   confirmColor: 'primary',
+  loading: false,
   onConfirm: async () => {}
 })
 
@@ -182,8 +201,13 @@ function openModal(title: string, message: string, confirmLabel: string, confirm
   modal.confirmLabel = confirmLabel
   modal.confirmColor = confirmColor
   modal.onConfirm = async () => {
-    await onConfirm()
-    modal.isOpen = false
+    modal.loading = true
+    try {
+      await onConfirm()
+    } finally {
+      modal.loading = false
+      modal.isOpen = false
+    }
   }
   modal.isOpen = true
 }
@@ -194,13 +218,19 @@ async function handleUpgrade() {
 
   loading.value = true
   try {
-    const planName = billingInterval.value === 'month' ? 'pro-monthly' : 'pro-yearly'
+    // Use no-trial plan if user owns multiple orgs
+    let planName = billingInterval.value === 'month' ? PLANS.PRO_MONTHLY.id : PLANS.PRO_YEARLY.id
+    if (hasUsedTrial.value) {
+      planName = `${planName}-no-trial`
+    }
+
+    const redirectParam = route.query.redirect ? `&redirect=${route.query.redirect}` : ''
 
     const { error } = await stripeSubscription.upgrade({
       plan: planName,
       referenceId: activeOrg.value.data.id,
-      successUrl: `${window.location.origin}/${activeOrg.value.data.slug}/billing?success=true`,
-      cancelUrl: `${window.location.origin}/${activeOrg.value.data.slug}/billing?canceled=true`,
+      successUrl: `${window.location.origin}/${activeOrg.value.data.slug}/billing?success=true${redirectParam}`,
+      cancelUrl: `${window.location.origin}/${activeOrg.value.data.slug}/billing?canceled=true${redirectParam}`,
       metadata: {
         organizationId: activeOrg.value.data.id
       }
@@ -253,6 +283,9 @@ async function cancelSubscription() {
 
   loading.value = true // Show loading while fetching members
 
+  // Refresh subscription data to get latest periodEnd
+  await refresh()
+
   try {
     // Check for member limit (Free plan allows 1 member - the owner)
     const { data: response, error } = await client.organization.listMembers({
@@ -264,13 +297,6 @@ async function cancelSubscription() {
 
     if (error) {
       console.error('Failed to fetch members:', error)
-      toast.add({
-        title: 'Unable to prepare downgrade',
-        description: 'Failed to load team members. Please try again.',
-        color: 'error'
-      })
-      loading.value = false
-      return
     }
 
     const membersList = response?.members || []
@@ -288,6 +314,18 @@ async function cancelSubscription() {
     }
 
     downgradeData.value.nextChargeDate = nextChargeDate.value || 'the end of your billing cycle'
+    // Check for legacy pricing warning
+    const currentPlanConfig = currentSubPlanConfig.value
+    const latestPlanConfig = activePlan.value // This is the V2/current plan
+
+    if (currentPlanConfig && latestPlanConfig && currentPlanConfig.priceNumber < latestPlanConfig.priceNumber) {
+      const currentPrice = `$${currentPlanConfig.priceNumber.toFixed(2)}`
+      const latestPrice = `$${latestPlanConfig.priceNumber.toFixed(2)}`
+      downgradeData.value.legacyWarning = `Warning: You are currently on a legacy plan (${currentPrice}). If you downgrade, re-subscribing later will cost the new rate of ${latestPrice}.`
+    } else {
+      downgradeData.value.legacyWarning = null
+    }
+
     loading.value = false
     showDowngradeModal.value = true
   } catch (e) {
@@ -314,7 +352,7 @@ async function confirmDowngrade() {
     })
 
     // Refresh subscription data to update UI
-    await refresh()
+    window.location.reload()
   } catch (e: any) {
     console.error(e)
     // eslint-disable-next-line no-alert
@@ -369,6 +407,43 @@ const seatChangePreview = ref<any>(null)
 const showSeatChangeModal = ref(false)
 const targetSeats = ref(1)
 
+// Invoice history ref for refreshing after changes
+const invoiceHistoryRef = ref<{ refresh: () => void } | null>(null)
+
+// Payment error state - shows update payment button in modals
+const paymentError = ref(false)
+
+// Billing portal
+const portalLoading = ref(false)
+
+async function openBillingPortal() {
+  if (!activeOrg.value?.data?.id)
+    return
+
+  portalLoading.value = true
+  try {
+    const { url } = await $fetch('/api/stripe/portal', {
+      method: 'POST',
+      body: {
+        organizationId: activeOrg.value.data.id,
+        returnUrl: window.location.href
+      }
+    })
+    if (url) {
+      window.location.href = url
+    }
+  } catch (e: any) {
+    console.error('Failed to open billing portal:', e)
+    toast.add({
+      title: 'Failed to open billing portal',
+      description: e.data?.message || e.message,
+      color: 'error'
+    })
+  } finally {
+    portalLoading.value = false
+  }
+}
+
 async function initiateSeatChange() {
   if (!activeOrg.value?.data?.id || !activeSub.value)
     return
@@ -386,15 +461,14 @@ async function initiateSeatChange() {
   if (activeOrg.value.data.members) {
     memberCount = activeOrg.value.data.members.length
   } else {
-    const { data, error } = await client.organization.listMembers({
-      query: { organizationId: activeOrg.value.data.id, limit: 100 }
+    // Optimistic or fallback?
+    // Let's fetch to be safe
+    const { data } = await client.organization.listMembers({
+      query: { organizationId: activeOrg.value.data.id, limit: 1 }
     })
-    if (error) {
-      // eslint-disable-next-line no-alert
-      alert('Failed to verify member count. Please try again.')
-      return
-    }
-    memberCount = data?.members?.length || data?.total || 0
+    if (data?.total)
+      memberCount = data.total // listMembers usually returns total
+    // Or we can rely on existing 'cancelSubscription' logic which fetches members.
   }
 
   if (targetSeats.value < memberCount) {
@@ -446,12 +520,33 @@ async function confirmSeatChange() {
       }
     })
     showSeatChangeModal.value = false
-    await refresh()
-    // Reset target seats to new value
+
+    // Full reload when ending trial (status changes), otherwise just refresh
+    if (shouldEndTrial) {
+      window.location.reload()
+    } else {
+      await refresh()
+      // Refresh invoices after a short delay to allow Stripe to process
+      setTimeout(() => {
+        invoiceHistoryRef.value?.refresh()
+      }, 2000)
+    }
   } catch (e: any) {
     console.error(e)
-    // eslint-disable-next-line no-alert
-    alert(`Failed to update seats: ${e.data?.message || e.message}`)
+    const errorMessage = e.data?.message || e.message || 'Unknown error'
+    const isCardError = errorMessage.toLowerCase().includes('card') || errorMessage.toLowerCase().includes('payment') || e.statusCode === 402
+
+    if (isCardError) {
+      paymentError.value = true
+    }
+
+    toast.add({
+      title: isCardError ? 'Payment Failed' : 'Failed to update seats',
+      description: isCardError
+        ? 'Your card was declined. Please update your payment method and try again.'
+        : errorMessage,
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -513,13 +608,28 @@ async function confirmPlanChange() {
 
     if (res.success) {
       showPlanChangeModal.value = false
-      // alert(res.message)
       await refresh()
+      // Refresh invoices after a short delay to allow Stripe to process
+      setTimeout(() => {
+        invoiceHistoryRef.value?.refresh()
+      }, 2000)
     }
   } catch (e: any) {
     console.error(e)
-    // eslint-disable-next-line no-alert
-    alert(`Failed to change plan: ${e.data?.message || e.message}`)
+    const errorMessage = e.data?.message || e.message || 'Unknown error'
+    const isCardError = errorMessage.toLowerCase().includes('card') || errorMessage.toLowerCase().includes('payment') || e.statusCode === 402
+
+    if (isCardError) {
+      paymentError.value = true
+    }
+
+    toast.add({
+      title: isCardError ? 'Payment Failed' : 'Failed to change plan',
+      description: isCardError
+        ? 'Your card was declined. Please update your payment method and try again.'
+        : errorMessage,
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -593,6 +703,13 @@ async function confirmPlanChange() {
             >
               Trial Active: {{ trialInfo.daysLeft }} days left
             </UBadge>
+            <UBadge
+              v-if="activeSub?.status === 'past_due'"
+              color="error"
+              variant="solid"
+            >
+              Payment Failed
+            </UBadge>
           </div>
 
           <!-- Cost Breakdown -->
@@ -632,10 +749,10 @@ async function confirmPlanChange() {
           </div>
 
           <div
-            v-if="activeSub?.status === 'trialing' && trialInfo"
+            v-if="activeSub?.status === 'trialing' && trialInfo && costBreakdown"
             class="text-sm text-muted-foreground mt-1"
           >
-            Free trial ends on {{ trialInfo.endDate }}. You will be charged {{ activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.price : PLANS.PRO_MONTHLY.price }} on that date.
+            Free trial ends on {{ trialInfo.endDate }}. You will be charged ${{ costBreakdown.totalCost.toFixed(2) }} on that date.
           </div>
           <div
             v-else-if="currentPlan === 'pro' && nextChargeDate && !isCanceled"
@@ -644,63 +761,92 @@ async function confirmPlanChange() {
             Next charge on {{ nextChargeDate }}
           </div>
 
-          <!-- Plan Switch Button (Only show for monthly -> yearly upgrade) -->
-          <div
-            v-if="currentPlan === 'pro' && !isCanceled && activeSub?.status !== 'trialing' && !activeSub?.plan?.includes('year')"
-            class="mt-4"
-          >
-            <UButton
-              variant="outline"
-              size="sm"
-              :loading="loading"
-              @click="initiatePlanChange"
-            >
-              Switch to Yearly
-            </UButton>
-          </div>
+          <!-- Payment Failed - Show focused fix payment UI -->
+          <BillingPaymentFailedCard support-email="support@example.com" />
 
-          <!-- Seat Management -->
-          <div
-            v-if="currentPlan === 'pro' && !isCanceled"
-            class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800"
-          >
-            <h3 class="text-sm font-semibold mb-2">
-              Manage Seats
-            </h3>
-            <div class="flex items-center gap-3">
-              <div class="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg">
-                <button
-                  class="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
-                  :disabled="targetSeats <= 1"
-                  @click="targetSeats--"
-                >
-                  -
-                </button>
-                <div class="px-3 py-1 font-medium min-w-[3rem] text-center">
-                  {{ targetSeats }}
-                </div>
-                <button
-                  class="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  @click="targetSeats++"
-                >
-                  +
-                </button>
-              </div>
+          <!-- Normal plan management (hide when payment failed) -->
+          <template v-if="!isPaymentFailed">
+            <!-- Plan Switch Button (Only show for monthly -> yearly upgrade) -->
+            <div
+              v-if="currentPlan === 'pro' && !isCanceled && activeSub?.status !== 'trialing' && !activeSub?.plan?.includes('year')"
+              class="mt-4"
+            >
               <UButton
+                variant="outline"
                 size="sm"
-                variant="solid"
-                color="white"
-                :disabled="targetSeats === (activeSub?.seats || 1)"
                 :loading="loading"
-                @click="initiateSeatChange"
+                @click="initiatePlanChange"
               >
-                Update
+                Switch to Yearly
               </UButton>
             </div>
-            <p class="text-xs text-muted-foreground mt-2">
-              Current seats: {{ activeSub?.seats || 1 }}. Reducing seats below current member count requires removing members first.
-            </p>
-          </div>
+
+            <!-- Seat Management -->
+            <div
+              v-if="currentPlan === 'pro' && !isCanceled"
+              class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800"
+            >
+              <h3 class="text-sm font-semibold mb-2">
+                Manage Seats
+              </h3>
+              <div class="flex items-center gap-3">
+                <div class="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <button
+                    class="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                    :disabled="targetSeats <= 1"
+                    @click="targetSeats--"
+                  >
+                    -
+                  </button>
+                  <div class="px-3 py-1 font-medium min-w-[3rem] text-center">
+                    {{ targetSeats }}
+                  </div>
+                  <button
+                    class="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    @click="targetSeats++"
+                  >
+                    +
+                  </button>
+                </div>
+                <UButton
+                  size="sm"
+                  variant="solid"
+                  color="white"
+                  :disabled="targetSeats === (activeSub?.seats || 1)"
+                  :loading="loading"
+                  @click="initiateSeatChange"
+                >
+                  Update
+                </UButton>
+              </div>
+              <p class="text-xs text-muted-foreground mt-2">
+                Current seats: {{ activeSub?.seats || 1 }}. Reducing seats below current member count requires removing members first.
+              </p>
+            </div>
+
+            <!-- Payment Method -->
+            <div
+              v-if="currentPlan !== 'free'"
+              class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800"
+            >
+              <h3 class="text-sm font-semibold mb-2">
+                Payment Method
+              </h3>
+              <p class="text-xs text-muted-foreground mb-3">
+                Update your card, view billing history, or manage your subscription in the Stripe portal.
+              </p>
+              <UButton
+                size="sm"
+                variant="outline"
+                color="gray"
+                icon="i-lucide-credit-card"
+                :loading="portalLoading"
+                @click="openBillingPortal"
+              >
+                Manage Payment Method
+              </UButton>
+            </div>
+          </template>
         </div>
 
         <div class="flex-1">
@@ -741,91 +887,142 @@ async function confirmPlanChange() {
       </div>
     </UCard>
 
-    <div
-      v-if="currentPlan === 'free'"
-      class="flex items-center gap-4"
-    >
-      <div class="h-8 w-[1px] bg-gray-200 dark:bg-gray-700" />
-      <span class="text-sm font-medium text-muted-foreground">Upgrade plan</span>
-    </div>
+    <!-- Invoice History (Only show for Pro users) -->
+    <UCard v-if="currentPlan === 'pro'">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon
+            name="i-lucide-receipt"
+            class="w-5 h-5 text-muted-foreground"
+          />
+          <h3 class="text-lg font-semibold">
+            Invoice History
+          </h3>
+        </div>
+      </template>
+
+      <LazyBillingInvoiceHistory
+        v-if="activeOrg?.data?.id"
+        ref="invoiceHistoryRef"
+        :organization-id="activeOrg.data.id"
+      />
+    </UCard>
 
     <!-- Upgrade Section (Only show if free) -->
     <div
       v-if="currentPlan === 'free'"
-      class="space-y-6"
+      class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 border border-primary/20 p-6 md:p-8"
     >
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-lg font-semibold">
-            Upgrade plan
-          </h2>
-          <p class="text-sm text-muted-foreground mt-1">
-            Unlock the full power of the Roofing CRM. Manage leads, run estimates, and grow your business.
-          </p>
-        </div>
-        <div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-          <button
-            class="px-3 py-1 text-sm font-medium rounded-md transition-all"
-            :class="billingInterval === 'month' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'text-muted-foreground'"
-            @click="billingInterval = 'month'"
-          >
-            Monthly
-          </button>
-          <button
-            class="px-3 py-1 text-sm font-medium rounded-md transition-all"
-            :class="billingInterval === 'year' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'text-muted-foreground'"
-            @click="billingInterval = 'year'"
-          >
-            Yearly
-          </button>
-        </div>
-      </div>
+      <!-- Background decoration -->
+      <div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
 
-      <!-- Pro Plan Card -->
-      <UCard class="border-primary ring-1 ring-primary/50">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div class="flex flex-col justify-between">
-            <div>
-              <h3 class="text-xl font-bold mb-2">
-                Pro Plan
-              </h3>
-              <div class="text-3xl font-bold mb-2">
-                {{ activePlan.price }} <span class="text-base font-normal text-muted-foreground">/ {{ activePlan.interval }}</span>
-              </div>
-              <p class="text-sm text-muted-foreground mb-6">
-                {{ activePlan.description }}
-              </p>
+      <div class="relative">
+        <!-- Header with toggle -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <UIcon
+                name="i-lucide-zap"
+                class="w-5 h-5 text-primary"
+              />
+              <span class="text-xs font-semibold text-primary uppercase tracking-wider">Upgrade to Pro</span>
             </div>
-            <UButton
-              block
-              label="Upgrade to Pro"
-              color="primary"
-              :loading="loading"
-              class="cursor-pointer mt-auto"
-              @click="handleUpgrade"
-            />
+            <h2 class="text-2xl font-bold">
+              Unlock Your Full Potential
+            </h2>
           </div>
 
-          <div class="md:col-span-2 border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-800 pt-6 md:pt-0 md:pl-8">
-            <h4 class="font-medium mb-4">
-              Everything in Free, plus:
-            </h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+          <!-- Billing Toggle -->
+          <div class="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-full p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+            <button
+              class="px-4 py-2 text-sm font-medium rounded-full transition-all"
+              :class="billingInterval === 'month' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="billingInterval = 'month'"
+            >
+              Monthly
+            </button>
+            <button
+              class="px-4 py-2 text-sm font-medium rounded-full transition-all relative"
+              :class="billingInterval === 'year' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="billingInterval = 'year'"
+            >
+              Yearly
+              <span
+                v-if="billingInterval !== 'year'"
+                class="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+              >
+                Save
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pricing Card -->
+        <div class="bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div class="p-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+              <!-- Price Section -->
+              <div class="flex-shrink-0">
+                <div class="flex items-baseline gap-1">
+                  <span class="text-4xl font-bold">${{ activePlan.priceNumber.toFixed(2) }}</span>
+                  <span class="text-muted-foreground">/ {{ activePlan.interval }}</span>
+                </div>
+                <p class="text-sm text-muted-foreground mt-1">
+                  + ${{ activePlan.seatPriceNumber.toFixed(2) }}/{{ activePlan.interval }} per additional team member
+                </p>
+                <div
+                  v-if="!hasUsedTrial"
+                  class="flex items-center gap-2 mt-3"
+                >
+                  <UIcon
+                    name="i-lucide-shield-check"
+                    class="w-4 h-4 text-green-500"
+                  />
+                  <span class="text-xs text-muted-foreground">{{ activePlan.trialDays }}-day free trial included</span>
+                </div>
+              </div>
+
+              <!-- CTA Button -->
+              <div class="flex-shrink-0">
+                <UButton
+                  size="lg"
+                  :label="hasUsedTrial ? 'Upgrade to Pro' : 'Start Free Trial'"
+                  color="primary"
+                  :loading="loading"
+                  class="cursor-pointer w-full md:w-auto px-8"
+                  @click="handleUpgrade"
+                >
+                  <template #trailing>
+                    <UIcon name="i-lucide-arrow-right" />
+                  </template>
+                </UButton>
+              </div>
+            </div>
+          </div>
+
+          <!-- Features Grid -->
+          <div class="border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-6">
+            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+              Everything you need to grow
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div
                 v-for="(feature, i) in activePlan.features"
                 :key="i"
                 class="flex items-center gap-2 text-sm"
               >
-                <UIcon
-                  name="i-lucide-check-circle"
-                  class="w-5 h-5 text-primary shrink-0"
-                />
+                <div class="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                  <UIcon
+                    name="i-lucide-check"
+                    class="w-3 h-3 text-primary"
+                  />
+                </div>
                 <span>{{ feature }}</span>
               </div>
             </div>
           </div>
         </div>
-      </UCard>
+      </div>
     </div>
 
     <!-- Confirmation Modal -->
@@ -839,12 +1036,14 @@ async function confirmPlanChange() {
           label="Cancel"
           color="gray"
           variant="ghost"
+          :disabled="modal.loading"
           @click="modal.isOpen = false"
         />
         <UButton
           :label="modal.confirmLabel"
           :color="modal.confirmColor"
           variant="solid"
+          :loading="modal.loading"
           @click="modal.onConfirm"
         />
       </template>
@@ -859,87 +1058,15 @@ async function confirmPlanChange() {
         : `You are switching to Yearly billing. You will be charged a prorated amount immediately.`"
     >
       <template #body>
-        <div
+        <BillingPlanChangePreview
           v-if="planPreview"
-          class="space-y-4 text-sm"
-        >
-          <!-- Comparison View -->
-          <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-center bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-            <div>
-              <div class="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">
-                Current
-              </div>
-              <div class="font-semibold text-lg">
-                {{ (activeSub?.seats || 1) }} Seats
-              </div>
-              <div class="text-muted-foreground">
-                ${{ (
-                  (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber)
-                  + (Math.max(0, (activeSub?.seats || 1) - 1) * (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber))
-                ).toFixed(2) }}/{{ activeSub?.plan?.includes('year') ? 'yr' : 'mo' }}
-              </div>
-            </div>
-
-            <UIcon
-              name="i-lucide-arrow-right"
-              class="w-6 h-6 text-gray-400"
-            />
-
-            <div>
-              <div class="text-xs text-primary uppercase font-bold tracking-wider mb-1">
-                New
-              </div>
-              <div class="font-semibold text-lg text-primary">
-                {{ (activeSub?.seats || 1) }} Seats
-              </div>
-              <div class="text-primary font-medium">
-                ${{ (
-                  (newIntervalSelection === 'year' ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber)
-                  + ((activeSub?.seats || 1) - 1) * (newIntervalSelection === 'year' ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber)
-                ).toFixed(2) }}/{{ newIntervalSelection === 'year' ? 'yr' : 'mo' }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Breakdown Details -->
-          <div class="text-xs text-muted-foreground space-y-1 px-1">
-            <div class="flex justify-between">
-              <span>Base Plan (1st Seat):</span>
-              <span>${{ (newIntervalSelection === 'year' ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber).toFixed(2) }}</span>
-            </div>
-            <div
-              v-if="(activeSub?.seats || 1) > 1"
-              class="flex justify-between"
-            >
-              <span>Additional Seats ({{ (activeSub?.seats || 1) - 1 }} x ${{ (newIntervalSelection === 'year' ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber).toFixed(2) }}):</span>
-              <span>${{ (((activeSub?.seats || 1) - 1) * (newIntervalSelection === 'year' ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber)).toFixed(2) }}</span>
-            </div>
-          </div>
-
-          <div
-            v-if="newIntervalSelection === 'year'"
-            class="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-700 items-center"
-          >
-            <div>
-              <div class="text-muted-foreground">
-                {{ activeSub?.status === 'trialing' ? 'Amount due now (End Trial):' : 'Prorated amount due now:' }}
-              </div>
-              <div
-                v-if="planPreview.periodEnd"
-                class="text-xs text-muted-foreground/70"
-              >
-                New rate starts on {{ new Date(planPreview.periodEnd * 1000).toLocaleDateString() }}
-              </div>
-            </div>
-            <span class="font-bold text-primary">${{ (planPreview.amountDue / 100).toFixed(2) }}</span>
-          </div>
-          <div
-            v-else
-            class="pt-3 border-t border-gray-200 dark:border-gray-700 text-center text-muted-foreground"
-          >
-            No payment due today. Change scheduled for {{ new Date(planPreview.periodEnd * 1000).toLocaleDateString() }}.
-          </div>
-        </div>
+          :seats="activeSub?.seats || 1"
+          :current-plan-config="currentSubPlanConfig"
+          :new-plan-config="newIntervalSelection === 'year' ? PLANS.PRO_YEARLY : PLANS.PRO_MONTHLY"
+          :new-interval="newIntervalSelection"
+          :preview="planPreview"
+          :is-trialing="activeSub?.status === 'trialing'"
+        />
         <div
           v-else
           class="py-4 flex justify-center"
@@ -952,18 +1079,31 @@ async function confirmPlanChange() {
       </template>
 
       <template #footer>
-        <UButton
-          label="Cancel"
-          color="gray"
-          variant="ghost"
-          @click="showPlanChangeModal = false"
-        />
-        <UButton
-          :label="`Confirm Switch to ${newIntervalSelection === 'month' ? 'Monthly' : 'Yearly'}`"
-          color="primary"
-          :loading="loading"
-          @click="confirmPlanChange"
-        />
+        <div class="flex items-center justify-between w-full">
+          <div class="flex gap-2">
+            <UButton
+              label="Cancel"
+              color="gray"
+              variant="ghost"
+              @click="showPlanChangeModal = false; paymentError = false"
+            />
+            <UButton
+              :label="`Confirm Switch to ${newIntervalSelection === 'month' ? 'Monthly' : 'Yearly'}`"
+              color="primary"
+              :loading="loading"
+              @click="confirmPlanChange"
+            />
+          </div>
+          <UButton
+            v-if="paymentError"
+            label="Update Payment Method"
+            color="orange"
+            variant="soft"
+            icon="i-lucide-credit-card"
+            :loading="portalLoading"
+            @click="openBillingPortal"
+          />
+        </div>
       </template>
     </UModal>
 
@@ -973,102 +1113,16 @@ async function confirmPlanChange() {
       title="Update Seat Count"
     >
       <template #body>
-        <div
+        <BillingSeatChangePreview
           v-if="seatChangePreview"
-          class="space-y-4 text-sm"
-        >
-          <p class="text-muted-foreground">
-            {{ targetSeats > (activeSub?.seats || 1)
-              ? `You are adding ${targetSeats - (activeSub?.seats || 1)} seat(s).`
-              : `You are removing ${(activeSub?.seats || 1) - targetSeats} seat(s).`
-            }}
-
-            <span v-if="targetSeats < (activeSub?.seats || 1)">
-              Your new rate will be <strong>${{ (
-                (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber)
-                + ((targetSeats - 1) * (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber))
-              ).toFixed(2) }}/{{ activeSub?.plan?.includes('year') ? 'yr' : 'mo' }}</strong> starting on {{ new Date(seatChangePreview.periodEnd * 1000).toLocaleDateString() }}.
-            </span>
-          </p>
-
-          <!-- Comparison View -->
-          <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-center bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-            <!-- ... existing grid content ... -->
-            <div>
-              <div class="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">
-                Current
-              </div>
-              <div class="font-semibold text-lg">
-                {{ (activeSub?.seats || 1) }} Seats
-              </div>
-              <div class="text-muted-foreground">
-                ${{ (
-                  (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber)
-                  + (Math.max(0, (activeSub?.seats || 1) - 1) * (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber))
-                ).toFixed(2) }}/{{ activeSub?.plan?.includes('year') ? 'yr' : 'mo' }}
-              </div>
-            </div>
-
-            <UIcon
-              name="i-lucide-arrow-right"
-              class="w-6 h-6 text-gray-400"
-            />
-
-            <div>
-              <div class="text-xs text-primary uppercase font-bold tracking-wider mb-1">
-                New
-              </div>
-              <div class="font-semibold text-lg text-primary">
-                {{ targetSeats }} Seats
-              </div>
-              <div class="text-primary font-medium">
-                ${{ (
-                  (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber)
-                  + ((targetSeats - 1) * (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber))
-                ).toFixed(2) }}/{{ activeSub?.plan?.includes('year') ? 'yr' : 'mo' }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Breakdown Details -->
-          <div class="text-xs text-muted-foreground space-y-1 px-1">
-            <div class="flex justify-between">
-              <span>Base Plan (1st Seat):</span>
-              <span>${{ (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.priceNumber : PLANS.PRO_MONTHLY.priceNumber).toFixed(2) }}</span>
-            </div>
-            <div
-              v-if="targetSeats > 1"
-              class="flex justify-between"
-            >
-              <span>Additional Seats ({{ targetSeats - 1 }} x ${{ (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber).toFixed(2) }}):</span>
-              <span>${{ ((targetSeats - 1) * (activeSub?.plan?.includes('year') ? PLANS.PRO_YEARLY.seatPriceNumber : PLANS.PRO_MONTHLY.seatPriceNumber)).toFixed(2) }}</span>
-            </div>
-          </div>
-
-          <!-- Only show due now/credit if non-zero -->
-          <div
-            v-if="seatChangePreview.amountDue !== 0"
-            class="flex justify-between pt-3 border-t border-gray-200 dark:border-gray-700 items-center"
-          >
-            <div>
-              <div class="text-muted-foreground">
-                {{ activeSub?.status === 'trialing' ? 'Amount due now (End Trial):' : (seatChangePreview.amountDue > 0 ? 'Prorated amount due now:' : 'Credit applied to balance:') }}
-              </div>
-              <div
-                v-if="seatChangePreview.periodEnd && seatChangePreview.amountDue > 0"
-                class="text-xs text-muted-foreground/70"
-              >
-                New rate starts on {{ new Date(seatChangePreview.periodEnd * 1000).toLocaleDateString() }}
-              </div>
-            </div>
-            <span
-              class="font-bold"
-              :class="seatChangePreview.amountDue > 0 ? 'text-primary' : 'text-green-600'"
-            >
-              {{ seatChangePreview.amountDue > 0 ? '' : '-' }}${{ (Math.abs(seatChangePreview.amountDue) / 100).toFixed(2) }}
-            </span>
-          </div>
-        </div>
+          :current-seats="activeSub?.seats || 1"
+          :target-seats="targetSeats"
+          :plan-config="currentSubPlanConfig"
+          :preview="seatChangePreview"
+          :next-charge-date="nextChargeDate"
+          :is-trialing="activeSub?.status === 'trialing'"
+          show-description
+        />
         <div
           v-else
           class="py-4 flex justify-center"
@@ -1081,18 +1135,33 @@ async function confirmPlanChange() {
       </template>
 
       <template #footer>
-        <UButton
-          label="Cancel"
-          color="gray"
-          variant="ghost"
-          @click="showSeatChangeModal = false"
-        />
-        <UButton
-          :label="targetSeats > (activeSub?.seats || 1) ? 'Confirm & Pay' : 'Confirm Reduction'"
-          color="primary"
-          :loading="loading"
-          @click="confirmSeatChange"
-        />
+        <div class="flex items-center justify-between w-full">
+          <div class="flex gap-2">
+            <UButton
+              label="Cancel"
+              color="gray"
+              variant="ghost"
+              @click="showSeatChangeModal = false; paymentError = false"
+            />
+            <UButton
+              :label="targetSeats > (activeSub?.seats || 1)
+                ? (seatChangePreview?.amountDue === 0 ? 'Confirm (No Charge)' : 'Confirm & Pay')
+                : 'Confirm Reduction'"
+              color="primary"
+              :loading="loading"
+              @click="confirmSeatChange"
+            />
+          </div>
+          <UButton
+            v-if="paymentError"
+            label="Update Payment Method"
+            color="orange"
+            variant="soft"
+            icon="i-lucide-credit-card"
+            :loading="portalLoading"
+            @click="openBillingPortal"
+          />
+        </div>
       </template>
     </UModal>
 
@@ -1103,6 +1172,17 @@ async function confirmPlanChange() {
     >
       <template #body>
         <div class="space-y-4">
+          <div
+            v-if="downgradeData.legacyWarning"
+            class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-sm text-amber-800 dark:text-amber-200 flex gap-2 items-start"
+          >
+            <UIcon
+              name="i-lucide-trending-up"
+              class="w-5 h-5 shrink-0 mt-0.5"
+            />
+            <span>{{ downgradeData.legacyWarning }}</span>
+          </div>
+
           <p class="text-sm">
             Your subscription will be canceled.
           </p>
@@ -1160,19 +1240,6 @@ async function confirmPlanChange() {
               {{ downgradeData.membersToRemove.length > 1 ? 'These users' : 'This user' }} will lose access to this organization on {{ downgradeData.nextChargeDate }}.
             </p>
           </div>
-
-          <div
-            v-else
-            class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
-          >
-            <div class="flex items-center gap-2 text-sm text-green-800 dark:text-green-200">
-              <UIcon
-                name="i-lucide-check-circle"
-                class="w-4 h-4 text-green-600 dark:text-green-400"
-              />
-              <span>No members will be removed. Your team has 1 member, which fits within the Free plan limit.</span>
-            </div>
-          </div>
         </div>
       </template>
 
@@ -1193,7 +1260,7 @@ async function confirmPlanChange() {
     </UModal>
 
     <!-- Upgrade Modal for new teams -->
-    <UpgradeModal
+    <BillingUpgradeModal
       v-model:open="showUpgradeModal"
       :organization-id="activeOrg?.data?.id"
       :team-name="activeOrg?.data?.name"

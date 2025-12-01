@@ -122,9 +122,15 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
-    preset: process.env.NUXT_NITRO_PRESET === 'cloudflare-module' ? 'cloudflare-pages' : 'node-server',
+    preset: process.env.NUXT_NITRO_PRESET,
     rollupConfig: {
       external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
+    },
+    esbuild: {
+      options: {
+        jsx: 'automatic',
+        jsxImportSource: 'react'
+      }
     },
     publicAssets: process.env.NUXT_APP_STORAGE === 'local'
       ? [{

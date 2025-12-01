@@ -1,79 +1,40 @@
 {
   "en": {
     "home": {
-      "slogan": "Nuxt.js Full-Stack SaaS Starter Kit - Free & Open Source",
+      "slogan": "Production-Ready Nuxt SaaS Starter with Better Auth & Stripe",
       "getStarted": "Get Started",
       "viewOnGithub": "View on GitHub",
       "tryQuillioChat": "Try Quillio chat",
       "features": {
-        "title": "Solid Foundation for Your SaaS Success",
-        "categories": {
-          "foundation": "Foundation",
-          "integration": "Integration",
-          "admin": "Admin",
-          "experience": "Experience",
-          "developer": "Developer"
-        },
+        "title": "Everything You Need to Launch",
         "items": {
-          "modernTechStack": {
-            "title": "Modern Tech Stack",
-            "description": "Built with Nuxt, ready for Nuxt v4, TypeScript and Vue 3 Composition API"
+          "billing": {
+            "title": "Stripe Billing",
+            "description": "Seat-based subscriptions with proration previews, legacy pricing support, failed payment handling with grace periods, and invoice history with PDF downloads."
           },
-          "secureAuth": {
-            "title": "Secure Auth",
-            "description": "A robust authentication system powered by Better Auth, providing OAuth2 social logins (Google, GitHub, etc.), sign-in/up, and email-based password reset capabilities."
+          "emails": {
+            "title": "Transactional Emails",
+            "description": "10+ email templates via React Email + Resend: verification, password reset, team invites, trial notifications, subscription updates, payment failures, and more."
           },
-          "enterpriseDatabase": {
-            "title": "Enterprise Database",
-            "description": "PostgreSQL with Drizzle ORM for type-safe operations"
+          "teams": {
+            "title": "Teams & Organizations",
+            "description": "Multi-org support with 14-day trial (first org), Owner/Admin/Member roles, invite links that work for both new and existing users, and per-org timezone settings."
           },
-          "emailIntegration": {
-            "title": "Email Integration",
-            "description": "Built-in Resend integration for transactional emails"
+          "auth": {
+            "title": "Auth & Profile",
+            "description": "Better Auth with Google/GitHub OAuth, profile picture upload, link/unlink accounts, session management, and email changes that sync to Stripe."
           },
-          "paymentReady": {
-            "title": "Payment Ready",
-            "description": "Stripe/Polar integration for subscription management"
+          "admin": {
+            "title": "Admin Panel",
+            "description": "User impersonation for support, soft-ban accounts, audit logs, and full subscription & organization management."
           },
-          "noVendorLockIn": {
-            "title": "No Vendor Lock-in",
-            "description": "Modular architecture with swappable components"
+          "ssr": {
+            "title": "SSR Optimized",
+            "description": "Server-rendered pages with minimal client API calls. Data prefetching and smart caching for snappy navigation."
           },
-          "dashboard": {
-            "title": "Dashboard",
-            "description": "A powerful admin dashboard with beautiful charts"
-          },
-          "advancedTables": {
-            "title": "Advanced Tables",
-            "description": "Notion/Airtable like advanced filtering, sorting, and pagination, and built-in generic list api out of the box"
-          },
-          "userSubscriptionManagement": {
-            "title": "User/Subscription Management",
-            "description": "Ready to use User/Subscription management page"
-          },
-          "modernUIDesign": {
-            "title": "Modern UI Design",
-            "description": "Beautiful components with Nuxt UI and TailwindCSS"
-          },
-          "i18nReady": {
-            "title": "I18n Ready",
-            "description": "Built-in support for multiple languages"
-          },
-          "responsiveLayout": {
-            "title": "Responsive Layout",
-            "description": "Optimized for all devices and screen sizes"
-          },
-          "developerFriendly": {
-            "title": "Developer Friendly",
-            "description": "ESLint + TypeScript for better development"
-          },
-          "quickSetup": {
-            "title": "Quick Setup",
-            "description": "Start developing in minutes"
-          },
-          "customizable": {
-            "title": "Customizable",
-            "description": "Easily extend and customize components"
+          "stack": {
+            "title": "Modern Stack",
+            "description": "Nuxt 4, Vue 3, TypeScript, PostgreSQL, Drizzle ORM, and Cloudflare (Hyperdrive, R2, Workers) for edge deployment."
           }
         }
       },
@@ -121,7 +82,7 @@
           },
           "paymentReady": {
             "title": "支付就绪",
-            "description": "集成 Stripe/Polar 实现订阅管理"
+            "description": "集成 Stripe 实现订阅管理"
           },
           "noVendorLockIn": {
             "title": "无供应商锁定",
@@ -209,7 +170,7 @@
           },
           "paymentReady": {
             "title": "決済対応",
-            "description": "サブスクリプション管理用の Stripe/Polar 統合"
+            "description": "サブスクリプション管理用の Stripe 統合"
           },
           "noVendorLockIn": {
             "title": "ベンダーロックインなし",
@@ -297,7 +258,7 @@
           },
           "paymentReady": {
             "title": "Prêt pour le Paiement",
-            "description": "Intégration Stripe/Polar pour la gestion des abonnements"
+            "description": "Intégration Stripe pour la gestion des abonnements"
           },
           "noVendorLockIn": {
             "title": "Pas de Dépendance Fournisseur",
