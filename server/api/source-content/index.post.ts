@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   const sourceText = validateOptionalString(body.sourceText, 'sourceText')
 
   // Validate metadata
-  if (body.metadata !== undefined && body.metadata !== null && typeof body.metadata !== 'object') {
+  if (body.metadata !== undefined && body.metadata !== null && (typeof body.metadata !== 'object' || Array.isArray(body.metadata))) {
     throw createValidationError('metadata must be an object or null')
   }
 

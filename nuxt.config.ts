@@ -21,7 +21,7 @@ export default defineNuxtConfig({
   ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
     ? {
         hub: {
-          pages: true,
+          workers: true,
           kv: true,
           blob: true,
           bindings: {
@@ -122,9 +122,7 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
-    preset: process.env.NUXT_NITRO_PRESET === 'node-server'
-      ? 'node-server'
-      : (process.env.NUXT_NITRO_PRESET || 'cloudflare-pages'),
+    preset: process.env.NUXT_NITRO_PRESET,
     rollupConfig: {
       external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
     },
