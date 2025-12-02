@@ -1,0 +1,4 @@
+pages_build_output_dir = ".output/public"
+
+[vars]
+NUXT_APP_URL = "https://getquillio.com"
