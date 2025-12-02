@@ -298,6 +298,89 @@ export const createBetterAuth = () => betterAuth({
           // await syncSubscriptionQuantity(invitation.organizationId)
         }
       }
+    },
+    apiKey: {
+      create: {
+        before: async (key, _ctx) => {
+          // Validate maximum 4 API keys per organization
+          const metadata = key.metadata
+          if (!metadata) {
+            return // No organization restriction if no metadata
+          }
+
+          let orgId: string | undefined
+          try {
+            let meta: any = metadata
+            // Handle potentially double-encoded JSON string
+            if (typeof meta === 'string') {
+              try {
+                meta = JSON.parse(meta)
+              } catch {
+                // ignore
+              }
+            }
+            // Try parsing again if it's still a string (double encoded)
+            if (typeof meta === 'string') {
+              try {
+                meta = JSON.parse(meta)
+              } catch {
+                // ignore
+              }
+            }
+            orgId = meta?.organizationId
+          } catch {
+            // Ignore parse error, no org restriction
+            return
+          }
+
+          if (!orgId) {
+            return // No organization restriction if no orgId in metadata
+          }
+
+          // Count existing API keys for this organization
+          const db = getDB()
+          const userId = key.userId
+          if (!userId) {
+            return // No user ID, skip validation
+          }
+
+          const existingKeys = await db.query.apiKey.findMany({
+            where: eq(schema.apiKey.userId, userId)
+          })
+
+          // Filter keys that belong to this organization
+          const orgKeys = existingKeys.filter((k: any) => {
+            if (!k.metadata)
+              return false
+            try {
+              let meta: any = k.metadata
+              if (typeof meta === 'string') {
+                try {
+                  meta = JSON.parse(meta)
+                } catch {
+                  return false
+                }
+              }
+              if (typeof meta === 'string') {
+                try {
+                  meta = JSON.parse(meta)
+                } catch {
+                  return false
+                }
+              }
+              return meta?.organizationId === orgId
+            } catch {
+              return false
+            }
+          })
+
+          if (orgKeys.length >= 4) {
+            throw new APIError('BAD_REQUEST', {
+              message: 'Maximum of 4 API keys allowed per organization'
+            })
+          }
+        }
+      }
     }
   },
   secondaryStorage: cacheClient,

@@ -60,15 +60,13 @@ onMounted(async () => {
     delete newQuery.success
 
     // Handle redirect if present
-    const redirectUrl = newQuery.redirect
-    if (redirectUrl) {
+    const redirectParam = newQuery.redirect as string | undefined
+    if (redirectParam) {
       delete newQuery.redirect
-      const target = decodeURIComponent(redirectUrl as string)
+      const target = decodeURIComponent(redirectParam)
 
-      if (target.startsWith('http')) {
-        window.location.href = target
-        return
-      } else {
+      // Only allow in-app relative redirects to avoid open-redirects
+      if (target.startsWith('/')) {
         router.push(target)
         return
       }
@@ -225,7 +223,8 @@ async function handleUpgrade() {
       planName = `${planName}-no-trial`
     }
 
-    const redirectParam = route.query.redirect ? `&redirect=${route.query.redirect}` : ''
+    const rawRedirect = route.query.redirect as string | undefined
+    const redirectParam = rawRedirect ? `&redirect=${encodeURIComponent(rawRedirect)}` : ''
 
     const { error } = await stripeSubscription.upgrade({
       plan: planName,

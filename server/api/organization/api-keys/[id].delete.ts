@@ -97,8 +97,7 @@ export default defineEventHandler(async (event) => {
     action: 'api_key_deleted',
     targetType: 'api_key',
     targetId: keyId,
-    organizationId: orgId,
-    details: JSON.stringify({ keyName: key.name })
+    details: JSON.stringify({ keyName: key.name, organizationId: orgId })
   })
 
   // Delete the key
