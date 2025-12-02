@@ -11,7 +11,7 @@ import {
 import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
-import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
+import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
@@ -86,12 +86,52 @@ export default defineEventHandler(async (event) => {
     seenKeys.add(key)
   }
 
-  const actions = processedSources.map(item => ({
-    type: 'suggest_generate_from_source',
-    sourceContentId: item.source.id,
-    sourceType: item.sourceType,
-    label: `Start a draft from this ${item.sourceType.replace('_', ' ')}`
-  }))
+  // Detect transcripts in message
+  const transcriptPrefix = 'Transcript attachment:'
+  if (message.trim().startsWith(transcriptPrefix)) {
+    const transcriptText = message.trim().slice(transcriptPrefix.length).trim()
+    if (transcriptText.length > 200) {
+      // Create transcript source
+      const manualSource = await createSourceContentFromTranscript({
+        db,
+        organizationId,
+        userId: user.id,
+        transcript: transcriptText,
+        metadata: { createdVia: 'chat_message_auto_detect' },
+        onProgress: async () => {
+          // Progress messages will be handled by the assistant message
+        }
+      })
+
+      processedSources.push({
+        source: manualSource,
+        url: '',
+        sourceType: 'manual_transcript'
+      })
+    }
+  } else if (message.trim().length > 500 && !urls.length) {
+    // Auto-detect potential transcripts: long messages without URLs
+    // Check for transcript-like patterns (speaker labels, timestamps, etc.)
+    const hasTranscriptPatterns = /^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*:|\[?\d{1,2}:\d{2}(?::\d{2})?\]?)/m.test(message.trim())
+    if (hasTranscriptPatterns) {
+      const manualSource = await createSourceContentFromTranscript({
+        db,
+        organizationId,
+        userId: user.id,
+        transcript: message.trim(),
+        metadata: { createdVia: 'chat_message_auto_detect' },
+        onProgress: async () => {
+          // Progress messages will be handled by the assistant message
+        }
+      })
+
+      processedSources.push({
+        source: manualSource,
+        url: '',
+        sourceType: 'manual_transcript'
+      })
+    }
+  }
 
   let resolvedSourceContentId = body.action?.sourceContentId
     ? validateOptionalUUID(body.action.sourceContentId, 'action.sourceContentId')
@@ -309,16 +349,85 @@ export default defineEventHandler(async (event) => {
   const assistantMessages: string[] = []
 
   if (processedSources.length > 0) {
-    const sourceTypes = processedSources.map(s => s.sourceType.replace('_', ' '))
-    const uniqueTypes = [...new Set(sourceTypes)]
-    const typeLabel = uniqueTypes.length === 1
-      ? uniqueTypes[0]
-      : 'source'
+    // Generate descriptive messages for each source
+    for (const item of processedSources) {
+      if (item.sourceType === 'youtube' && item.source.externalId) {
+        // Try to fetch YouTube video metadata
+        let videoTitle = 'YouTube video'
+        let videoDescription = ''
 
-    if (processedSources.some(s => s.sourceType === 'manual_transcript' || s.sourceType === 'youtube')) {
-      assistantMessages.push(`Processing your ${typeLabel}... Chunking and embedding the content. This may take a moment.`)
-    } else {
-      assistantMessages.push(`Saved ${processedSources.length} ${typeLabel}${processedSources.length > 1 ? 's' : ''} for this organization.`)
+        try {
+          // Check if we have access to YouTube API
+          const account = await findYouTubeAccount(db, organizationId, user.id)
+          if (account) {
+            const accessToken = await ensureAccessToken(db, account)
+            const metadata = await fetchYouTubeVideoMetadata(accessToken, item.source.externalId)
+            if (metadata) {
+              videoTitle = metadata.title
+              videoDescription = metadata.description
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch YouTube metadata', error)
+        }
+
+        // Generate descriptive message using LLM
+        const { callChatCompletions } = await import('~~/server/utils/aiGateway')
+        const descriptionPreview = videoDescription ? videoDescription.slice(0, 500) : 'the video content'
+        const prompt = `The user sent a YouTube video link. Video title: "${videoTitle}". Description preview: "${descriptionPreview}". 
+
+Generate a friendly, conversational message that:
+1. Identifies it as a YouTube video with the title
+2. Summarizes what the video covers based on the description
+3. Offers to provide a full detailed summary or create content from it
+
+Keep it concise (2-3 sentences) and conversational.`
+
+        try {
+          const llmMessage = await callChatCompletions({
+            systemPrompt: 'You are a helpful assistant that describes YouTube videos in a friendly, conversational way.',
+            userPrompt: prompt,
+            temperature: 0.7,
+            maxTokens: 200
+          })
+          assistantMessages.push(llmMessage)
+        } catch {
+          // Fallback if LLM fails
+          assistantMessages.push(`The link you sent is a YouTube video titled: "${videoTitle}". ${videoDescription ? `It covers: ${videoDescription.slice(0, 200)}...` : 'I\'m processing the video content.'} If you want, I can give you a full detailed summary of everything in the video — just tell me!`)
+        }
+      } else if (item.sourceType === 'manual_transcript') {
+        // Generate descriptive message for transcript
+        const transcriptPreview = item.source.sourceText ? item.source.sourceText.slice(0, 1000) : ''
+        const { callChatCompletions } = await import('~~/server/utils/aiGateway')
+
+        const prompt = `The user shared a transcript. Transcript preview: "${transcriptPreview}"
+
+Generate a friendly, conversational message that:
+1. Acknowledges the transcript
+2. Summarizes what it appears to be about
+3. Mentions key topics or themes
+4. Offers to create a draft from it
+
+Keep it concise (2-3 sentences) and conversational.`
+
+        try {
+          const llmMessage = await callChatCompletions({
+            systemPrompt: 'You are a helpful assistant that describes transcripts in a friendly, conversational way.',
+            userPrompt: prompt,
+            temperature: 0.7,
+            maxTokens: 200
+          })
+          assistantMessages.push(llmMessage)
+        } catch {
+          // Fallback if LLM fails
+          const wordCount = transcriptPreview.split(/\s+/).length
+          assistantMessages.push(`I see you've shared a transcript (${wordCount} words). I'm processing it and will be ready to create content from it shortly. If you want, I can create a draft from this transcript — just let me know!`)
+        }
+      } else {
+        // Generic message for other source types
+        const typeLabel = item.sourceType.replace('_', ' ')
+        assistantMessages.push(`Saved your ${typeLabel} for this organization. I can help you create content from it if you'd like.`)
+      }
     }
   }
 
@@ -351,7 +460,6 @@ export default defineEventHandler(async (event) => {
 
   return {
     assistantMessage: assistantMessageBody,
-    actions,
     sources: processedSources.map(item => ({
       ...item.source,
       originalUrl: item.url

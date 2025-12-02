@@ -1,7 +1,10 @@
-import type { HubKV } from '@nuxthub/core'
+import type { KVNamespace } from '@cloudflare/workers-types'
 
 declare global {
-  const hubKV: () => HubKV
+  const KV: KVNamespace
+  const HYPERDRIVE: {
+    connectionString: string
+  }
 }
 
 export {}

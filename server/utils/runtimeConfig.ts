@@ -68,7 +68,7 @@ export const generateRuntimeConfig = () => ({
     }
   } satisfies FileManagerConfig,
   public: {
-    baseURL: process.env.NUXT_APP_URL,
+    baseURL: process.env.NUXT_APP_URL || 'https://getquillio.com',
     appName: process.env.NUXT_APP_NAME,
     appEnv: process.env.NODE_ENV,
     appRepo: process.env.NUXT_APP_REPO,

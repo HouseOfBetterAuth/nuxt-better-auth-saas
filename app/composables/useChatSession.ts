@@ -14,7 +14,6 @@ type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'
 
 interface ChatResponse {
   assistantMessage?: string
-  actions?: ChatActionSuggestion[]
   sources?: ChatSourceSnapshot[]
   generation?: ChatGenerationResult | null
   sessionId?: string | null
@@ -149,7 +148,7 @@ export function useChatSession() {
         ]
       }
 
-      actions.value = response.actions ?? []
+      // Actions removed - sources are now described in LLM messages
       sources.value = response.sources ?? []
       const firstSourceId = sources.value[0]?.id ?? null
       activeSourceId.value = firstSourceId
@@ -225,7 +224,6 @@ export function useChatSession() {
       })
 
       generation.value = response
-      actions.value = []
 
       const title = (response as any)?.content?.title
       const messageContent = title

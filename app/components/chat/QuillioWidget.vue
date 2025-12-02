@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ContentType } from '#shared/constants/contentTypes'
-import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
+import type { ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { useLocalStorage } from '@vueuse/core'
 
@@ -14,10 +14,8 @@ const {
   errorMessage,
   sendMessage,
   isBusy,
-  actions,
   sessionId,
-  createContentFromConversation,
-  executeAction
+  createContentFromConversation
 } = useChatSession()
 
 const prompt = ref('')
@@ -25,7 +23,6 @@ const promptSubmitting = ref(false)
 const createDraftLoading = ref(false)
 const createDraftError = ref<string | null>(null)
 const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
-const actionLoading = ref<string | null>(null)
 const quickActionsState = reactive({
   transcript: false
 })
@@ -105,16 +102,6 @@ const handlePromptSubmit = async () => {
     prompt.value = ''
   } finally {
     promptSubmitting.value = false
-  }
-}
-
-const handleAction = async (action: ChatActionSuggestion) => {
-  const key = `${action.type}-${action.sourceContentId || ''}`
-  actionLoading.value = key
-  try {
-    await executeAction(action)
-  } finally {
-    actionLoading.value = null
   }
 }
 
@@ -387,32 +374,6 @@ if (import.meta.client) {
                 :messages="messages"
                 @regenerate="handleRegenerate"
               />
-            </div>
-          </div>
-
-          <!-- Reference material ready to use -->
-          <div
-            v-if="actions.length"
-            class="w-full max-w-2xl mx-auto space-y-3"
-          >
-            <div
-              v-for="action in actions"
-              :key="`${action.type}-${action.sourceContentId || ''}`"
-              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3"
-            >
-              <div>
-                <p class="text-sm font-medium">
-                  {{ action.label || 'Reference material ready' }}
-                </p>
-              </div>
-              <UButton
-                size="sm"
-                color="primary"
-                :loading="actionLoading === `${action.type}-${action.sourceContentId || ''}`"
-                @click="handleAction(action)"
-              >
-                Use this
-              </UButton>
             </div>
           </div>
         </div>

@@ -103,7 +103,7 @@ async function refreshGoogleAccessToken(db: NodePgDatabase<typeof schema>, accou
   return updated
 }
 
-async function ensureAccessToken(db: NodePgDatabase<typeof schema>, account: typeof schema.account.$inferSelect) {
+export async function ensureAccessToken(db: NodePgDatabase<typeof schema>, account: typeof schema.account.$inferSelect) {
   if (
     account.accessToken &&
     account.accessTokenExpiresAt &&
@@ -118,6 +118,33 @@ async function ensureAccessToken(db: NodePgDatabase<typeof schema>, account: typ
   }
 
   return refreshed.accessToken
+}
+
+export async function fetchYouTubeVideoMetadata(accessToken: string, videoId: string): Promise<{ title: string, description: string } | null> {
+  try {
+    const response = await $fetch<any>('https://youtube.googleapis.com/youtube/v3/videos', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      query: {
+        part: 'snippet',
+        id: videoId
+      }
+    })
+
+    const item = response?.items?.[0]
+    if (!item) {
+      return null
+    }
+
+    return {
+      title: item.snippet?.title || 'Untitled Video',
+      description: item.snippet?.description || ''
+    }
+  } catch (error) {
+    console.error('Failed to fetch YouTube video metadata', error)
+    return null
+  }
 }
 
 async function downloadCaption(accessToken: string, captionId: string) {
@@ -183,7 +210,7 @@ async function fetchCaptionMetadata(accessToken: string, videoId: string) {
   }
 }
 
-async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, organizationId: string, userId: string) {
+export async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, organizationId: string, userId: string) {
   const [userAccount] = await db
     .select()
     .from(schema.account)
