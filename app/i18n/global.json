@@ -1,7 +1,8 @@
 {
   "en": {
     "global": {
-      "appName": "NuxSaaS",
+      "appName": "House of BetterAuth",
+      "appNameShort": "HoBA",
       "nav": {
         "admin": "Admin",
         "features": "Features",
@@ -30,7 +31,8 @@
   },
   "zh-CN": {
     "global": {
-      "appName": "NuxSaaS",
+      "appName": "House of BetterAuth",
+      "appNameShort": "HoBA",
       "nav": {
         "admin": "管理后台",
         "features": "功能特性",
@@ -58,7 +60,8 @@
   },
   "ja": {
     "global": {
-      "appName": "NuxSaaS",
+      "appName": "House of BetterAuth",
+      "appNameShort": "HoBA",
       "nav": {
         "admin": "管理画面",
         "features": "機能",
@@ -86,7 +89,8 @@
   },
   "fr": {
     "global": {
-      "appName": "NuxSaaS",
+      "appName": "House of BetterAuth",
+      "appNameShort": "HoBA",
       "nav": {
         "admin": "Administration",
         "features": "Fonctionnalités",

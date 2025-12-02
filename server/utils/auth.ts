@@ -2,19 +2,24 @@ import type { H3Event } from 'h3'
 import type { User } from '~~/shared/utils/types'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError, createAuthMiddleware } from 'better-auth/api'
-import { admin as adminPlugin, anonymous, openAPI, organization } from 'better-auth/plugins'
-import { and, eq } from 'drizzle-orm'
+import { APIError, createAuthMiddleware, getOAuthState } from 'better-auth/api'
+import { admin as adminPlugin, anonymous, apiKey, openAPI, organization } from 'better-auth/plugins'
+import { and, count, eq, sql } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
-import { ac, admin, member, owner } from '~~/shared/utils/permissions'
+import { ac, admin, member, owner } from '../../shared/utils/permissions'
 import * as schema from '../database/schema'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
 import { cacheClient, resendInstance } from './drivers'
+import { renderDeleteAccount, renderResetPassword, renderTeamInvite, renderVerifyEmail } from './email'
 import { runtimeConfig } from './runtimeConfig'
-import { setupStripe } from './stripe'
+import { createStripeClient, setupStripe } from './stripe'
 
-console.log(`Base URL is ${runtimeConfig.public.baseURL}`)
+// Only log in development
+if (runtimeConfig.public.appEnv === 'development') {
+  console.log(`Base URL is ${runtimeConfig.public.baseURL}`)
+  console.log('Schema keys:', Object.keys(schema))
+}
 
 export const createBetterAuth = () => betterAuth({
   baseURL: runtimeConfig.public.baseURL,
@@ -28,9 +33,6 @@ export const createBetterAuth = () => betterAuth({
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:4000',
-    'https://quill-nuxt-saas-v1.nuxt.dev',
-    'https://getquillio.com',
-    'http://getquillio.com',
     runtimeConfig.public.baseURL
   ],
   secret: runtimeConfig.betterAuthSecret,
@@ -55,20 +57,176 @@ export const createBetterAuth = () => betterAuth({
     }
   },
   user: {
+    changeEmail: {
+      enabled: true
+    },
+    deleteUser: {
+      enabled: true,
+      async sendDeleteAccountVerification({ user, url }) {
+        if (resendInstance) {
+          try {
+            const name = user.name || user.email.split('@')[0]
+            const html = await renderDeleteAccount(name, url)
+            const response = await resendInstance.emails.send({
+              from: runtimeConfig.emailFrom!,
+              to: user.email,
+              subject: 'Confirm account deletion',
+              html
+            })
+
+            // Log success audit event
+            await logAuditEvent({
+              userId: user.id,
+              category: 'email',
+              action: 'delete_account_sent',
+              targetType: 'email',
+              targetId: user.email,
+              status: response.error ? 'failure' : 'success',
+              details: response.error?.message
+            })
+
+            if (response.error) {
+              console.error('[Auth] Failed to send delete account email:', response.error.message)
+              throw new Error(response.error.message)
+            }
+          } catch (e) {
+            console.error('[Auth] Error sending delete account verification email:', e)
+            // Log failure audit event
+            await logAuditEvent({
+              userId: user.id,
+              category: 'email',
+              action: 'delete_account_failed',
+              targetType: 'email',
+              targetId: user.email,
+              status: 'failure',
+              details: e instanceof Error ? e.message : 'Unknown error'
+            })
+            // Rethrow to prevent account deletion if email fails
+            throw e
+          }
+        }
+      }
+    },
     additionalFields: {
-      polarCustomerId: {
-        type: 'string',
-        required: false,
-        defaultValue: null
-      },
       lastActiveOrganizationId: {
         type: 'string',
         required: false,
         defaultValue: null
+      },
+      referralCode: {
+        type: 'string',
+        required: false
       }
     }
   },
   databaseHooks: {
+    user: {
+      create: {
+        before: async (user, ctx) => {
+          if (ctx.path.startsWith('/callback')) {
+            try {
+              const additionalData = await getOAuthState(ctx)
+              if (additionalData?.referralCode) {
+                return {
+                  data: {
+                    ...user,
+                    referralCode: additionalData.referralCode
+                  }
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      },
+      update: {
+        before: async (user, ctx) => {
+          // Capture previous email before update to detect changes
+          if (user.id) {
+            const db = getDB()
+            const previousUser = await db.query.user.findFirst({
+              where: eq(schema.user.id, user.id)
+            })
+            // Store previous email in context for use in after hook
+            if (previousUser) {
+              (ctx as any).previousEmail = previousUser.email
+            }
+          }
+        },
+        after: async (user, ctx) => {
+          // When user email changes, update Stripe customer email for orgs they own
+          // Only sync if email is verified (email ownership validation)
+          const previousEmail = (ctx as any).previousEmail
+          const emailChanged = previousEmail && previousEmail !== user.email
+
+          if (user.email && user.emailVerified && emailChanged) {
+            try {
+              const db = getDB()
+
+              // Log email update for audit
+              await logAuditEvent({
+                userId: user.id,
+                category: 'email',
+                action: 'email_updated',
+                targetType: 'email',
+                targetId: user.email,
+                status: 'success',
+                details: `Email changed from ${previousEmail} to ${user.email}`
+              })
+
+              // Find all orgs where this user is owner and has a Stripe customer
+              const ownedOrgs = await db
+                .select()
+                .from(schema.member)
+                .innerJoin(schema.organization, eq(schema.member.organizationId, schema.organization.id))
+                .where(and(
+                  eq(schema.member.userId, user.id),
+                  eq(schema.member.role, 'owner')
+                ))
+
+              if (ownedOrgs.length > 0) {
+                const stripe = createStripeClient()
+                for (const row of ownedOrgs) {
+                  const org = row.organization
+                  if (org.stripeCustomerId) {
+                    // Update customer email (used for receipts and communications)
+                    // Also ensure customer name stays as org name (not cardholder name)
+                    await stripe.customers.update(org.stripeCustomerId, {
+                      email: user.email,
+                      name: org.name
+                    })
+
+                    // Log Stripe sync for audit
+                    await logAuditEvent({
+                      userId: user.id,
+                      category: 'payment',
+                      action: 'stripe_customer_email_synced',
+                      targetType: 'organization',
+                      targetId: org.id,
+                      status: 'success',
+                      details: `Stripe customer ${org.stripeCustomerId} email updated to ${user.email}`
+                    })
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('[Auth] Failed to update Stripe customer email:', e)
+              // Log failure for audit
+              await logAuditEvent({
+                userId: user.id,
+                category: 'email',
+                action: 'email_update_failed',
+                targetType: 'email',
+                targetId: user.email,
+                status: 'failure',
+                details: e instanceof Error ? e.message : 'Unknown error'
+              })
+            }
+          }
+        }
+      }
+    },
     session: {
       create: {
         before: async (session) => {
@@ -76,11 +234,7 @@ export const createBetterAuth = () => betterAuth({
 
           // 1. Try to get user's last active org
           const users = await db
-            .select({
-              id: schema.user.id,
-              lastActiveOrganizationId: schema.user.lastActiveOrganizationId,
-              isAnonymous: schema.user.isAnonymous
-            })
+            .select()
             .from(schema.user)
             .where(eq(schema.user.id, session.userId))
             .limit(1)
@@ -125,8 +279,7 @@ export const createBetterAuth = () => betterAuth({
                   id: uuidv7(),
                   name: 'Anonymous Workspace',
                   slug: `anonymous-${user.id}`,
-                  createdAt: new Date(),
-                  updatedAt: new Date()
+                  createdAt: new Date()
                 })
                 .returning()
 
@@ -138,8 +291,7 @@ export const createBetterAuth = () => betterAuth({
                   userId: user.id,
                   organizationId: newOrg.id,
                   role: 'owner',
-                  createdAt: new Date(),
-                  updatedAt: new Date()
+                  createdAt: new Date()
                 })
 
               // Update user's active organization
@@ -174,6 +326,35 @@ export const createBetterAuth = () => betterAuth({
         }
       }
     },
+    organization: {
+      create: {
+        before: async (org, ctx) => {
+          const session = ctx.session || ctx.context?.session
+          if (session?.user?.id) {
+            const db = getDB()
+            const user = await db.query.user.findFirst({
+              where: eq(schema.user.id, session.user.id)
+            })
+            if (user?.referralCode) {
+              return {
+                data: {
+                  ...org,
+                  referralCode: user.referralCode
+                }
+              }
+            }
+          }
+        }
+      },
+      update: {
+        before: async (org: any) => {
+          // Only log in development
+          if (runtimeConfig.public.appEnv === 'development') {
+            console.log('[Auth Hook] Organization Update Payload:', JSON.stringify(org, null, 2))
+          }
+        }
+      }
+    },
     member: {
       create: {
         after: async (_member: any) => {
@@ -197,6 +378,74 @@ export const createBetterAuth = () => betterAuth({
           // await syncSubscriptionQuantity(invitation.organizationId)
         }
       }
+    },
+    apiKey: {
+      create: {
+        before: async (key, _ctx) => {
+          // Validate maximum 4 API keys per organization
+          const metadata = key.metadata
+          if (!metadata) {
+            return // No organization restriction if no metadata
+          }
+
+          let orgId: string | undefined
+          try {
+            let meta: any = metadata
+            // Handle potentially double-encoded JSON string
+            if (typeof meta === 'string') {
+              try {
+                meta = JSON.parse(meta)
+              } catch {
+                // ignore
+              }
+            }
+            // Try parsing again if it's still a string (double encoded)
+            if (typeof meta === 'string') {
+              try {
+                meta = JSON.parse(meta)
+              } catch {
+                // ignore
+              }
+            }
+            orgId = meta?.organizationId
+          } catch {
+            // Ignore parse error, no org restriction
+            return
+          }
+
+          if (!orgId) {
+            return // No organization restriction if no orgId in metadata
+          }
+
+          // Count existing API keys for this organization using database-side query
+          // This avoids loading all keys into memory and scales better
+          const db = getDB()
+
+          // Use SQL to count keys where metadata contains the organizationId
+          // Use text pattern matching which works for both JSON string and object formats
+          // This is more reliable than JSONB casting which can fail on invalid JSON
+          const result = await db
+            .select({ count: count() })
+            .from(schema.apiKey)
+            .where(
+              sql`(
+                ${schema.apiKey.metadata} IS NOT NULL
+                AND (
+                  ${schema.apiKey.metadata}::text LIKE ${`%"organizationId":"${orgId}"%`}
+                  OR ${schema.apiKey.metadata}::text LIKE ${`%'organizationId':'${orgId}'%`}
+                )
+              )`
+            )
+
+          const keyCount = result[0]?.count || 0
+
+          if (keyCount >= 4) {
+            throw new APIError('BAD_REQUEST', {
+              message: 'Maximum of 4 API keys allowed per organization'
+            })
+          }
+        }
+      }
     }
   },
   secondaryStorage: cacheClient,
@@ -204,12 +453,30 @@ export const createBetterAuth = () => betterAuth({
     enabled: true,
     requireEmailVerification: true,
     sendResetPassword: async ({ user, url }) => {
+      const name = user.name || user.email.split('@')[0]
+      const html = await renderResetPassword(name, url)
+
+      // Generate plain text version for better deliverability and accessibility
+      const { render } = await import('@react-email/render')
+      const { ResetPassword } = await import('../../emails/ResetPassword')
+      const text = await render(ResetPassword({ name, url, appName: runtimeConfig.public.appName }), { plainText: true })
+
+      // Only log links in development
+      if (runtimeConfig.public.appEnv === 'development') {
+        console.log('>>> RESET PASSWORD LINK <<<')
+        console.log(`To: ${user.email}`)
+        console.log(url)
+        console.log('>>> ------------------------ <<<')
+      }
+
       const response = await resendInstance.emails.send({
         from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
         to: user.email,
         subject: 'Reset your password',
-        text: `Click the link to reset your password: ${url}`
+        html,
+        text
       })
+
       await logAuditEvent({
         userId: user.id,
         category: 'email',
@@ -219,6 +486,7 @@ export const createBetterAuth = () => betterAuth({
         status: response.error ? 'failure' : 'success',
         details: response.error?.message
       })
+
       if (response.error) {
         console.error(`Failed to send reset password email: ${response.error.message}`)
         throw createError({
@@ -232,12 +500,21 @@ export const createBetterAuth = () => betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
+      // Only log links in development
+      if (runtimeConfig.public.appEnv === 'development') {
+        console.log('>>> EMAIL VERIFICATION LINK <<<')
+        console.log(`To: ${user.email}`)
+        console.log(url)
+        console.log('>>> ------------------------ <<<')
+      }
       try {
+        const name = user.name || user.email.split('@')[0]
+        const html = await renderVerifyEmail(name, url)
         const response = await resendInstance.emails.send({
           from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
           to: user.email,
           subject: 'Verify your email address',
-          text: `Click the link to verify your email: ${url}`
+          html
         })
         await logAuditEvent({
           userId: user.id,
@@ -253,9 +530,12 @@ export const createBetterAuth = () => betterAuth({
         }
       } catch (e) {
         console.warn('Failed to send verification email:', e)
-        console.log('>>> MANUAL VERIFICATION LINK <<<')
-        console.log(url)
-        console.log('>>> ------------------------ <<<')
+        // Only log links in development
+        if (runtimeConfig.public.appEnv === 'development') {
+          console.log('>>> MANUAL VERIFICATION LINK <<<')
+          console.log(url)
+          console.log('>>> ------------------------ <<<')
+        }
       }
     }
   },
@@ -273,6 +553,10 @@ export const createBetterAuth = () => betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true
+      // Better Auth v1.4.1+ enforces email matching between linked providers by default
+      // allowDifferentEmails: true allows linking accounts with different email addresses
+      // User notifications are handled in the frontend (see app/pages/[slug]/profile.vue)
+      // Email verification is required before account creation, which provides additional security
     }
   },
   hooks: {
@@ -359,6 +643,75 @@ export const createBetterAuth = () => betterAuth({
         owner,
         admin,
         member
+      },
+      enableMetadata: true,
+      async sendInvitationEmail({ email, inviter, organization, invitation }) {
+        if (resendInstance) {
+          try {
+            const inviterName = inviter.user.name || inviter.user.email.split('@')[0]
+            const inviteUrl = `${runtimeConfig.public.baseURL}/invite/${invitation.id}`
+            const html = await renderTeamInvite(inviterName, organization.name, inviteUrl)
+            const response = await resendInstance.emails.send({
+              from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
+              to: email,
+              subject: `You're invited to join ${organization.name}`,
+              html
+            })
+
+            // Log success audit event
+            await logAuditEvent({
+              userId: inviter.user.id,
+              category: 'email',
+              action: 'invite_email_sent',
+              targetType: 'invitation',
+              targetId: invitation.id,
+              status: response.error ? 'failure' : 'success',
+              details: response.error
+                ? response.error.message
+                : `Invitation email sent to ${email} for organization ${organization.name} (${organization.id})`
+            })
+
+            if (response.error) {
+              console.error('[Auth] Failed to send invitation email:', {
+                inviterId: inviter.user.id,
+                orgId: organization.id,
+                invitationId: invitation.id,
+                email,
+                error: response.error.message
+              })
+              // Don't throw - allow invitation creation to continue even if email fails
+            }
+          } catch (e) {
+            console.error('[Auth] Error sending invitation email:', {
+              inviterId: inviter.user.id,
+              orgId: organization.id,
+              invitationId: invitation.id,
+              email,
+              error: e instanceof Error ? e.message : 'Unknown error'
+            })
+
+            // Log failure audit event
+            await logAuditEvent({
+              userId: inviter.user.id,
+              category: 'email',
+              action: 'invite_email_failed',
+              targetType: 'invitation',
+              targetId: invitation.id,
+              status: 'failure',
+              details: `Failed to send invitation email to ${email} for organization ${organization.name}: ${e instanceof Error ? e.message : 'Unknown error'}`
+            })
+
+            // Don't throw - allow invitation creation to continue even if email fails
+          }
+        }
+      }
+    }),
+    apiKey({
+      enableMetadata: true,
+      schema: {
+        apikey: {
+          modelName: 'apiKey'
+        }
       }
     }),
     setupStripe()

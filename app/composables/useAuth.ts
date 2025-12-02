@@ -4,22 +4,15 @@ import type {
 } from 'better-auth/client'
 import type { RouteLocationRaw } from 'vue-router'
 import { stripeClient } from '@better-auth/stripe/client'
-import { adminClient, inferAdditionalFields, organizationClient } from 'better-auth/client/plugins'
+import { adminClient, apiKeyClient, inferAdditionalFields, organizationClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
 import { ac, admin, member, owner } from '~~/shared/utils/permissions'
-
-interface AuthSessionPayload {
-  session: InferSessionFromClient<ClientOptions> | null
-  user: User | null
-}
-
-type ForgetPasswordHandler = (params: { email: string, redirectTo?: string }) => Promise<{ error?: { message?: string, statusText?: string } | null }>
 
 export function useAuth() {
   const url = useRequestURL()
   const headers = import.meta.server ? useRequestHeaders() : undefined
   const runtimeConfig = useRuntimeConfig()
-  const payment = runtimeConfig.public.payment as 'stripe' | 'polar'
+  const payment = runtimeConfig.public.payment as 'stripe'
   const client = createAuthClient({
     baseURL: url.origin,
     fetchOptions: {
@@ -28,7 +21,13 @@ export function useAuth() {
     plugins: [
       inferAdditionalFields({
         user: {
-          polarCustomerId: {
+          referralCode: {
+            type: 'string',
+            required: false
+          }
+        },
+        apiKey: {
+          organizationId: {
             type: 'string'
           }
         }
@@ -40,32 +39,15 @@ export function useAuth() {
           owner,
           admin,
           member
-        }
+        },
+        enableMetadata: true
       }),
+      apiKeyClient(),
       stripeClient({
         subscription: true
       })
     ]
   })
-
-  const ensureForgetPasswordAvailable = () => {
-    const handler = (client as { forgetPassword?: ForgetPasswordHandler }).forgetPassword
-    if (!handler) {
-      const message = '[useAuth] Password reset is not enabled for this deployment.'
-      console.warn(message)
-      throw new Error('Password reset is not enabled for this deployment.')
-    }
-    return handler
-  }
-
-  /**
-   * Optional Better Auth password reset helper.
-   * Consumers must check that `forgetPassword` is defined before calling; this wrapper throws if the handler was not configured.
-   */
-  const forgetPassword: ForgetPasswordHandler | undefined = client.forgetPassword
-    ? async params => ensureForgetPasswordAvailable()(params)
-    : undefined
-  const _maybeForgetPassword = forgetPassword
 
   // Create global state for active organization (SSR friendly)
   const useActiveOrgState = () => useState<any>('active-org-state', () => ({ data: null }))
@@ -87,7 +69,7 @@ export function useAuth() {
     sessionFetching.value = true
 
     // Use useFetch for better SSR support and hydration
-    const { data: sessionData } = await useFetch<AuthSessionPayload>('/api/auth/get-session', {
+    const { data: sessionData } = await useFetch('/api/auth/get-session', {
       headers: import.meta.server ? useRequestHeaders() : undefined,
       key: 'auth-session',
       retry: 0
@@ -108,6 +90,10 @@ export function useAuth() {
       ? Object.assign({}, userDefaults, data.user)
       : null
 
+    if (user.value) {
+      // Subscriptions are now fetched via activeOrg (SSR)
+      // No need to fetch them here separately
+    }
     sessionFetching.value = false
     return data
   }
@@ -126,81 +112,32 @@ export function useAuth() {
   }
 
   // Centralized function to refresh organization data
-  let refreshActiveOrgPromise: Promise<any> | null = null
-  let lastRefreshTime = 0
-
   const refreshActiveOrg = async () => {
-    const now = Date.now()
+    try {
+      // Add cache-busting timestamp to bypass any HTTP/CDN caching
+      const orgData: any = await $fetch(`/api/organization/full-data?_t=${Date.now()}`)
 
-    // Prevent multiple simultaneous calls
-    if (refreshActiveOrgPromise) {
-      console.log('[refreshActiveOrg] Already refreshing, returning existing promise')
-      return refreshActiveOrgPromise
-    }
+      // Flatten the structure to match what components expect
+      // orgData comes as { organization: {...}, subscriptions: [...], userOwnsMultipleOrgs: bool, user: ... }
+      // We want activeOrg.value.data to be { ...organization, subscriptions: [...], userOwnsMultipleOrgs: bool }
+      const flattenedData = {
+        ...orgData.organization,
+        subscriptions: orgData.subscriptions,
+        userOwnsMultipleOrgs: orgData.userOwnsMultipleOrgs,
+        needsUpgrade: orgData.needsUpgrade
+      }
 
-    // Prevent calls within 1 second of each other
-    if (now - lastRefreshTime < 1000) {
-      console.log('[refreshActiveOrg] Called too recently, skipping')
+      const state = useActiveOrgState()
+      if (state.value) {
+        state.value.data = flattenedData
+      } else {
+        state.value = { data: flattenedData }
+      }
+      return flattenedData
+    } catch (error) {
+      console.error('Failed to refresh active org:', error)
       return null
     }
-
-    lastRefreshTime = now
-
-    refreshActiveOrgPromise = (async () => {
-      try {
-        const orgData: any = await $fetch('/api/organization/full-data')
-
-        // Flatten the structure to match what components expect
-        // orgData comes as { organization: {...}, subscriptions: [...], user: ... }
-        // We want activeOrg.value.data to be { ...organization, subscriptions: [...] }
-        const flattenedData = {
-          ...orgData.organization,
-          subscriptions: orgData.subscriptions
-        }
-
-        const state = useActiveOrgState()
-        if (state.value) {
-          state.value.data = flattenedData
-        } else {
-          state.value = { data: flattenedData }
-        }
-        return flattenedData
-      } catch (error) {
-        console.error('Failed to refresh active org:', error)
-        return null
-      } finally {
-        refreshActiveOrgPromise = null
-      }
-    })()
-
-    return refreshActiveOrgPromise
-  }
-
-  let anonymousSignInPromise: Promise<void> | null = null
-  const signInAnonymous = async () => {
-    if (session.value) {
-      return
-    }
-    if (anonymousSignInPromise) {
-      return anonymousSignInPromise
-    }
-    anonymousSignInPromise = (async () => {
-      try {
-        await $fetch('/api/auth/sign-in/anonymous', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: '{}'
-        })
-        await fetchSession()
-      } catch (error) {
-        console.error('[useAuth] Failed to establish anonymous session', error)
-      } finally {
-        anonymousSignInPromise = null
-      }
-    })()
-    return anonymousSignInPromise
   }
 
   return {
@@ -225,8 +162,7 @@ export function useAuth() {
     refreshActiveOrg,
     signIn: client.signIn,
     signUp: client.signUp,
-    signInAnonymous,
-    forgetPassword,
+    forgetPassword: client.forgetPassword,
     resetPassword: client.resetPassword,
     sendVerificationEmail: client.sendVerificationEmail,
     errorCodes: client.$ERROR_CODES,

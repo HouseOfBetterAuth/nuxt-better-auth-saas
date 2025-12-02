@@ -154,6 +154,10 @@ const columns: AdminTableColumn<User>[] = [
     header: t('user.columns.email')
   },
   {
+    accessorKey: 'referralCode',
+    header: 'Referral Code'
+  },
+  {
     accessorKey: 'role',
     header: t('user.columns.role')
   },

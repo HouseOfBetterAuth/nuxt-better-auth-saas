@@ -12,13 +12,14 @@ import SortControl from './components/SortControl/index.vue'
 import useColumnControl from './composables/useColumnControl'
 import useSelectControl from './composables/useSelectControl'
 
-const { fetchData, columns, filters = [], hidePagination = false, canSelect = false, rowId } = defineProps<{
+const { fetchData, columns, filters = [], hidePagination = false, canSelect = false, rowId, getSubRows } = defineProps<{
   fetchData: FetchDataFn<T>
   columns: AdminTableColumn<T>[]
   filters?: AdminTableFilter[]
   hidePagination?: boolean
   canSelect?: boolean
   rowId?: string
+  getSubRows?: (row: T) => T[] | undefined
 }>()
 
 const route = useRoute()
@@ -214,11 +215,16 @@ defineExpose({
       ref="table"
       v-model:row-selection="rowSelection"
       :get-row-id="getRowId"
+      :get-sub-rows="getSubRows"
       :loading="loading"
       :columns="canSelect ? [{ id: selectColumnId }, ...columns] : columns"
       :data="data"
       sticky
       class="flex-1"
+      :ui="{
+        th: { padding: 'py-2' },
+        td: { padding: 'py-2' }
+      }"
     >
       <template #[`${selectColumnId}-header`]="{ table }">
         <UCheckbox
@@ -259,3 +265,10 @@ defineExpose({
     />
   </div>
 </template>
+
+<style scoped>
+/* Hide empty expansion rows that cause extra spacing in tree view */
+:deep(tr > td[colspan].p-4:empty) {
+  display: none;
+}
+</style>

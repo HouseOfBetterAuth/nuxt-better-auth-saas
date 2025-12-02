@@ -5,8 +5,20 @@
   --font-sans: 'Public Sans', sans-serif;
 }
 @layer base {
+  /* Fix for mobile Safari viewport height */
+  html, body {
+    height: 100%;
+    height: 100dvh;
+  }
+
   body {
     @apply bg-neutral-100 dark:bg-neutral-950;
+  }
+
+  /* Mobile-safe full height utility */
+  .h-screen-safe {
+    height: 100vh;
+    height: 100dvh;
   }
 
   /* Make all clickable elements have pointer cursor */

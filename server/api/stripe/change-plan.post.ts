@@ -1,10 +1,10 @@
-import type Stripe from 'stripe'
 import { and, eq } from 'drizzle-orm'
 import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/database/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { createStripeClient } from '~~/server/utils/stripe'
+import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'
+import { PLANS } from '~~/shared/utils/plans'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -22,14 +22,6 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Missing required fields'
-    })
-  }
-
-  const normalizedInterval = String(newInterval)
-  if (!['month', 'year'].includes(normalizedInterval)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid newInterval; must be "month" or "year"'
     })
   }
 
@@ -65,8 +57,8 @@ export default defineEventHandler(async (event) => {
 
   const subscriptions = await stripe.subscriptions.list({
     customer: org.stripeCustomerId,
-    status: 'all',
-    limit: 100
+    limit: 1,
+    status: 'all'
   })
 
   const subscription = subscriptions.data.find(sub =>
@@ -81,17 +73,17 @@ export default defineEventHandler(async (event) => {
   }
 
   const currentPriceId = subscription.items.data[0].price.id
-  const monthlyPriceId = runtimeConfig.stripePriceIdProMonth
-  const yearlyPriceId = runtimeConfig.stripePriceIdProYear
+  const monthlyPriceId = PLANS.PRO_MONTHLY.priceId
+  const yearlyPriceId = PLANS.PRO_YEARLY.priceId
 
-  const newPriceId = normalizedInterval === 'month' ? monthlyPriceId : yearlyPriceId
+  const newPriceId = newInterval === 'month' ? monthlyPriceId : yearlyPriceId
 
   if (currentPriceId === newPriceId) {
     return { success: true, message: 'Already on this plan' }
   }
 
   // Only allow upgrades (monthly to yearly)
-  if (normalizedInterval === 'month') {
+  if (newInterval === 'month') {
     throw createError({
       statusCode: 400,
       statusMessage: 'Downgrading from yearly to monthly is not supported'
@@ -101,33 +93,44 @@ export default defineEventHandler(async (event) => {
   const quantity = subscription.items.data[0].quantity
 
   // Upgrade (M -> Y): Immediate with Proration
-  const updateParams: Stripe.SubscriptionUpdateParams = {
+  const updateParams: any = {
     items: [{
       id: subscription.items.data[0].id,
       price: newPriceId,
       quantity
     }],
-    proration_behavior: 'always_invoice'
+    proration_behavior: 'always_invoice',
+    payment_behavior: 'error_if_incomplete' // Fail fast if payment fails, don't leave subscription in bad state
   }
 
   if (subscription.status === 'trialing') {
     updateParams.trial_end = 'now'
   }
 
-  let updatedSub: Stripe.Subscription
+  let updatedSub: any
   try {
     updatedSub = await stripe.subscriptions.update(subscription.id, updateParams)
-  } catch (err: any) {
-    console.error('[change-plan] Stripe update failed', err)
+  } catch (stripeError: any) {
+    console.error('[change-plan] Stripe error:', stripeError.message)
+
+    // Check if it's a card/payment error
+    if (stripeError.type === 'StripeCardError' || stripeError.code === 'card_declined') {
+      throw createError({
+        statusCode: 402,
+        statusMessage: 'Your card was declined. Please update your payment method.'
+      })
+    }
+
+    // Re-throw other errors
     throw createError({
-      statusCode: err?.statusCode || 400,
-      statusMessage: err?.message || 'Unable to update subscription'
+      statusCode: 500,
+      statusMessage: stripeError.message || 'Failed to change plan'
     })
   }
 
   // Update local database immediately
   const updateData: any = {
-    plan: 'pro-yearly'
+    plan: PLANS.PRO_YEARLY.id
   }
 
   if (subscription.status === 'trialing' || updatedSub.status === 'active') {
@@ -143,6 +146,13 @@ export default defineEventHandler(async (event) => {
   await db.update(subscriptionTable)
     .set(updateData)
     .where(eq(subscriptionTable.stripeSubscriptionId, subscription.id))
+
+  // Send updated email for plan change
+  if (updatedSub.status === 'active') {
+    const previousInterval = currentPriceId === monthlyPriceId ? 'monthly' : 'yearly'
+    const newIntervalLabel = newInterval === 'month' ? 'monthly' : 'yearly'
+    await sendSubscriptionUpdatedEmail(organizationId, updatedSub, undefined, undefined, previousInterval, newIntervalLabel)
+  }
 
   return { success: true, message: 'Upgraded to yearly plan' }
 })

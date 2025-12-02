@@ -6,7 +6,7 @@ definePageMeta({
   layout: false
 })
 const { t } = useI18n()
-const { loggedIn, subscription, payment, client } = useAuth()
+const { loggedIn, subscription, payment } = useAuth()
 const localePath = useLocalePath()
 const runtimeConfig = useRuntimeConfig()
 const billingPeriod = ref('monthly')
@@ -49,11 +49,6 @@ const plans = [
           plan: `pro-${billingPeriod.value}`,
           successUrl: localePath('/'),
           cancelUrl: localePath('/pricing')
-        })
-        console.log(result)
-      } else if (payment == 'polar') {
-        const result = await client.checkout({
-          slug: `pro-${billingPeriod.value}`
         })
         console.log(result)
       }

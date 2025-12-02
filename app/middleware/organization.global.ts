@@ -1,17 +1,5 @@
-interface SimpleOrganization {
-  id: string
-  slug: string
-  [key: string]: any
-}
-
-// Track middleware execution to prevent infinite loops
-const executionTracker = new Map<string, number>()
-
 export default defineNuxtRouteMiddleware(async (to) => {
-  const { loggedIn, organization, fetchSession, session, refreshActiveOrg } = useAuth()
-
-  const _nuxtApp = useNuxtApp()
-  const toast = import.meta.client ? useToast() : null
+  const { loggedIn, organization, useActiveOrganization, fetchSession, session } = useAuth()
 
   if (!loggedIn.value)
     return
@@ -20,26 +8,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!routeSlug || routeSlug === 't')
     return
 
-  // Prevent infinite loops by tracking execution
-  const executionKey = `${routeSlug}-${to.path}`
-  const now = Date.now()
-  const lastExecution = executionTracker.get(executionKey)
-
-  // If executed within the last 1000ms, skip to prevent loops
-  if (lastExecution && (now - lastExecution) < 1000) {
-    console.log('[Organization Guard] Skipping execution to prevent loop:', executionKey)
-    return
-  }
-
-  executionTracker.set(executionKey, now)
-
-  // Clean up old entries (older than 5 seconds)
-  for (const [key, timestamp] of executionTracker.entries()) {
-    if (now - timestamp > 5000) {
-      executionTracker.delete(key)
-    }
-  }
-
   // Don't run on non-dashboard routes if they happen to have a slug param but aren't organization related
   // Assuming all routes with :slug are organization routes based on app structure
 
@@ -47,37 +15,29 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const activeOrgId = (session.value as any)?.activeOrganizationId
 
   // Use cached org list to avoid fetching on every navigation
-  const { data: orgs, error: orgsError } = await useUserOrganizations()
-
-  if (orgsError.value) {
-    if (import.meta.client) {
-      toast?.add({
-        title: 'Organization sync failed',
-        description: 'Unable to load your organizations. Please retry.',
-        color: 'error'
-      })
-    }
-    return
-  }
+  // getCachedData returns undefined to ensure fresh data on each full page load
+  const { data: orgs } = await useAsyncData('user-organizations', async () => {
+    const { data } = await organization.list()
+    return data
+  }, {
+    getCachedData: () => undefined
+  })
 
   if (!orgs.value || orgs.value.length === 0)
     return
 
-  const targetOrg = orgs.value.find((o: SimpleOrganization) => o.slug === routeSlug)
+  const targetOrg = orgs.value.find((o: any) => o.slug === routeSlug)
 
   if (targetOrg) {
     if (targetOrg.id !== activeOrgId) {
-      try {
-        await organization.setActive({ organizationId: targetOrg.id })
-        await fetchSession()
-        await refreshActiveOrg()
-      } catch (error) {
-        console.error('[Organization Guard] Failed to set active organization', error)
-        toast?.add({
-          title: 'Unable to switch organization',
-          description: 'Please try again or refresh the page.',
-          color: 'error'
-        })
+      // Organization mismatch, set active organization
+      await organization.setActive({ organizationId: targetOrg.id })
+      await fetchSession()
+
+      // Update activeOrg ref immediately to update UI
+      const activeOrg = useActiveOrganization()
+      if (activeOrg.value) {
+        activeOrg.value.data = targetOrg
       }
     }
   } else {
@@ -89,12 +49,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       const localePath = useLocalePath()
       const targetPath = localePath(`/${firstOrg.slug}/dashboard`)
       if (to.path !== targetPath) {
-        toast?.add({
-          title: 'Organization unavailable',
-          description: 'Navigated to your first available team.',
-          color: 'warning'
-        })
-        return navigateTo(targetPath, { replace: true })
+        return navigateTo(targetPath)
       }
     }
   }

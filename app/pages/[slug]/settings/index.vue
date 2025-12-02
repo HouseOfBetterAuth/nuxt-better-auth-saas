@@ -67,6 +67,7 @@ async function leaveTeam() {
     const { data } = await organization.list()
     const orgs = Array.isArray(data) ? data : []
     const nextOrg = orgs[0]
+
     if (nextOrg) {
       await organization.setActive({ organizationId: nextOrg.id })
       await fetchSession()
@@ -83,7 +84,6 @@ async function leaveTeam() {
 
 // Organization data is already available via useActiveOrganization()
 // No need to fetch it again on page load
-
 const loading = ref(false)
 const teamName = ref('')
 const teamSlug = ref('')
@@ -105,8 +105,8 @@ watch(() => activeOrg.value?.data?.id, (newId) => {
 async function updateTeam() {
   if (!activeOrg.value?.data?.id)
     return
-  loading.value = true
 
+  loading.value = true
   try {
     const { error } = await organization.update({
       organizationId: activeOrg.value.data.id,
@@ -120,6 +120,7 @@ async function updateTeam() {
       throw error
 
     toast.add({ title: 'Team updated successfully', color: 'success' })
+
     // Refresh data
     await useAuth().fetchSession()
 
@@ -138,7 +139,6 @@ async function updateTeam() {
 }
 
 const copied = ref(false)
-
 const copyId = () => {
   if (activeOrg.value?.data?.id) {
     copy(activeOrg.value.data.id)
@@ -151,7 +151,6 @@ const copyId = () => {
 }
 
 const deleteLoading = ref(false)
-
 async function deleteTeam() {
   if (!activeOrg.value?.data?.id)
     return
@@ -181,8 +180,8 @@ async function deleteTeam() {
     // Fetch remaining teams to determine where to redirect
     const { data } = await organization.list()
     const orgs = Array.isArray(data) ? data : []
-
     const nextOrg = orgs[0]
+
     if (nextOrg) {
       // Switch to first available team
       await organization.setActive({ organizationId: nextOrg.id })
@@ -225,7 +224,6 @@ async function deleteTeam() {
         <UFormField label="Organization name">
           <UInput v-model="teamName" />
         </UFormField>
-
         <UFormField label="Organization slug">
           <UInput
             v-model="teamSlug"
@@ -295,7 +293,6 @@ async function deleteTeam() {
       <p class="text-sm text-gray-500 mb-6">
         Revoke your access to this organization. You will need to be re-invited to join again.
       </p>
-
       <UButton
         color="error"
         variant="outline"
@@ -318,7 +315,6 @@ async function deleteTeam() {
       <p class="text-sm text-gray-500 mb-6">
         Once you delete a team, there is no going back. Please be certain.
       </p>
-
       <UButton
         color="error"
         variant="outline"

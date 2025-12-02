@@ -33,14 +33,7 @@ export const generateRuntimeConfig = () => ({
   // Stripe
   stripeSecretKey: process.env.NUXT_STRIPE_SECRET_KEY,
   stripeWebhookSecret: process.env.NUXT_STRIPE_WEBHOOK_SECRET,
-  stripePriceIdProMonth: process.env.NUXT_STRIPE_PRICE_ID_PRO_MONTH,
-  stripePriceIdProYear: process.env.NUXT_STRIPE_PRICE_ID_PRO_YEAR,
-  // Polar
-  polarServer: process.env.NUXT_POLAR_SERVER,
-  polarAccessToken: process.env.NUXT_POLAR_ACCESS_TOKEN,
-  polarWebhookSecret: process.env.NUXT_POLAR_WEBHOOK_SECRET,
-  polarProductIdProMonth: process.env.NUXT_POLAR_PRODUCT_ID_PRO_MONTH,
-  polarProductIdProYear: process.env.NUXT_POLAR_PRODUCT_ID_PRO_YEAR,
+
   // Resend
   resendApiKey: process.env.NUXT_RESEND_API_KEY,
   // Github

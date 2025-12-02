@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { useStorage } from '@vueuse/core'
 import { registerTheme } from 'echarts/core'
 // Credit: https://github.com/nuxt/ui/issues/978#issuecomment-3025809129
 import NuxtUITheme from './assets/echarts-theme.json'
@@ -21,7 +22,23 @@ const updateZodLocale = (newLocale: string) => {
   }
 }
 
+const route = useRoute()
+const referralCode = useStorage<string | null>('referralCode', null)
+
+watch(() => route.query.ref, (refParam) => {
+  if (refParam) {
+    referralCode.value = refParam as string
+  }
+}, { immediate: true })
+
 const { session, user, client } = useAuth()
+
+watch(user, (u) => {
+  if (u) {
+    referralCode.value = null
+  }
+})
+
 const isImpersonating = computed(() => !!(session.value as any)?.impersonatedBy)
 const stoppingImpersonation = ref(false)
 

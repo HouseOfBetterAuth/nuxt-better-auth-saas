@@ -49,6 +49,10 @@ const columns: AdminTableColumn<Subscription>[] = [
   {
     accessorKey: 'seats',
     header: t('subscription.seats')
+  },
+  {
+    accessorKey: 'cancelAtPeriodEnd',
+    header: 'Cancels At Period End'
   }
   // {
   //   accessorKey: 'createdAt',
@@ -122,6 +126,15 @@ const fetchData: FetchDataFn<Subscription> = async ({ page, limit, sort, filter 
         <span v-if="original.periodStart && original.periodEnd">
           {{ formatToDay(original.periodStart) }} ~ {{ formatToDay(original.periodEnd) }}
         </span>
+      </template>
+      <template #cancelAtPeriodEnd-cell="{ row: { original } }">
+        <UBadge
+          v-if="original.cancelAtPeriodEnd"
+          color="warning"
+          variant="subtle"
+          label="Yes"
+        />
+        <span v-else>-</span>
       </template>
     </AdminTable>
   </NuxtLayout>

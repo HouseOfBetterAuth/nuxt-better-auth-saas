@@ -1,6 +1,8 @@
 <i18n src="./i18n.json"></i18n>
 
 <script setup lang="ts">
+import { useStorage } from '@vueuse/core'
+
 definePageMeta({
   auth: {
     only: 'guest'
@@ -17,6 +19,15 @@ const auth = useAuth()
 const toast = useToast()
 const route = useRoute()
 const localePath = useLocalePath()
+
+const referralCode = useStorage('referralCode', '')
+
+onMounted(() => {
+  const refParam = route.query.ref as string
+  if (refParam) {
+    referralCode.value = refParam
+  }
+})
 
 const redirectTo = computed(() => {
   const redirect = route.query.redirect as string
@@ -48,7 +59,11 @@ const loadingAction = ref('')
 async function onSocialLogin(action: 'google' | 'github') {
   loading.value = true
   loadingAction.value = action
-  auth.signIn.social({ provider: action, callbackURL: redirectTo.value })
+  auth.signIn.social({
+    provider: action,
+    callbackURL: redirectTo.value,
+    additionalData: referralCode.value ? { referralCode: referralCode.value } : undefined
+  })
 }
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
@@ -60,7 +75,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     name: event.data.name,
     email: event.data.email,
     password: event.data.password,
-    polarCustomerId: ''
+    referralCode: referralCode.value || undefined
   })
   if (error) {
     toast.add({

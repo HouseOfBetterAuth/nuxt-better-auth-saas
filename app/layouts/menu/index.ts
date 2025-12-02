@@ -15,6 +15,11 @@ export const getMenus = (t: TranFunction, localePath: LocalePathFunction, appRep
         to: localePath('/admin/user')
       },
       {
+        label: t('menu.organizations'),
+        icon: 'i-lucide-building-2',
+        to: localePath('/admin/organization')
+      },
+      {
         label: t('menu.subscriptions'),
         icon: 'i-lucide-credit-card',
         to: localePath('/admin/subscription')
@@ -62,24 +67,21 @@ export const getMenus = (t: TranFunction, localePath: LocalePathFunction, appRep
   ]
 }
 
-export const getUserMenus = (t: TranFunction, localePath: LocalePathFunction, appRepo: string, slug: string, userRole?: 'owner' | 'admin' | 'member'): NavigationMenuItem[][] => {
-  const items: NavigationMenuItem[] = [
-    {
+export const getUserMenus = (t: TranFunction, localePath: LocalePathFunction, appRepo: string, slug: string, userRole?: 'owner' | 'admin' | 'member', needsUpgrade = false): NavigationMenuItem[][] => {
+  const items: NavigationMenuItem[] = []
+
+  if (!needsUpgrade) {
+    items.push({
       label: t('menu.dashboard'),
       icon: 'i-lucide-layout-dashboard',
       to: localePath(`/${slug}/dashboard`)
-    },
-    {
-      label: 'Chat',
-      icon: 'i-lucide-message-circle',
-      to: localePath(`/${slug}/chat`)
-    },
-    {
+    })
+    items.push({
       label: 'Members',
       icon: 'i-lucide-users',
       to: localePath(`/${slug}/members`)
-    }
-  ]
+    })
+  }
 
   // Only owners can see billing (using permissions system)
   if (hasPermission(userRole, 'VIEW_BILLING_NAV')) {
@@ -90,7 +92,7 @@ export const getUserMenus = (t: TranFunction, localePath: LocalePathFunction, ap
     })
   }
 
-  // Owners, admins, and members with VIEW_SETTINGS_NAV permission can see settings
+  // Owners and admins can see settings (using permissions system)
   if (hasPermission(userRole, 'VIEW_SETTINGS_NAV')) {
     items.push({
       label: 'Settings',
