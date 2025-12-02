@@ -4,6 +4,13 @@ import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 
+/**
+ * Lists content for the organization (up to 100 most recent records)
+ *
+ * @description Returns up to 100 most recent content records with their source content and current version
+ *
+ * @returns Array of content records with joined source content and current version
+ */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)

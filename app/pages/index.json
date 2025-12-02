@@ -1,40 +1,40 @@
 {
   "en": {
     "home": {
-      "slogan": "Production-Ready Nuxt SaaS Starter with Better Auth & Stripe",
+      "slogan": "Create SEO-ready blogs from YouTube",
       "getStarted": "Get Started",
       "viewOnGithub": "View on GitHub",
       "tryQuillioChat": "Try Quillio chat",
       "features": {
-        "title": "Everything You Need to Launch",
+        "title": "Transform YouTube Videos into SEO-Ready Blogs",
         "items": {
-          "billing": {
-            "title": "Stripe Billing",
-            "description": "Seat-based subscriptions with proration previews, legacy pricing support, failed payment handling with grace periods, and invoice history with PDF downloads."
+          "youtube": {
+            "title": "YouTube Integration",
+            "description": "Automatically extract transcripts, metadata, and content from YouTube videos. Support for any public YouTube video URL."
           },
-          "emails": {
-            "title": "Transactional Emails",
-            "description": "10+ email templates via React Email + Resend: verification, password reset, team invites, trial notifications, subscription updates, payment failures, and more."
+          "ai-generation": {
+            "title": "AI-Powered Generation",
+            "description": "Transform video transcripts into well-structured blog posts with proper headings, sections, and formatting. Maintains the authentic voice of the original content."
           },
-          "teams": {
-            "title": "Teams & Organizations",
-            "description": "Multi-org support with 14-day trial (first org), Owner/Admin/Member roles, invite links that work for both new and existing users, and per-org timezone settings."
+          "seo": {
+            "title": "SEO Optimization",
+            "description": "Automatic SEO metadata generation including optimized titles, descriptions, keywords, and schema markup for better search engine visibility."
           },
-          "auth": {
-            "title": "Auth & Profile",
-            "description": "Better Auth with Google/GitHub OAuth, profile picture upload, link/unlink accounts, session management, and email changes that sync to Stripe."
+          "chat": {
+            "title": "Interactive Chat",
+            "description": "Refine and customize generated content through an intuitive chat interface. Edit sections, adjust tone, and iterate on your blog posts."
           },
-          "admin": {
-            "title": "Admin Panel",
-            "description": "User impersonation for support, soft-ban accounts, audit logs, and full subscription & organization management."
+          "editing": {
+            "title": "Content Editor",
+            "description": "Full-featured content editor with section-by-section editing, markdown support, and version control for your blog drafts."
           },
-          "ssr": {
-            "title": "SSR Optimized",
-            "description": "Server-rendered pages with minimal client API calls. Data prefetching and smart caching for snappy navigation."
+          "search": {
+            "title": "Semantic Search",
+            "description": "Vector-based search across all your ingested video content to find relevant context and improve content quality."
           },
-          "stack": {
-            "title": "Modern Stack",
-            "description": "Nuxt 4, Vue 3, TypeScript, PostgreSQL, Drizzle ORM, and Cloudflare (Hyperdrive, R2, Workers) for edge deployment."
+          "collaboration": {
+            "title": "Team Collaboration",
+            "description": "Multi-tenant workspaces with team members, role-based permissions, and collaborative content creation workflows."
           }
         }
       },
@@ -50,40 +50,40 @@
   },
   "zh-CN": {
     "home": {
-      "slogan": "Nuxt.js 全栈 SaaS 起步工具包 - 免费开源",
+      "slogan": "从 YouTube 创建 SEO 就绪的博客",
       "getStarted": "开始使用",
       "viewOnGithub": "在 GitHub 上查看",
       "tryQuillioChat": "试用 Quillio 聊天",
       "features": {
-        "title": "为您的 SaaS 成功打造坚实基础",
+        "title": "将 YouTube 视频转换为 SEO 就绪的博客",
         "items": {
-          "billing": {
-            "title": "Stripe 计费",
-            "description": "基于席位的订阅，支持按比例预览、传统定价支持、失败付款处理（宽限期）以及带 PDF 下载的发票历史记录。"
+          "youtube": {
+            "title": "YouTube 集成",
+            "description": "自动从 YouTube 视频中提取转录文本、元数据和内容。支持任何公开的 YouTube 视频 URL。"
           },
-          "emails": {
-            "title": "交易邮件",
-            "description": "通过 React Email + Resend 提供 10+ 邮件模板：验证、密码重置、团队邀请、试用通知、订阅更新、付款失败等。"
+          "ai-generation": {
+            "title": "AI 驱动生成",
+            "description": "将视频转录文本转换为结构良好的博客文章，包含适当的标题、章节和格式。保持原始内容的真实声音。"
           },
-          "teams": {
-            "title": "团队和组织",
-            "description": "多组织支持，14 天试用（第一个组织），所有者/管理员/成员角色，适用于新用户和现有用户的邀请链接，以及每个组织时区设置。"
+          "seo": {
+            "title": "SEO 优化",
+            "description": "自动生成 SEO 元数据，包括优化的标题、描述、关键词和结构化标记，以提高搜索引擎可见性。"
           },
-          "auth": {
-            "title": "认证和资料",
-            "description": "Better Auth 支持 Google/GitHub OAuth、头像上传、链接/取消链接账户、会话管理，以及同步到 Stripe 的电子邮件更改。"
+          "chat": {
+            "title": "交互式聊天",
+            "description": "通过直观的聊天界面细化和自定义生成的内容。编辑章节、调整语调，并迭代您的博客文章。"
           },
-          "admin": {
-            "title": "管理面板",
-            "description": "用于支持的用户模拟、软封禁账户、审计日志以及完整的订阅和组织管理。"
+          "editing": {
+            "title": "内容编辑器",
+            "description": "功能齐全的内容编辑器，支持逐章节编辑、Markdown 支持和博客草稿的版本控制。"
           },
-          "ssr": {
-            "title": "SSR 优化",
-            "description": "服务器渲染页面，客户端 API 调用最少。数据预取和智能缓存，实现快速导航。"
+          "search": {
+            "title": "语义搜索",
+            "description": "对所有已摄取视频内容进行基于向量的搜索，以找到相关上下文并提高内容质量。"
           },
-          "stack": {
-            "title": "现代技术栈",
-            "description": "Nuxt 4、Vue 3、TypeScript、PostgreSQL、Drizzle ORM 和 Cloudflare（Hyperdrive、R2、Workers）用于边缘部署。"
+          "collaboration": {
+            "title": "团队协作",
+            "description": "多租户工作空间，支持团队成员、基于角色的权限和协作内容创建工作流程。"
           }
         }
       },
@@ -99,40 +99,40 @@
   },
   "ja": {
     "home": {
-      "slogan": "Nuxt.js フルスタック SaaS スターターキット - 無料＆オープンソース",
+      "slogan": "YouTubeからSEO対応のブログを作成",
       "getStarted": "始めましょう",
       "viewOnGithub": "GitHub で見る",
       "tryQuillioChat": "Quillio チャットを試す",
       "features": {
-        "title": "SaaS の成功のための堅固な基盤",
+        "title": "YouTube動画をSEO対応のブログに変換",
         "items": {
-          "billing": {
-            "title": "Stripe 請求",
-            "description": "シートベースのサブスクリプション、按分プレビュー、レガシー価格サポート、猶予期間付きの失敗した支払い処理、PDF ダウンロード付きの請求履歴。"
+          "youtube": {
+            "title": "YouTube統合",
+            "description": "YouTube動画から自動的に文字起こし、メタデータ、コンテンツを抽出。公開されている任意のYouTube動画URLをサポート。"
           },
-          "emails": {
-            "title": "トランザクションメール",
-            "description": "React Email + Resend による 10+ のメールテンプレート：確認、パスワードリセット、チーム招待、トライアル通知、サブスクリプション更新、支払い失敗など。"
+          "ai-generation": {
+            "title": "AI駆動生成",
+            "description": "動画の文字起こしを適切な見出し、セクション、フォーマットを持つ構造化されたブログ記事に変換。元のコンテンツの本物の声を維持。"
           },
-          "teams": {
-            "title": "チームと組織",
-            "description": "マルチ組織サポート、14 日間のトライアル（最初の組織）、所有者/管理者/メンバーロール、新規ユーザーと既存ユーザーの両方で機能する招待リンク、組織ごとのタイムゾーン設定。"
+          "seo": {
+            "title": "SEO最適化",
+            "description": "最適化されたタイトル、説明、キーワード、構造化マークアップを含むSEOメタデータの自動生成により、検索エンジンの可視性を向上。"
           },
-          "auth": {
-            "title": "認証とプロフィール",
-            "description": "Google/GitHub OAuth を備えた Better Auth、プロフィール画像アップロード、アカウントのリンク/リンク解除、セッション管理、Stripe に同期されるメール変更。"
+          "chat": {
+            "title": "インタラクティブチャット",
+            "description": "直感的なチャットインターフェースを通じて生成されたコンテンツを細かく調整し、カスタマイズ。セクションを編集し、トーンを調整し、ブログ記事を反復改善。"
           },
-          "admin": {
-            "title": "管理パネル",
-            "description": "サポート用のユーザーなりすまし、ソフトバンアカウント、監査ログ、完全なサブスクリプションと組織管理。"
+          "editing": {
+            "title": "コンテンツエディター",
+            "description": "セクションごとの編集、Markdownサポート、ブログドラフトのバージョン管理を備えたフル機能のコンテンツエディター。"
           },
-          "ssr": {
-            "title": "SSR 最適化",
-            "description": "最小限のクライアント API 呼び出しでサーバー側レンダリングページ。データプリフェッチとスマートキャッシュにより、高速なナビゲーションを実現。"
+          "search": {
+            "title": "セマンティック検索",
+            "description": "取り込んだすべての動画コンテンツに対してベクトルベースの検索を実行し、関連するコンテキストを見つけてコンテンツの品質を向上。"
           },
-          "stack": {
-            "title": "モダンスタック",
-            "description": "Nuxt 4、Vue 3、TypeScript、PostgreSQL、Drizzle ORM、およびエッジデプロイメント用の Cloudflare（Hyperdrive、R2、Workers）。"
+          "collaboration": {
+            "title": "チームコラボレーション",
+            "description": "チームメンバー、ロールベースの権限、コラボレーティブなコンテンツ作成ワークフローを備えたマルチテナントワークスペース。"
           }
         }
       },
@@ -148,40 +148,40 @@
   },
   "fr": {
     "home": {
-      "slogan": "Kit de Démarrage SaaS Full-Stack Nuxt.js - Gratuit et Open Source",
+      "slogan": "Créez des blogs optimisés SEO à partir de YouTube",
       "getStarted": "Commencer",
       "viewOnGithub": "Voir sur GitHub",
       "tryQuillioChat": "Essayer le chat Quillio",
       "features": {
-        "title": "Base solide pour votre succès SaaS",
+        "title": "Transformez les vidéos YouTube en blogs optimisés SEO",
         "items": {
-          "billing": {
-            "title": "Facturation Stripe",
-            "description": "Abonnements basés sur les sièges avec aperçus de proratisation, support des prix hérités, gestion des paiements échoués avec périodes de grâce, et historique des factures avec téléchargements PDF."
+          "youtube": {
+            "title": "Intégration YouTube",
+            "description": "Extrayez automatiquement les transcriptions, métadonnées et contenu des vidéos YouTube. Prise en charge de n'importe quelle URL de vidéo YouTube publique."
           },
-          "emails": {
-            "title": "Emails Transactionnels",
-            "description": "10+ modèles d'emails via React Email + Resend : vérification, réinitialisation de mot de passe, invitations d'équipe, notifications d'essai, mises à jour d'abonnement, échecs de paiement, et plus encore."
+          "ai-generation": {
+            "title": "Génération par IA",
+            "description": "Transformez les transcriptions vidéo en articles de blog bien structurés avec des titres, sections et formatage appropriés. Maintient la voix authentique du contenu original."
           },
-          "teams": {
-            "title": "Équipes et Organisations",
-            "description": "Support multi-organisations avec essai de 14 jours (première organisation), rôles Propriétaire/Administrateur/Membre, liens d'invitation fonctionnant pour les nouveaux et les utilisateurs existants, et paramètres de fuseau horaire par organisation."
+          "seo": {
+            "title": "Optimisation SEO",
+            "description": "Génération automatique de métadonnées SEO incluant des titres optimisés, descriptions, mots-clés et balisage de schéma pour une meilleure visibilité dans les moteurs de recherche."
           },
-          "auth": {
-            "title": "Authentification et Profil",
-            "description": "Better Auth avec OAuth Google/GitHub, téléchargement de photo de profil, liaison/déliaison de comptes, gestion de session, et modifications d'email synchronisées avec Stripe."
+          "chat": {
+            "title": "Chat Interactif",
+            "description": "Affinez et personnalisez le contenu généré via une interface de chat intuitive. Modifiez les sections, ajustez le ton et itérez sur vos articles de blog."
           },
-          "admin": {
-            "title": "Panneau d'Administration",
-            "description": "Usurpation d'identité utilisateur pour le support, comptes soft-ban, journaux d'audit, et gestion complète des abonnements et organisations."
+          "editing": {
+            "title": "Éditeur de Contenu",
+            "description": "Éditeur de contenu complet avec édition section par section, support Markdown et contrôle de version pour vos brouillons de blog."
           },
-          "ssr": {
-            "title": "Optimisé SSR",
-            "description": "Pages rendues côté serveur avec un minimum d'appels API client. Préchargement de données et mise en cache intelligente pour une navigation rapide."
+          "search": {
+            "title": "Recherche Sémantique",
+            "description": "Recherche basée sur les vecteurs dans tout votre contenu vidéo ingéré pour trouver un contexte pertinent et améliorer la qualité du contenu."
           },
-          "stack": {
-            "title": "Stack Moderne",
-            "description": "Nuxt 4, Vue 3, TypeScript, PostgreSQL, Drizzle ORM, et Cloudflare (Hyperdrive, R2, Workers) pour le déploiement en périphérie."
+          "collaboration": {
+            "title": "Collaboration d'Équipe",
+            "description": "Espaces de travail multi-locataires avec membres d'équipe, permissions basées sur les rôles et flux de travail de création de contenu collaboratif."
           }
         }
       },

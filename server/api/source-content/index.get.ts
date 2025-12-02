@@ -3,6 +3,8 @@ import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
+import { createPaginatedResponse } from '~~/server/utils/responses'
+import { validateNumber } from '~~/server/utils/validation'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -45,24 +47,12 @@ export default defineEventHandler(async (event) => {
   let offset: number
 
   if (pageRaw) {
-    const page = Number.parseInt(pageRaw, 10)
-    if (!Number.isFinite(page) || page < 1) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'page must be a positive integer'
-      })
-    }
+    const page = validateNumber(Number.parseInt(pageRaw, 10), 'page', 1)
     offset = (page - 1) * limit
   } else {
     const offsetRaw = getQueryValue(query.offset as string | string[] | undefined)
     const parsedOffset = Number.parseInt(offsetRaw ?? '0', 10)
-    if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'offset must be a non-negative integer'
-      })
-    }
-    offset = parsedOffset
+    offset = validateNumber(parsedOffset, 'offset', 0)
   }
 
   const rows = await db.select()
@@ -78,17 +68,6 @@ export default defineEventHandler(async (event) => {
     .where(whereClause)
 
   const total = Number(totalResult[0]?.value ?? 0)
-  const hasMore = offset + rows.length < total
-  const nextOffset = hasMore ? offset + limit : null
 
-  return {
-    data: rows,
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore,
-      nextOffset
-    }
-  }
+  return createPaginatedResponse(rows, total, limit, offset)
 })

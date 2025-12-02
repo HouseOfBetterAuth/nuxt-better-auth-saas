@@ -9,7 +9,7 @@ export const chunk = pgTable('chunk', {
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  sourceContentId: text('source_content_id')
+  sourceContentId: uuid('source_content_id')
     .notNull()
     .references(() => sourceContent.id, { onDelete: 'cascade' }),
   chunkIndex: integer('chunk_index').notNull(),

@@ -16,6 +16,7 @@ export const generateRuntimeConfig = () => ({
   // Feature Flags
   enableYoutubeIngestion: process.env.NUXT_ENABLE_YOUTUBE_INGESTION !== 'false',
   // LLM / Cloudflare AI Gateway
+  cfAccountId: process.env.NUXT_CF_ACCOUNT_ID,
   cfAiGatewayToken: process.env.NUXT_CF_AI_GATEWAY_TOKEN,
   cfVectorizeIndex: process.env.NUXT_CF_VECTORIZE_INDEX,
   cfVectorizeApiToken: process.env.NUXT_CF_VECTORIZE_API_TOKEN,

@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import * as schema from '../../database/schema'
-import { chunkSourceContentText } from './chunkSourceContent'
+import { createChunksFromSourceContentText } from './chunkSourceContent'
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000
 
@@ -217,7 +217,13 @@ async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, organizatio
   return undefined
 }
 
-export async function ingestYouTubeSource(options: IngestYouTubeOptions) {
+/**
+ * Ingests a YouTube video as source content by fetching transcript and creating chunks
+ *
+ * @param options - Options for ingesting YouTube video
+ * @returns Updated source content record with transcript
+ */
+export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOptions) {
   const { db, sourceContentId, organizationId, userId, videoId } = options
 
   const [source] = await db
@@ -288,7 +294,7 @@ export async function ingestYouTubeSource(options: IngestYouTubeOptions) {
       .where(eq(schema.sourceContent.id, sourceContentId))
       .returning()
 
-    await chunkSourceContentText({
+    await createChunksFromSourceContentText({
       db,
       sourceContent: processing
     })

@@ -1,23 +1,23 @@
 <p align="center">
-  <img src="/public/HouseOfBetterAuth.png" alt="HouseOfBetterAuth" height="80" />
+  <img src="/public/quillio-logo.png" alt="Quillio" height="80" />
   &nbsp;&nbsp;&nbsp;
-  <strong style="font-size: 2em;">HouseOfBetterAuth</strong>
+  <strong style="font-size: 2em;">Quillio</strong>
 </p>
 
 <p align="center">
-  <em>Open-source SaaS starters powered by Better Auth</em>
+  <em>Create SEO-ready blogs from YouTube</em>
 </p>
 
 <p align="center">
-  We build production-ready, open-source SaaS templates using <a href="https://better-auth.com">Better Auth</a>.<br/>
-  Skip the boilerplate. Ship faster.
+  Transform YouTube videos into SEO-optimized blog posts automatically.<br/>
+  Powered by AI and built with modern web technologies.
 </p>
 
 ---
 
-## House of Better Auth Nuxt SaaS Starter
+## Quillio
 
-A production-ready Nuxt SaaS starter with authentication, billing, teams, and more.
+Create SEO-ready blogs from YouTube videos. Transform video content into well-structured, search-engine optimized articles automatically.
 
 > **Note:** This template is opinionated and built for my own apps. It's designed specifically for:
 > - **Stripe-only billing** — Polar and other payment providers will not be supported
@@ -28,27 +28,22 @@ A production-ready Nuxt SaaS starter with authentication, billing, teams, and mo
 
 ### What's Included
 
+- [x] **YouTube Video Ingestion** — Automatically extract transcripts and metadata from YouTube videos
+- [x] **AI-Powered Blog Generation** — Transform video content into well-structured, SEO-optimized blog posts
+- [x] **SEO Optimization** — Automatic title, description, keywords, and schema markup generation
+- [x] **Content Chat Interface** — Interactive chat to refine and customize generated content
+- [x] **Content Management** — Draft, edit, and publish blog posts with version control
+- [x] **Section-by-Section Editing** — Edit individual sections of generated content
+- [x] **Vector Search** — Semantic search across ingested video content for better context
+- [x] **Multi-tenant Workspaces** — Organize content by organization with team collaboration
 - [x] **Authentication** — Better Auth with email/password, OAuth (Google, GitHub), email verification
-- [x] **Multi-tenant orgs** — create/switch orgs, one free trial per account
-- [x] **Roles & permissions** — Owner, Admin, Member with granular access control
-- [x] **Stripe billing** — subscriptions, seat-based pricing, legacy price support
-- [x] **Billing previews** — see prorated charges before seat/plan changes
-- [x] **Invoice history** — view and download past invoices
-- [x] **Failed payment handling** — grace periods, recovery flows, warning banners
-- [x] **Team invites** — invite by email, works for new and existing users
-- [x] **User profiles** — avatar upload, email change, password management
-- [x] **Session management** — view/revoke active sessions
-- [x] **API keys** — per-org keys with expiration options
-- [x] **Admin tools** — user impersonation, soft-ban
-- [x] **Transactional emails** — React Email + Resend for all auth/billing events
-- [x] **Timezone support** — per-org timezone settings
-- [x] **Referral tracking** — track user and org referrals for attribution
-- [x] **Connected accounts** — link/unlink multiple OAuth providers
-- [x] **Account deletion** — secure deletion with email verification
-- [ ] **More Testing** — I'm sure there are some bugs, will activtly test and make updates.
-- [ ] **NuxHub self-hosted** — self-hosted deployment guide
-- [ ] **Abandoned cart emails** — email users with incomplete subscription status
-- [ ] **Usage-based billing** — metered billing support
+- [x] **Stripe Billing** — Subscriptions with seat-based pricing for team plans
+- [x] **Team Collaboration** — Invite team members, manage roles and permissions
+- [x] **API Access** — RESTful API for programmatic content generation
+- [x] **Content Export** — Export generated content in markdown format
+- [ ] **More Video Sources** — Support for additional video platforms
+- [ ] **Bulk Processing** — Process multiple videos in batch
+- [ ] **Custom Templates** — Customizable blog post templates
 
 <p align="center">
   <img src="/public/screenshots/home.png" alt="Homepage" width="80%" />
@@ -109,11 +104,17 @@ pnpm run db:migrate
 
 **Important**: Run migrations before deploying your application to ensure the database schema is up-to-date. This is especially important for the `isAnonymous` column added to the user table for anonymous session support.
 
-**Deploy to production:**
+**Deploy to Cloudflare Pages:**
 
 ```bash
-npx nuxthub deploy
+# Build the project
+pnpm build
+
+# Deploy to Cloudflare Pages
+npx wrangler pages deploy dist/public --project-name=your-project-name
 ```
+
+**Note:** Replace `your-project-name` with your Cloudflare Pages project name. You can also set up automatic deployments by connecting your Git repository to Cloudflare Pages in the dashboard.
 
 ### Environment Variables
 
@@ -147,18 +148,36 @@ export const createBetterAuth = () => betterAuth({
 
 Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfig.public.baseURL`.
 
-### Recommended Hosting
+### Cloudflare Pages Setup
 
-**Recommended stack:**
-- **Cloudflare Workers** — serverless hosting via [NuxHub](https://hub.nuxt.com)
+**Required Cloudflare Resources:**
+
+1. **Create a Cloudflare Pages Project:**
+   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → Workers & Pages
+   - Create a new Pages project (or use existing)
+   - Note your project name for deployment
+
+2. **Configure Bindings in Pages Dashboard:**
+   - **KV Namespace:** Create a KV namespace and bind it as `KV`
+   - **R2 Bucket:** Create an R2 bucket and bind it as `BLOB`
+   - **Hyperdrive:** Create a Hyperdrive configuration pointing to your PostgreSQL database and bind it as `HYPERDRIVE`
+
+3. **Set Environment Variables:**
+   - Add all required environment variables in the Pages project settings
+   - Key variables: `NUXT_APP_URL`, `NUXT_DATABASE_URL`, `NUXT_BETTER_AUTH_SECRET`, `NUXT_STRIPE_SECRET_KEY`, etc.
+
+4. **Runtime Configuration:**
+   - Set Compatibility date: `2025-07-22` (or later)
+   - Enable Compatibility flag: `nodejs_compat`
+
+**Recommended Stack:**
+- **Cloudflare Pages** — serverless hosting with Functions support
 - **Neon Postgres** — serverless PostgreSQL database
 - **Cloudflare Hyperdrive** — connection pooling for Postgres
+- **Cloudflare KV** — session caching and rate limiting (no Redis needed)
+- **Cloudflare R2** — file storage for uploads
 
-**Caching:**
-- **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching, rate limiting)
-- **Redis** — use Redis if you're not on Cloudflare (Upstash, Railway, Vercel etc.)
-
-The app automatically uses Cloudflare KV when deployed to Cloudflare Workers. No additional configuration needed.
+The app automatically uses Cloudflare KV and R2 when deployed to Cloudflare Pages via the configured bindings.
 
 ---
 
@@ -400,5 +419,5 @@ MIT. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <em>Built by <a href="https://github.com/HouseOfBetterAuth">HouseOfBetterAuth</a></em>
+  <em>Built by <a href="https://getquillio.com">Quillio</a></em>
 </p>

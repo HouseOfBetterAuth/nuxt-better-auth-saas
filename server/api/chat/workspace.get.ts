@@ -5,6 +5,7 @@ import { getContentWorkspacePayload } from '~~/server/services/content/workspace
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
+import { validateOptionalUUID } from '~~/server/utils/validation'
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
@@ -12,9 +13,7 @@ export default defineEventHandler(async (event) => {
   const db = getDB()
 
   const query = getQuery(event)
-  const contentId = typeof query.contentId === 'string' && query.contentId.trim().length > 0
-    ? query.contentId.trim()
-    : null
+  const contentId = validateOptionalUUID(query.contentId, 'contentId')
 
   const contents = await db
     .select({

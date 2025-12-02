@@ -9,7 +9,7 @@ interface CallChatCompletionsOptions {
   maxTokens?: number
 }
 
-const CF_ACCOUNT_ID = runtimeConfig.fileManager.storage.r2.accountId
+const CF_ACCOUNT_ID = runtimeConfig.cfAccountId
 const CF_AI_GATEWAY_TOKEN = process.env.NUXT_CF_AI_GATEWAY_TOKEN || runtimeConfig.cfAiGatewayToken
 const OPENAI_API_KEY = process.env.NUXT_OPENAI_API_KEY || runtimeConfig.openAiApiKey
 const OPENAI_BLOG_MODEL = process.env.NUXT_OPENAI_BLOG_MODEL || runtimeConfig.openAiBlogModel || 'gpt-4.1-mini'

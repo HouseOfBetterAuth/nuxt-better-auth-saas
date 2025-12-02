@@ -1,25 +1,28 @@
 import { relations } from 'drizzle-orm'
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { v7 as uuidv7 } from 'uuid'
 import { account, organization, user } from './auth'
 import { sourceContent } from './sourceContent'
 
+export const contentStatusEnum = pgEnum('content_status', ['draft', 'in_review', 'ready_for_publish', 'published', 'archived'])
+export const contentTypeEnum = pgEnum('content_type', ['blog_post', 'recipe', 'faq_page', 'course', 'how_to'])
+
 export const content = pgTable('content', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  sourceContentId: text('source_content_id').references(() => sourceContent.id, { onDelete: 'set null' }),
+  sourceContentId: uuid('source_content_id').references(() => sourceContent.id, { onDelete: 'set null' }),
   createdByUserId: text('created_by_user_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   slug: text('slug').notNull(),
   title: text('title').notNull(),
-  status: text('status').default('draft').notNull(),
+  status: contentStatusEnum('status').default('draft').notNull(),
   primaryKeyword: text('primary_keyword'),
   targetLocale: text('target_locale'),
-  contentType: text('content_type').default('blog_post').notNull(),
-  currentVersionId: text('current_version_id'), // maintained via transactional logic to avoid circular FK issues
+  contentType: contentTypeEnum('content_type').default('blog_post').notNull(),
+  currentVersionId: uuid('current_version_id'), // maintained via transactional logic to avoid circular FK issues
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')
     .defaultNow()
@@ -28,12 +31,14 @@ export const content = pgTable('content', {
   publishedAt: timestamp('published_at')
 }, table => ({
   organizationIdx: index('content_organization_idx').on(table.organizationId),
-  slugOrgUnique: uniqueIndex('content_org_slug_idx').on(table.organizationId, table.slug)
+  statusIdx: index('content_status_idx').on(table.status),
+  slugOrgUnique: uniqueIndex('content_org_slug_idx').on(table.organizationId, table.slug),
+  orgStatusIdx: index('content_org_status_idx').on(table.organizationId, table.status)
 }))
 
 export const contentVersion = pgTable('content_version', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
-  contentId: text('content_id')
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
+  contentId: uuid('content_id')
     .notNull()
     .references(() => content.id, { onDelete: 'cascade' }),
   version: integer('version').notNull(),
@@ -47,18 +52,19 @@ export const contentVersion = pgTable('content_version', {
   seoSnapshot: jsonb('seo_snapshot').$type<Record<string, any> | null>().default(null)
 }, table => ({
   contentIdx: index('content_version_content_idx').on(table.contentId),
+  createdAtIdx: index('content_version_created_at_idx').on(table.createdAt),
   contentVersionUnique: uniqueIndex('content_version_unique_idx').on(table.contentId, table.version)
 }))
 
 export const publication = pgTable('publication', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  contentId: text('content_id')
+  contentId: uuid('content_id')
     .notNull()
     .references(() => content.id, { onDelete: 'cascade' }),
-  contentVersionId: text('content_version_id')
+  contentVersionId: uuid('content_version_id')
     .notNull()
     .references(() => contentVersion.id, { onDelete: 'cascade' }),
   integrationId: text('integration_id').references(() => account.id, { onDelete: 'set null' }),

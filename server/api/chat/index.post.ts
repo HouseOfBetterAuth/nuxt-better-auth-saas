@@ -1,54 +1,25 @@
+import type { ChatRequestBody } from '~~/server/types/api'
 import { eq } from 'drizzle-orm'
-import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 import {
-  addChatLog,
-  addChatMessage,
-  ensureChatSession,
+  addLogEntryToChatSession,
+  addMessageToChatSession,
+  getOrCreateChatSessionForContent,
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import { generateContentDraft, patchContentSection } from '~~/server/services/content/generation'
+import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { createManualTranscriptSourceContent } from '~~/server/services/sourceContent/manualTranscript'
-import { ingestYouTubeSource } from '~~/server/services/sourceContent/youtubeIngest'
+import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
+import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
+import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
-
-interface ChatActionGenerateContent {
-  type: 'generate_content'
-  sourceContentId?: string | null
-  contentId?: string | null
-  transcript?: string | null
-  title?: string | null
-  slug?: string | null
-  status?: typeof CONTENT_STATUSES[number]
-  primaryKeyword?: string | null
-  targetLocale?: string | null
-  contentType?: typeof CONTENT_TYPES[number]
-  systemPrompt?: string
-  temperature?: number
-}
-
-interface ChatActionPatchSection {
-  type: 'patch_section'
-  contentId?: string | null
-  sectionId?: string | null
-  sectionTitle?: string | null
-  instructions?: string | null
-  temperature?: number
-}
-
-type ChatAction = ChatActionGenerateContent | ChatActionPatchSection
-
-interface ChatRequestBody {
-  message: string
-  action?: ChatAction
-}
+import { validateEnum, validateNumber, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
@@ -57,20 +28,12 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody<ChatRequestBody>(event)
 
-  if (!body || typeof body !== 'object') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid request body'
-    })
-  }
+  validateRequestBody(body)
 
   const message = typeof body.message === 'string' ? body.message : ''
 
   if (!message.trim() && !body.action) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Message or action is required'
-    })
+    throw createValidationError('Message or action is required')
   }
 
   const urls = extractUrls(message)
@@ -103,7 +66,7 @@ export default defineEventHandler(async (event) => {
     })
 
     if (classification.sourceType === 'youtube' && classification.externalId && runtimeConfig.enableYoutubeIngestion) {
-      record = await ingestYouTubeSource({
+      record = await ingestYouTubeVideoAsSourceContent({
         db,
         sourceContentId: record.id,
         organizationId,
@@ -111,10 +74,7 @@ export default defineEventHandler(async (event) => {
         videoId: classification.externalId
       })
     } else if (classification.sourceType === 'youtube' && !runtimeConfig.enableYoutubeIngestion) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'YouTube ingestion is disabled. Enable it in configuration to process YouTube links.'
-      })
+      throw createServiceUnavailableError('YouTube ingestion is disabled. Enable it in configuration to process YouTube links.')
     }
 
     processedSources.push({
@@ -133,16 +93,18 @@ export default defineEventHandler(async (event) => {
     label: `Start a draft from this ${item.sourceType.replace('_', ' ')}`
   }))
 
-  let resolvedSourceContentId = body.action?.sourceContentId ?? processedSources[0]?.source.id ?? null
+  let resolvedSourceContentId = body.action?.sourceContentId
+    ? validateOptionalUUID(body.action.sourceContentId, 'action.sourceContentId')
+    : processedSources[0]?.source.id ?? null
 
-  const initialSessionContentId = typeof body.action?.contentId === 'string'
-    ? body.action.contentId
+  const initialSessionContentId = body.action?.contentId
+    ? validateOptionalUUID(body.action.contentId, 'action.contentId')
     : null
 
   const sessionSourceId = resolvedSourceContentId ?? null
 
   // Ensure session exists early so we can send progress messages
-  let session = await ensureChatSession(db, {
+  let session = await getOrCreateChatSessionForContent(db, {
     organizationId,
     contentId: initialSessionContentId,
     sourceContentId: sessionSourceId,
@@ -152,26 +114,21 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  let generationResult: Awaited<ReturnType<typeof generateContentDraft>> | null = null
-  let patchSectionResult: Awaited<ReturnType<typeof patchContentSection>> | null = null
+  let generationResult: Awaited<ReturnType<typeof generateContentDraftFromSource>> | null = null
+  let patchSectionResult: Awaited<ReturnType<typeof updateContentSectionWithAI>> | null = null
 
   if (body.action?.type === 'generate_content') {
     if (!resolvedSourceContentId) {
-      if (typeof body.action.transcript !== 'string' || !body.action.transcript.trim()) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Provide a transcript or select an existing source.'
-        })
-      }
+      const transcript = validateRequiredString(body.action.transcript, 'transcript')
 
-      const manualSource = await createManualTranscriptSourceContent({
+      const manualSource = await createSourceContentFromTranscript({
         db,
         organizationId,
         userId: user.id,
-        transcript: body.action.transcript,
+        transcript,
         metadata: { createdVia: 'chat_generate_action' },
         onProgress: async (progressMessage) => {
-          await addChatMessage(db, {
+          await addMessageToChatSession(db, {
             sessionId: session.id,
             organizationId,
             role: 'assistant',
@@ -198,46 +155,27 @@ export default defineEventHandler(async (event) => {
   if (body.action?.type === 'generate_content') {
     let sanitizedSystemPrompt: string | undefined
     if (body.action.systemPrompt !== undefined) {
-      if (typeof body.action.systemPrompt !== 'string') {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'systemPrompt must be a string when provided'
-        })
-      }
-      const trimmed = body.action.systemPrompt.trim()
-      if (!trimmed) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'systemPrompt cannot be empty'
-        })
-      }
+      const trimmed = validateRequiredString(body.action.systemPrompt, 'systemPrompt')
       sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
     }
 
     let sanitizedTemperature = 1
     if (body.action.temperature !== undefined && body.action.temperature !== null) {
-      const parsedTemperature = Number(body.action.temperature)
-      if (!Number.isFinite(parsedTemperature) || parsedTemperature < 0 || parsedTemperature > 2) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'temperature must be a number between 0 and 2'
-        })
-      }
-      sanitizedTemperature = parsedTemperature
+      sanitizedTemperature = validateNumber(body.action.temperature, 'temperature', 0, 2)
     }
 
-    generationResult = await generateContentDraft(db, {
+    generationResult = await generateContentDraftFromSource(db, {
       organizationId,
       userId: user.id,
       sourceContentId: resolvedSourceContentId,
       contentId: body.action.contentId ?? null,
       overrides: {
-        title: typeof body.action.title === 'string' ? body.action.title : null,
-        slug: typeof body.action.slug === 'string' ? body.action.slug : null,
-        status: body.action.status && CONTENT_STATUSES.includes(body.action.status) ? body.action.status : undefined,
-        primaryKeyword: typeof body.action.primaryKeyword === 'string' ? body.action.primaryKeyword : null,
-        targetLocale: typeof body.action.targetLocale === 'string' ? body.action.targetLocale : null,
-        contentType: body.action.contentType && CONTENT_TYPES.includes(body.action.contentType) ? body.action.contentType : undefined
+        title: body.action.title ? validateRequiredString(body.action.title, 'title') : null,
+        slug: body.action.slug ? validateRequiredString(body.action.slug, 'slug') : null,
+        status: body.action.status ? validateEnum(body.action.status, CONTENT_STATUSES, 'status') : undefined,
+        primaryKeyword: body.action.primaryKeyword ? validateRequiredString(body.action.primaryKeyword, 'primaryKeyword') : null,
+        targetLocale: body.action.targetLocale ? validateRequiredString(body.action.targetLocale, 'targetLocale') : null,
+        contentType: body.action.contentType ? validateEnum(body.action.contentType, CONTENT_TYPES, 'contentType') : undefined
       },
       systemPrompt: sanitizedSystemPrompt,
       temperature: sanitizedTemperature,
@@ -257,7 +195,7 @@ export default defineEventHandler(async (event) => {
           outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)',
           'Tell me if you want any tweaks to this outline—or hit “Start draft in workspace” when you’re ready for the full article.'
         ]
-        await addChatMessage(db, {
+        await addMessageToChatSession(db, {
           sessionId: session.id,
           organizationId,
           role: 'assistant',
@@ -273,29 +211,17 @@ export default defineEventHandler(async (event) => {
   }
 
   if (body.action?.type === 'patch_section') {
-    const instructions = (typeof body.action.instructions === 'string' ? body.action.instructions : message).trim()
-    if (!instructions) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Instructions are required to update a section.'
-      })
-    }
+    const instructionsInput = body.action.instructions || message
+    const instructions = validateRequiredString(instructionsInput, 'instructions')
 
-    const contentIdToPatch = typeof body.action.contentId === 'string' ? body.action.contentId : null
-    const sectionIdToPatch = typeof body.action.sectionId === 'string' ? body.action.sectionId : null
+    const contentIdToPatch = validateUUID(body.action.contentId, 'action.contentId')
+    const sectionIdToPatch = validateRequiredString(body.action.sectionId, 'sectionId')
 
-    if (!contentIdToPatch || !sectionIdToPatch) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'contentId and sectionId are required to patch a section.'
-      })
-    }
-
-    const temperature = typeof body.action.temperature === 'number' && Number.isFinite(body.action.temperature)
-      ? body.action.temperature
+    const temperature = body.action.temperature !== undefined
+      ? validateNumber(body.action.temperature, 'temperature', 0, 2)
       : undefined
 
-    patchSectionResult = await patchContentSection(db, {
+    patchSectionResult = await updateContentSectionWithAI(db, {
       organizationId,
       userId: user.id,
       contentId: contentIdToPatch,
@@ -304,7 +230,7 @@ export default defineEventHandler(async (event) => {
       temperature
     })
 
-    await addChatLog(db, {
+    await addLogEntryToChatSession(db, {
       sessionId: session.id,
       organizationId,
       type: 'section_patched',
@@ -337,13 +263,13 @@ export default defineEventHandler(async (event) => {
   }
 
   if (message.trim()) {
-    await addChatMessage(db, {
+    await addMessageToChatSession(db, {
       sessionId: session.id,
       organizationId,
       role: 'user',
       content: message.trim()
     })
-    await addChatLog(db, {
+    await addLogEntryToChatSession(db, {
       sessionId: session.id,
       organizationId,
       type: 'user_message',
@@ -352,7 +278,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (processedSources.length > 0) {
-    await addChatLog(db, {
+    await addLogEntryToChatSession(db, {
       sessionId: session.id,
       organizationId,
       type: 'source_detected',
@@ -368,7 +294,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (generationResult) {
-    await addChatLog(db, {
+    await addLogEntryToChatSession(db, {
       sessionId: session.id,
       organizationId,
       type: 'generation_complete',
@@ -412,7 +338,7 @@ export default defineEventHandler(async (event) => {
   const assistantMessageBody = assistantMessages.join(' ')
 
   if (assistantMessageBody) {
-    await addChatMessage(db, {
+    await addMessageToChatSession(db, {
       sessionId: session.id,
       organizationId,
       role: 'assistant',

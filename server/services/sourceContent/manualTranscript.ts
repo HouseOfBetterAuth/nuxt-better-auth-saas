@@ -3,7 +3,7 @@ import type * as schema from '~~/server/database/schema'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { chunkSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
+import { createChunksFromSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
 
 export const MANUAL_TRANSCRIPT_SOURCE_TYPE = 'manual_transcript'
 
@@ -17,7 +17,20 @@ interface CreateManualTranscriptOptions {
   onProgress?: (message: string) => Promise<void> | void
 }
 
-export const createManualTranscriptSourceContent = async ({
+/**
+ * Creates source content from a raw transcript text
+ *
+ * @param options - Options for creating source content from transcript
+ * @param options.db - Database instance
+ * @param options.organizationId - Organization ID
+ * @param options.userId - User ID
+ * @param options.transcript - Transcript text content
+ * @param options.title - Optional title for the source content
+ * @param options.metadata - Optional metadata object
+ * @param options.onProgress - Optional progress callback
+ * @returns Created source content record
+ */
+export const createSourceContentFromTranscript = async ({
   db,
   organizationId,
   userId,
@@ -60,7 +73,7 @@ export const createManualTranscriptSourceContent = async ({
     await onProgress?.('Chunking transcript into searchable segments...')
 
     try {
-      await chunkSourceContentText({
+      await createChunksFromSourceContentText({
         db: tx,
         sourceContent,
         onProgress: async (progress) => {

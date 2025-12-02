@@ -1,22 +1,24 @@
 import { relations } from 'drizzle-orm'
-import { index, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { v7 as uuidv7 } from 'uuid'
 import { organization, user } from './auth'
 import { content } from './content'
 import { sourceContent } from './sourceContent'
 
+export const chatSessionStatusEnum = pgEnum('chat_session_status', ['active', 'archived', 'completed'])
+
 export const contentChatSession = pgTable('content_chat_session', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  contentId: text('content_id')
+  contentId: uuid('content_id')
     .references(() => content.id, { onDelete: 'cascade' }),
-  sourceContentId: text('source_content_id')
+  sourceContentId: uuid('source_content_id')
     .references(() => sourceContent.id, { onDelete: 'set null' }),
   createdByUserId: text('created_by_user_id')
     .references(() => user.id, { onDelete: 'set null' }),
-  status: text('status').default('active').notNull(),
+  status: chatSessionStatusEnum('status').default('active').notNull(),
   metadata: jsonb('metadata').$type<Record<string, any> | null>().default(null),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')
@@ -30,8 +32,8 @@ export const contentChatSession = pgTable('content_chat_session', {
 }))
 
 export const contentChatMessage = pgTable('content_chat_message', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
-  sessionId: text('session_id')
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
+  sessionId: uuid('session_id')
     .notNull()
     .references(() => contentChatSession.id, { onDelete: 'cascade' }),
   organizationId: text('organization_id')
@@ -48,8 +50,8 @@ export const contentChatMessage = pgTable('content_chat_message', {
 }))
 
 export const contentChatLog = pgTable('content_chat_log', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
-  sessionId: text('session_id')
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
+  sessionId: uuid('session_id')
     .notNull()
     .references(() => contentChatSession.id, { onDelete: 'cascade' }),
   organizationId: text('organization_id')

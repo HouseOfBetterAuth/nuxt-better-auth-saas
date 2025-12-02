@@ -1,88 +1,60 @@
+import type { UpsertSourceContentRequestBody } from '~~/server/types/sourceContent'
+import { readBody } from 'h3'
 import { INGEST_STATUSES, upsertSourceContent } from '~~/server/services/sourceContent'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
+import { createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
+import { validateEnum, validateOptionalString, validateRequestBody, validateRequiredString } from '~~/server/utils/validation'
 
-interface SourceContentRequestBody {
-  sourceType: string
-  externalId?: string | null
-  title?: string | null
-  sourceText?: string | null
-  metadata?: Record<string, any> | null
-  ingestStatus?: 'pending' | 'ingested' | 'failed'
-}
-
+/**
+ * Creates or updates source content
+ *
+ * @description Creates or updates a source content record based on sourceType and externalId
+ *
+ * @param sourceType - Type of source (youtube, manual_transcript, etc.) (required)
+ * @param externalId - External ID (e.g., YouTube video ID)
+ * @param title - Title of the source content
+ * @param sourceText - Source text/transcript
+ * @param metadata - Additional metadata
+ * @param ingestStatus - Ingest status (pending, ingested, failed)
+ * @returns Created or updated source content record
+ */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
   const db = getDB()
 
-  const body = await readBody<SourceContentRequestBody>(event)
+  const body = await readBody<UpsertSourceContentRequestBody>(event)
 
-  if (!body || typeof body !== 'object') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid request body'
-    })
-  }
+  validateRequestBody(body)
 
-  if (!body?.sourceType || typeof body.sourceType !== 'string') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'sourceType is required'
-    })
-  }
+  const sourceType = validateRequiredString(body.sourceType, 'sourceType')
 
-  let ingestStatus: SourceContentRequestBody['ingestStatus']
-
+  let ingestStatus: typeof INGEST_STATUSES[number] | undefined
   if (body.ingestStatus !== undefined && body.ingestStatus !== null) {
-    if (!INGEST_STATUSES.includes(body.ingestStatus)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'ingestStatus must be pending, ingested, or failed'
-      })
-    }
-    ingestStatus = body.ingestStatus
+    ingestStatus = validateEnum(body.ingestStatus, INGEST_STATUSES, 'ingestStatus')
   }
 
-  // Validate optional field types when present
-  if (Object.prototype.hasOwnProperty.call(body, 'externalId') && body.externalId !== null && typeof body.externalId !== 'string') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'externalId must be a string or null'
-    })
-  }
+  // Validate optional fields
+  const externalId = validateOptionalString(body.externalId, 'externalId')
+  const title = validateOptionalString(body.title, 'title')
+  const sourceText = validateOptionalString(body.sourceText, 'sourceText')
 
-  if (Object.prototype.hasOwnProperty.call(body, 'title') && body.title !== null && typeof body.title !== 'string') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'title must be a string or null'
-    })
-  }
-
-  if (Object.prototype.hasOwnProperty.call(body, 'sourceText') && body.sourceText !== null && typeof body.sourceText !== 'string') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'sourceText must be a string or null'
-    })
-  }
-
-  if (Object.prototype.hasOwnProperty.call(body, 'metadata') && body.metadata !== null && typeof body.metadata !== 'object') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'metadata must be an object or null'
-    })
+  // Validate metadata
+  if (body.metadata !== undefined && body.metadata !== null && (typeof body.metadata !== 'object' || Array.isArray(body.metadata))) {
+    throw createValidationError('metadata must be an object or null')
   }
 
   const record = await upsertSourceContent(db, {
     organizationId,
     userId: user.id,
-    sourceType: body.sourceType,
-    ...(Object.prototype.hasOwnProperty.call(body, 'externalId') ? { externalId: body.externalId } : {}),
-    ...(Object.prototype.hasOwnProperty.call(body, 'title') ? { title: body.title } : {}),
-    ...(Object.prototype.hasOwnProperty.call(body, 'sourceText') ? { sourceText: body.sourceText } : {}),
-    ...(Object.prototype.hasOwnProperty.call(body, 'metadata') ? { metadata: body.metadata } : {}),
-    ...(ingestStatus !== undefined ? { ingestStatus } : {})
+    sourceType,
+    externalId: externalId ?? undefined,
+    title: title ?? undefined,
+    sourceText: sourceText ?? undefined,
+    metadata: body.metadata ?? undefined,
+    ingestStatus: ingestStatus ?? undefined
   })
 
   return record

@@ -4,12 +4,14 @@ import { and, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 
+type ChatSessionStatus = typeof schema.contentChatSession.$inferSelect['status']
+
 export interface EnsureChatSessionInput {
   organizationId: string
   contentId?: string | null
   sourceContentId?: string | null
   createdByUserId?: string | null
-  status?: string
+  status?: ChatSessionStatus
   metadata?: Record<string, any> | null
 }
 
@@ -52,7 +54,14 @@ export async function getChatSessionById(
   return session ?? null
 }
 
-export async function ensureChatSession(
+/**
+ * Gets an existing chat session for content or creates a new one
+ *
+ * @param db - Database instance
+ * @param input - Input parameters for chat session
+ * @returns Existing or newly created chat session
+ */
+export async function getOrCreateChatSessionForContent(
   db: NodePgDatabase<typeof schema>,
   input: EnsureChatSessionInput
 ) {
@@ -61,6 +70,8 @@ export async function ensureChatSession(
     return existing
   }
 
+  const status: ChatSessionStatus = input.status ?? 'active'
+
   const [session] = await db
     .insert(schema.contentChatSession)
     .values({
@@ -68,7 +79,7 @@ export async function ensureChatSession(
       contentId: input.contentId ?? null,
       sourceContentId: input.sourceContentId ?? null,
       createdByUserId: input.createdByUserId ?? null,
-      status: input.status ?? 'active',
+      status,
       metadata: input.metadata ?? null
     })
     .returning()
@@ -84,7 +95,14 @@ export interface AddChatMessageInput {
   payload?: Record<string, any> | null
 }
 
-export async function addChatMessage(
+/**
+ * Adds a message to a chat session
+ *
+ * @param db - Database instance
+ * @param input - Message input parameters
+ * @returns Created message record
+ */
+export async function addMessageToChatSession(
   db: NodePgDatabase<typeof schema>,
   input: AddChatMessageInput
 ) {
@@ -117,7 +135,14 @@ export interface AddChatLogInput {
   payload?: Record<string, any> | null
 }
 
-export async function addChatLog(
+/**
+ * Adds a log entry to a chat session
+ *
+ * @param db - Database instance
+ * @param input - Log entry input parameters
+ * @returns Created log entry record
+ */
+export async function addLogEntryToChatSession(
   db: NodePgDatabase<typeof schema>,
   input: AddChatLogInput
 ) {

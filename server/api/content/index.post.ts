@@ -1,55 +1,48 @@
+import type { CreateContentRequestBody } from '~~/server/types/content'
 import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
+import { createInternalError, createNotFoundError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
+import { validateEnum, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString } from '~~/server/utils/validation'
 
-interface CreateContentBody {
-  title: string
-  slug?: string
-  sourceContentId?: string | null
-  status?: typeof CONTENT_STATUSES[number]
-  primaryKeyword?: string | null
-  targetLocale?: string | null
-  contentType?: typeof CONTENT_TYPES[number]
-}
-
+/**
+ * Creates a new content record
+ *
+ * @description Creates a content record with the specified title, status, and contentType
+ *
+ * @param title - Title of the content (required)
+ * @param slug - Slug for the content (auto-generated from title if not provided)
+ * @param status - Status of the content (required)
+ * @param contentType - Type of content (required)
+ * @param sourceContentId - Optional ID of source content to link
+ * @returns Created content record
+ */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
   const db = await useDB(event)
-  const body = await readBody<CreateContentBody>(event)
+  const body = await readBody<CreateContentRequestBody>(event)
 
-  if (!body || typeof body !== 'object') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid request body'
-    })
-  }
+  validateRequestBody(body)
 
-  if (!body.title || typeof body.title !== 'string') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'title is required'
-    })
-  }
+  const title = validateRequiredString(body.title, 'title')
 
   let sourceContentId: string | null = null
 
-  if (body.sourceContentId) {
+  const sourceContentIdInput = validateOptionalUUID(body.sourceContentId, 'sourceContentId')
+  if (sourceContentIdInput) {
     const [sourceContent] = await db
       .select()
       .from(schema.sourceContent)
-      .where(eq(schema.sourceContent.id, body.sourceContentId))
+      .where(eq(schema.sourceContent.id, sourceContentIdInput))
       .limit(1)
 
     if (!sourceContent || sourceContent.organizationId !== organizationId) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Source content not found for this organization'
-      })
+      throw createNotFoundError('Source content', sourceContentIdInput)
     }
 
     sourceContentId = sourceContent.id
@@ -57,21 +50,10 @@ export default defineEventHandler(async (event) => {
 
   const baseSlug = body.slug
     ? slugifyTitle(body.slug)
-    : slugifyTitle(body.title)
+    : slugifyTitle(title)
 
-  if (!body.status || !CONTENT_STATUSES.includes(body.status)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `status is required and must be one of: ${CONTENT_STATUSES.join(', ')}`
-    })
-  }
-
-  if (!body.contentType || !CONTENT_TYPES.includes(body.contentType)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `contentType is required and must be one of: ${CONTENT_TYPES.join(', ')}`
-    })
-  }
+  const status = validateEnum(body.status, CONTENT_STATUSES, 'status')
+  const contentType = validateEnum(body.contentType, CONTENT_TYPES, 'contentType')
 
   const slug = await ensureUniqueContentSlug(db, organizationId, baseSlug)
 
@@ -82,21 +64,18 @@ export default defineEventHandler(async (event) => {
       organizationId,
       createdByUserId: user.id,
       sourceContentId,
-      title: body.title,
+      title,
       slug,
-      status: body.status,
-      primaryKeyword: typeof body.primaryKeyword === 'string' ? body.primaryKeyword : null,
-      targetLocale: typeof body.targetLocale === 'string' ? body.targetLocale : null,
-      contentType: body.contentType,
+      status,
+      primaryKeyword: validateOptionalString(body.primaryKeyword, 'primaryKeyword'),
+      targetLocale: validateOptionalString(body.targetLocale, 'targetLocale'),
+      contentType,
       currentVersionId: null
     })
     .returning()
 
   if (!createdRecord) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to create content record'
-    })
+    throw createInternalError('Failed to create content record')
   }
 
   return createdRecord

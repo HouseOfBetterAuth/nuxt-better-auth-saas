@@ -1,50 +1,49 @@
+import type { IngestYouTubeVideoAsSourceContentRequestBody } from '~~/server/types/sourceContent'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { ingestYouTubeSource } from '~~/server/services/sourceContent/youtubeIngest'
+import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
 import { useDB } from '~~/server/utils/db'
+import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import { validateOptionalString, validateRequestBody, validateRequiredString } from '~~/server/utils/validation'
 
-interface YouTubeIngestBody {
-  youtubeUrl: string
-  titleHint?: string | null
-}
-
+/**
+ * Ingests a YouTube video as source content
+ *
+ * @description Fetches transcript from YouTube video and creates source content with chunks
+ *
+ * @param youtubeUrl - YouTube video URL (required)
+ * @param titleHint - Optional title hint for the source content
+ * @returns Source content record with ingest status
+ */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
   const db = await useDB(event)
 
   if (!runtimeConfig.enableYoutubeIngestion) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'YouTube ingestion is currently disabled'
-    })
+    throw createServiceUnavailableError('YouTube ingestion is currently disabled')
   }
 
-  const body = await readBody<YouTubeIngestBody>(event)
+  const body = await readBody<IngestYouTubeVideoAsSourceContentRequestBody>(event)
 
-  if (!body || typeof body.youtubeUrl !== 'string' || !body.youtubeUrl.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'youtubeUrl is required'
-    })
-  }
+  validateRequestBody(body)
+
+  const youtubeUrl = validateRequiredString(body.youtubeUrl, 'youtubeUrl')
+  const titleHint = validateOptionalString(body.titleHint, 'titleHint')
 
   let videoId: string | null = null
   try {
-    const url = new URL(body.youtubeUrl.trim())
+    const url = new URL(youtubeUrl)
     videoId = extractYouTubeId(url)
   } catch {
     videoId = null
   }
 
   if (!videoId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Unable to parse YouTube video ID from the provided URL.'
-    })
+    throw createValidationError('Unable to parse YouTube video ID from the provided URL.')
   }
 
   const upserted = await upsertSourceContent(db, {
@@ -52,16 +51,16 @@ export default defineEventHandler(async (event) => {
     userId: user.id,
     sourceType: 'youtube',
     externalId: videoId,
-    title: typeof body.titleHint === 'string' ? body.titleHint : undefined,
+    title: titleHint ?? undefined,
     metadata: {
-      originalUrl: body.youtubeUrl.trim(),
+      originalUrl: youtubeUrl,
       youtube: {
         videoId
       }
     }
   })
 
-  const ingested = await ingestYouTubeSource({
+  const ingested = await ingestYouTubeVideoAsSourceContent({
     db,
     sourceContentId: upserted.id,
     organizationId,
@@ -72,6 +71,15 @@ export default defineEventHandler(async (event) => {
   return {
     sourceContentId: ingested.id,
     ingestStatus: ingested.ingestStatus,
-    sourceContent: ingested
+    sourceContent: {
+      id: ingested.id,
+      organizationId: ingested.organizationId,
+      sourceType: ingested.sourceType,
+      externalId: ingested.externalId,
+      title: ingested.title,
+      ingestStatus: ingested.ingestStatus,
+      createdAt: ingested.createdAt.toISOString(),
+      updatedAt: ingested.updatedAt.toISOString()
+    }
   }
 })

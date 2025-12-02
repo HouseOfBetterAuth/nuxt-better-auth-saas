@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
-import { chunkSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
+import { createChunksFromSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
 import {
   buildVectorId,
   embedText,
@@ -194,7 +194,7 @@ const parseJSONResponse = <T>(raw: string, label: string): T => {
   return parsed
 }
 
-const buildVirtualChunksFromText = (text: string, chunkSize = 1200, overlap = 200): PipelineChunk[] => {
+const createChunksFromTextForRAG = (text: string, chunkSize = 1200, overlap = 200): PipelineChunk[] => {
   if (!text) {
     return []
   }
@@ -301,7 +301,7 @@ const scoreChunk = (chunk: PipelineChunk, tokens: string[]) => {
   return score
 }
 
-const selectRelevantChunks = async (params: {
+const getRelevantChunksForSection = async (params: {
   chunks: PipelineChunk[]
   outline: OutlineSection
   organizationId: string
@@ -548,7 +548,7 @@ const generateContentPlan = async (params: {
   return plan
 }
 
-const buildFrontmatterFromPlan = (params: {
+const createFrontmatterFromContentPlan = (params: {
   plan: ContentPlanResult
   overrides?: GenerateContentOverrides
   existingContent?: typeof schema.content.$inferSelect | null
@@ -582,21 +582,9 @@ const buildFrontmatterFromPlan = (params: {
   // For new content, default to 'draft'. For existing content, require explicit status or use existing.
   let statusCandidate: typeof CONTENT_STATUSES[number]
   if (overrides?.status) {
-    if (!CONTENT_STATUSES.includes(overrides.status)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Invalid status "${overrides.status}". Must be one of: ${CONTENT_STATUSES.join(', ')}`
-      })
-    }
-    statusCandidate = overrides.status
+    statusCandidate = validateEnum(overrides.status, CONTENT_STATUSES, 'status')
   } else if (existingContent?.status) {
-    if (!CONTENT_STATUSES.includes(existingContent.status)) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Existing content has invalid status "${existingContent.status}". Must be one of: ${CONTENT_STATUSES.join(', ')}`
-      })
-    }
-    statusCandidate = existingContent.status
+    statusCandidate = validateEnum(existingContent.status, CONTENT_STATUSES, 'status')
   } else {
     // New content defaults to 'draft' - this is a business rule, not a fallback
     statusCandidate = 'draft'
@@ -605,21 +593,9 @@ const buildFrontmatterFromPlan = (params: {
   // contentType must always be provided explicitly or exist on existing content
   let contentTypeCandidate: typeof CONTENT_TYPES[number]
   if (overrides?.contentType) {
-    if (!CONTENT_TYPES.includes(overrides.contentType)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Invalid contentType "${overrides.contentType}". Must be one of: ${CONTENT_TYPES.join(', ')}`
-      })
-    }
-    contentTypeCandidate = overrides.contentType
+    contentTypeCandidate = validateEnum(overrides.contentType, CONTENT_TYPES, 'contentType')
   } else if (existingContent?.contentType) {
-    if (!CONTENT_TYPES.includes(existingContent.contentType)) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Existing content has invalid contentType "${existingContent.contentType}". Must be one of: ${CONTENT_TYPES.join(', ')}`
-      })
-    }
-    contentTypeCandidate = existingContent.contentType
+    contentTypeCandidate = validateEnum(existingContent.contentType, CONTENT_TYPES, 'contentType')
   } else {
     throw createError({
       statusCode: 400,
@@ -677,27 +653,13 @@ const buildFrontmatterFromVersion = (params: {
     })
   }
 
-  const statusCandidate = versionFrontmatter.status && CONTENT_STATUSES.includes(versionFrontmatter.status)
-    ? versionFrontmatter.status
-    : params.content.status
+  const statusCandidate = versionFrontmatter.status
+    ? validateEnum(versionFrontmatter.status, CONTENT_STATUSES, 'status')
+    : validateEnum(params.content.status, CONTENT_STATUSES, 'status')
 
-  if (!statusCandidate || !CONTENT_STATUSES.includes(statusCandidate)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `Content status is required and must be one of: ${CONTENT_STATUSES.join(', ')}`
-    })
-  }
-
-  const contentTypeCandidate = versionFrontmatter.contentType && CONTENT_TYPES.includes(versionFrontmatter.contentType)
-    ? versionFrontmatter.contentType
-    : params.content.contentType
-
-  if (!contentTypeCandidate || !CONTENT_TYPES.includes(contentTypeCandidate)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `Content type is required and must be one of: ${CONTENT_TYPES.join(', ')}`
-    })
-  }
+  const contentTypeCandidate = versionFrontmatter.contentType
+    ? validateEnum(versionFrontmatter.contentType, CONTENT_TYPES, 'contentType')
+    : validateEnum(params.content.contentType, CONTENT_TYPES, 'contentType')
   const schemaTypes = normalizeSchemaTypes(
     versionFrontmatter.schemaTypes,
     versionFrontmatter.schemaType,
@@ -730,7 +692,7 @@ const generateSectionsFromOutline = async (params: {
   const sections: GeneratedSection[] = []
 
   for (const item of params.outline) {
-    const relevantChunks = await selectRelevantChunks({
+    const relevantChunks = await getRelevantChunksForSection({
       chunks: params.chunks,
       outline: item,
       organizationId: params.organizationId,
@@ -844,7 +806,7 @@ const generateSectionsFromOutline = async (params: {
   return sections.sort((a, b) => a.index - b.index)
 }
 
-const assembleMarkdownFromSections = (params: {
+const combineSectionsIntoMarkdown = (params: {
   frontmatter: FrontmatterResult
   sections: GeneratedSection[]
 }) => {
@@ -878,7 +840,7 @@ const assembleMarkdownFromSections = (params: {
   }
 }
 
-const buildAssetsMeta = (sourceContent?: typeof schema.sourceContent.$inferSelect | null) => {
+const createContentGenerationMetadata = (sourceContent?: typeof schema.sourceContent.$inferSelect | null) => {
   return {
     generator: {
       engine: 'codex-pipeline',
@@ -895,7 +857,7 @@ const buildAssetsMeta = (sourceContent?: typeof schema.sourceContent.$inferSelec
   }
 }
 
-const buildPatchAssets = (
+const createSectionPatchMetadata = (
   sourceContent: typeof schema.sourceContent.$inferSelect | null,
   sectionId: string
 ) => ({
@@ -962,7 +924,7 @@ const normalizeStoredSections = (
   })
 }
 
-const fetchOrCreateChunks = async (
+const ensureChunksExistForSourceContent = async (
   db: NodePgDatabase<typeof schema>,
   sourceContent: typeof schema.sourceContent.$inferSelect | null,
   fallbackText: string | null
@@ -974,7 +936,7 @@ const fetchOrCreateChunks = async (
         statusMessage: 'Source content is required. Provide a sourceContentId or fallback text.'
       })
     }
-    const virtualChunks = buildVirtualChunksFromText(fallbackText)
+    const virtualChunks = createChunksFromTextForRAG(fallbackText)
     if (virtualChunks.length === 0) {
       throw createError({
         statusCode: 400,
@@ -1017,7 +979,7 @@ const fetchOrCreateChunks = async (
         statusMessage: 'Source content has no text to chunk'
       })
     }
-    await chunkSourceContentText({ db, sourceContent })
+    await createChunksFromSourceContentText({ db, sourceContent })
     chunks = await db
       .select()
       .from(schema.chunk)
@@ -1071,7 +1033,14 @@ const fetchOrCreateChunks = async (
   }))
 }
 
-export const generateContentDraft = async (
+/**
+ * Generates a content draft from a source content (transcript, YouTube video, etc.)
+ *
+ * @param db - Database instance
+ * @param input - Input parameters for content generation
+ * @returns Generated content draft with markdown and metadata
+ */
+export const generateContentDraftFromSource = async (
   db: NodePgDatabase<typeof schema>,
   input: GenerateContentInput
 ): Promise<GenerateContentResult> => {
@@ -1137,19 +1106,19 @@ export const generateContentDraft = async (
     })
   }
 
-  const chunks = await fetchOrCreateChunks(db, sourceContent, sourceContent.sourceText)
+  const chunks = await ensureChunksExistForSourceContent(db, sourceContent, sourceContent.sourceText)
 
-  if (!overrides?.contentType || !CONTENT_TYPES.includes(overrides.contentType)) {
-    if (!existingContent?.contentType || !CONTENT_TYPES.includes(existingContent.contentType)) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `contentType is required and must be one of: ${CONTENT_TYPES.join(', ')}`
-      })
-    }
+  let contentType: typeof CONTENT_TYPES[number]
+  if (overrides?.contentType) {
+    contentType = validateEnum(overrides.contentType, CONTENT_TYPES, 'contentType')
+  } else if (existingContent?.contentType) {
+    contentType = validateEnum(existingContent.contentType, CONTENT_TYPES, 'contentType')
+  } else {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `contentType is required and must be one of: ${CONTENT_TYPES.join(', ')}`
+    })
   }
-  const contentType = overrides?.contentType && CONTENT_TYPES.includes(overrides.contentType)
-    ? overrides.contentType
-    : existingContent!.contentType
 
   const plan = await generateContentPlan({
     contentType,
@@ -1158,7 +1127,7 @@ export const generateContentDraft = async (
     sourceTitle: sourceContent?.title ?? existingContent?.title ?? null
   })
 
-  const frontmatter = buildFrontmatterFromPlan({
+  const frontmatter = createFrontmatterFromContentPlan({
     plan,
     overrides,
     existingContent,
@@ -1179,7 +1148,7 @@ export const generateContentDraft = async (
     sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null
   })
 
-  const assembled = assembleMarkdownFromSections({
+  const assembled = combineSectionsIntoMarkdown({
     frontmatter,
     sections
   })
@@ -1190,7 +1159,7 @@ export const generateContentDraft = async (
   const primaryKeyword = frontmatter.primaryKeyword ?? null
   const targetLocale = frontmatter.targetLocale ?? null
 
-  const assets = buildAssetsMeta(sourceContent)
+  const assets = createContentGenerationMetadata(sourceContent)
   const seoSnapshot = {
     plan: plan.seo,
     primaryKeyword,
@@ -1338,7 +1307,14 @@ export const generateContentDraft = async (
   }
 }
 
-export const patchContentSection = async (
+/**
+ * Updates a content section using AI based on user instructions
+ *
+ * @param db - Database instance
+ * @param input - Input parameters for section update
+ * @returns Updated content with new version and section information
+ */
+export const updateContentSectionWithAI = async (
   db: NodePgDatabase<typeof schema>,
   input: PatchContentSectionInput
 ): Promise<PatchContentSectionResult> => {
@@ -1422,13 +1398,13 @@ export const patchContentSection = async (
     version: record.version
   })
 
-  const chunks = await fetchOrCreateChunks(
+  const chunks = await ensureChunksExistForSourceContent(
     db,
     record.sourceContent ?? null,
     record.sourceContent?.sourceText ?? null
   )
 
-  const relevantChunks = await selectRelevantChunks({
+  const relevantChunks = await getRelevantChunksForSection({
     chunks,
     outline: {
       id: targetSection.id,
@@ -1498,13 +1474,13 @@ export const patchContentSection = async (
     }
   })
 
-  const assembled = assembleMarkdownFromSections({
+  const assembled = combineSectionsIntoMarkdown({
     frontmatter,
     sections: updatedSections
   })
 
   const slug = record.version.frontmatter?.slug || record.content.slug
-  const assets = buildPatchAssets(record.sourceContent ?? null, targetSection.id)
+  const assets = createSectionPatchMetadata(record.sourceContent ?? null, targetSection.id)
   const previousSeoSnapshot = record.version.seoSnapshot ?? {}
   const seoSnapshot = {
     ...previousSeoSnapshot,

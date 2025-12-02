@@ -1,37 +1,105 @@
+import type { GithubIntegrationProvider } from '~~/shared/constants/githubScopes'
+import type { GoogleIntegrationProvider } from '~~/shared/constants/googleScopes'
+import { Buffer } from 'node:buffer'
 import { APIError } from 'better-auth/api'
 import { and, eq } from 'drizzle-orm'
 import { member } from '~~/server/database/schema'
 import * as schema from '~~/server/database/schema'
 import { requireAuth, useServerAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
+import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import { GITHUB_INTEGRATION_MATCH_SCOPES } from '~~/shared/constants/githubScopes'
+import { GOOGLE_INTEGRATION_MATCH_SCOPES } from '~~/shared/constants/googleScopes'
 
-// Helper function to check if account has YouTube scopes
-function hasYouTubeScopes(scope: string | null | undefined): boolean {
-  return !!scope && (
-    scope.includes('https://www.googleapis.com/auth/youtube') ||
-    scope.includes('https://www.googleapis.com/auth/youtube.force-ssl')
-  )
+const GOOGLE_INTEGRATION_PROVIDERS = Object.keys(GOOGLE_INTEGRATION_MATCH_SCOPES) as GoogleIntegrationProvider[]
+const GITHUB_INTEGRATION_PROVIDERS = Object.keys(GITHUB_INTEGRATION_MATCH_SCOPES) as GithubIntegrationProvider[]
+
+const isGoogleIntegrationProvider = (provider: string): provider is GoogleIntegrationProvider =>
+  GOOGLE_INTEGRATION_PROVIDERS.includes(provider as GoogleIntegrationProvider)
+const isGithubIntegrationProvider = (provider: string): provider is GithubIntegrationProvider =>
+  GITHUB_INTEGRATION_PROVIDERS.includes(provider as GithubIntegrationProvider)
+
+function parseScopes(scope: string | null | undefined): string[] {
+  return scope?.split(' ').map(scopeEntry => scopeEntry.trim()).filter(Boolean) ?? []
 }
 
-// Helper function to check if account has ONLY YouTube scopes (no email/profile scopes)
-function hasOnlyYouTubeScopes(scope: string | null | undefined): boolean {
-  if (!scope)
+function hasGoogleIntegrationScopes(scope: string | null | undefined, provider: GoogleIntegrationProvider): boolean {
+  const parsedScopes = parseScopes(scope)
+  const requiredScopes = GOOGLE_INTEGRATION_MATCH_SCOPES[provider]
+  return requiredScopes.every(required => parsedScopes.includes(required))
+}
+
+function hasOnlyGoogleIntegrationScopes(scope: string | null | undefined, provider: GoogleIntegrationProvider): boolean {
+  const parsedScopes = parseScopes(scope)
+  if (parsedScopes.length === 0)
     return false
+  const requiredScopes = new Set<string>(GOOGLE_INTEGRATION_MATCH_SCOPES[provider])
+  const integrationScopes = parsedScopes.filter(scopeEntry => requiredScopes.has(scopeEntry))
+  const nonIntegrationScopes = parsedScopes.filter(scopeEntry => !requiredScopes.has(scopeEntry))
+  return integrationScopes.length > 0 && nonIntegrationScopes.length === 0
+}
 
-  const scopes = scope.split(' ').filter(s => s.trim())
-  const youtubeScopes = scopes.filter(s =>
-    s.includes('youtube') || s.includes('youtube.force-ssl')
-  )
-  const nonYouTubeScopes = scopes.filter(s =>
-    !s.includes('youtube') && !s.includes('youtube.force-ssl')
-  )
+function removeGoogleIntegrationScopes(scope: string | null | undefined, provider: GoogleIntegrationProvider): string | null {
+  const requiredScopes = new Set<string>(GOOGLE_INTEGRATION_MATCH_SCOPES[provider])
+  const parsedScopes = parseScopes(scope)
+  const filteredScopes = parsedScopes.filter(scopeEntry => !requiredScopes.has(scopeEntry))
+  return filteredScopes.length ? filteredScopes.join(' ') : null
+}
 
-  // Has YouTube scopes AND no other scopes (or only YouTube-related ones)
-  return youtubeScopes.length > 0 && nonYouTubeScopes.length === 0
+function hasGithubIntegrationScopes(scope: string | null | undefined, provider: GithubIntegrationProvider): boolean {
+  const parsedScopes = parseScopes(scope)
+  const requiredScopes = GITHUB_INTEGRATION_MATCH_SCOPES[provider]
+  return requiredScopes.every(required => parsedScopes.includes(required))
+}
+
+function hasOnlyGithubIntegrationScopes(scope: string | null | undefined, provider: GithubIntegrationProvider): boolean {
+  const parsedScopes = parseScopes(scope)
+  if (parsedScopes.length === 0)
+    return false
+  const requiredScopes = new Set<string>(GITHUB_INTEGRATION_MATCH_SCOPES[provider])
+  const integrationScopes = parsedScopes.filter(scopeEntry => requiredScopes.has(scopeEntry))
+  const nonIntegrationScopes = parsedScopes.filter(scopeEntry => !requiredScopes.has(scopeEntry))
+  return integrationScopes.length > 0 && nonIntegrationScopes.length === 0
+}
+
+function removeGithubIntegrationScopes(scope: string | null | undefined, provider: GithubIntegrationProvider): string | null {
+  const requiredScopes = new Set<string>(GITHUB_INTEGRATION_MATCH_SCOPES[provider])
+  const parsedScopes = parseScopes(scope)
+  const filteredScopes = parsedScopes.filter(scopeEntry => !requiredScopes.has(scopeEntry))
+  return filteredScopes.length ? filteredScopes.join(' ') : null
+}
+
+async function revokeGithubToken(token: string) {
+  const clientId = runtimeConfig.githubClientId
+  const clientSecret = runtimeConfig.githubClientSecret
+
+  if (!clientId || !clientSecret) {
+    console.warn('GitHub client credentials not configured - skipping token revocation')
+    return
+  }
+
+  try {
+    await $fetch(`https://api.github.com/applications/${clientId}/grant`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+        Accept: 'application/vnd.github+json'
+      },
+      body: {
+        access_token: token
+      }
+    })
+  } catch (error: any) {
+    console.warn('GitHub token revocation warning (non-fatal):', error?.message || 'Unknown error')
+  }
 }
 
 // Soft disconnect: Revoke tokens without unlinking the account
-async function softDisconnectYouTube(db: ReturnType<typeof getDB>, account: typeof schema.account.$inferSelect) {
+async function softDisconnectGoogleIntegration(
+  db: ReturnType<typeof getDB>,
+  account: typeof schema.account.$inferSelect,
+  provider: GoogleIntegrationProvider
+) {
   // 1. Revoke tokens with Google's API
   if (account.accessToken) {
     try {
@@ -51,17 +119,34 @@ async function softDisconnectYouTube(db: ReturnType<typeof getDB>, account: type
     }
   }
 
-  // 2. Remove YouTube scopes from the account
-  const updatedScopes = account.scope
-    ?.split(' ')
-    .filter((scope) => {
-      const trimmed = scope.trim()
-      return trimmed && !trimmed.includes('youtube') && !trimmed.includes('youtube.force-ssl')
-    })
-    .join(' ') || null
+  // 2. Remove integration-specific scopes from the account
+  const updatedScopes = removeGoogleIntegrationScopes(account.scope, provider)
 
   // 3. Update account record: clear tokens and remove YouTube scopes
   // Keep account linked for sign-in purposes
+  await db.update(schema.account)
+    .set({
+      accessToken: null,
+      refreshToken: null,
+      accessTokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
+      scope: updatedScopes,
+      updatedAt: new Date()
+    })
+    .where(eq(schema.account.id, account.id))
+}
+
+async function softDisconnectGithubIntegration(
+  db: ReturnType<typeof getDB>,
+  account: typeof schema.account.$inferSelect,
+  provider: GithubIntegrationProvider
+) {
+  if (account.accessToken) {
+    await revokeGithubToken(account.accessToken)
+  }
+
+  const updatedScopes = removeGithubIntegrationScopes(account.scope, provider)
+
   await db.update(schema.account)
     .set({
       accessToken: null,
@@ -79,12 +164,13 @@ async function hardUnlinkAccount(
   auth: ReturnType<typeof useServerAuth>,
   eventHeaders: Headers,
   accounts: Array<typeof schema.account.$inferSelect>,
-  targetAccount: typeof schema.account.$inferSelect
+  targetAccount: typeof schema.account.$inferSelect,
+  providerId: string
 ) {
   try {
     const unlinkBody = accounts.length === 1
-      ? { providerId: 'google' }
-      : { providerId: 'google', accountId: targetAccount.accountId }
+      ? { providerId }
+      : { providerId, accountId: targetAccount.accountId }
 
     await auth.api.unlinkAccount({
       body: unlinkBody,
@@ -136,41 +222,65 @@ export default defineEventHandler(async (event) => {
 
   const auth = useServerAuth()
 
-  // For YouTube integrations, accounts are stored as 'google' provider with YouTube scopes
-  if (provider === 'youtube') {
+  // For Google-based integrations, accounts are stored as 'google' provider with the requested scopes
+  if (isGoogleIntegrationProvider(provider)) {
     // Find all Google accounts for the current user
     const accounts = await db.select().from(schema.account).where(and(
       eq(schema.account.userId, user.id),
       eq(schema.account.providerId, 'google')
     ))
 
-    // Find the account with YouTube scopes
-    const youtubeAccount = accounts.find(acc => hasYouTubeScopes(acc.scope))
+    // Find the account with desired scopes
+    const integrationAccount = accounts.find(acc => hasGoogleIntegrationScopes(acc.scope, provider))
 
-    if (!youtubeAccount) {
+    if (!integrationAccount) {
       throw createError({
         statusCode: 404,
-        statusMessage: 'YouTube integration not found'
+        statusMessage: `Integration not found for provider: ${provider}`
       })
     }
 
     // Determine disconnect strategy based on scope composition
-    const accountHasOnlyYouTubeScopes = hasOnlyYouTubeScopes(youtubeAccount.scope)
+    const accountHasOnlyRequestedScopes = hasOnlyGoogleIntegrationScopes(integrationAccount.scope, provider)
 
     // Strategy:
-    // - Hard unlink: ONLY if account has YouTube scopes and NO other scopes
+    // - Hard unlink: ONLY if account has integration scopes and NO other scopes
     //   (Safe to remove completely - no sign-in impact)
-    // - Soft disconnect: If account has YouTube + other scopes (email, profile, etc.)
-    //   (Preserve sign-in by keeping account linked, just revoke YouTube tokens)
+    // - Soft disconnect: If account also has other scopes (email, profile, etc.)
+    //   (Preserve sign-in by keeping account linked, just revoke feature tokens)
 
-    if (accountHasOnlyYouTubeScopes) {
-      // Safe to hard unlink - account has ONLY YouTube scopes
+    if (accountHasOnlyRequestedScopes) {
+      // Safe to hard unlink - account has ONLY the requested scopes
       // No sign-in impact since there are no email/profile scopes
-      await hardUnlinkAccount(auth, event.headers, accounts, youtubeAccount)
+      await hardUnlinkAccount(auth, event.headers, accounts, integrationAccount, 'google')
     } else {
-      // Use soft disconnect - account has YouTube + other scopes
-      // Preserve sign-in by keeping account linked, just revoke YouTube tokens
-      await softDisconnectYouTube(db, youtubeAccount)
+      // Use soft disconnect - account has integration + other scopes
+      // Preserve sign-in by keeping account linked, just revoke feature tokens
+      await softDisconnectGoogleIntegration(db, integrationAccount, provider)
+    }
+
+    return { success: true }
+  } else if (isGithubIntegrationProvider(provider)) {
+    const accounts = await db.select().from(schema.account).where(and(
+      eq(schema.account.userId, user.id),
+      eq(schema.account.providerId, 'github')
+    ))
+
+    const integrationAccount = accounts.find(acc => hasGithubIntegrationScopes(acc.scope, provider))
+
+    if (!integrationAccount) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: `Integration not found for provider: ${provider}`
+      })
+    }
+
+    const accountHasOnlyRequestedScopes = hasOnlyGithubIntegrationScopes(integrationAccount.scope, provider)
+
+    if (accountHasOnlyRequestedScopes) {
+      await hardUnlinkAccount(auth, event.headers, accounts, integrationAccount, 'github')
+    } else {
+      await softDisconnectGithubIntegration(db, integrationAccount, provider)
     }
 
     return { success: true }

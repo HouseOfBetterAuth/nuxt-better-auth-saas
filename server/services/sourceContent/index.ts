@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
+import { validateEnum } from '~~/server/utils/validation'
 
 export const INGEST_STATUSES = ['pending', 'ingested', 'failed'] as const
 
@@ -28,8 +29,8 @@ export const upsertSourceContent = async (
     })
   }
 
-  const ingestStatus = input.ingestStatus && INGEST_STATUSES.includes(input.ingestStatus)
-    ? input.ingestStatus
+  const ingestStatus = input.ingestStatus
+    ? validateEnum(input.ingestStatus, INGEST_STATUSES, 'ingestStatus')
     : 'pending'
 
   const insertPayload: Record<string, any> = {

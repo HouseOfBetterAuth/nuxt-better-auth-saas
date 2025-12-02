@@ -1,10 +1,12 @@
 import { relations, sql } from 'drizzle-orm'
-import { index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { v7 as uuidv7 } from 'uuid'
 import { organization, user } from './auth'
 
+export const ingestStatusEnum = pgEnum('ingest_status', ['pending', 'ingested', 'failed'])
+
 export const sourceContent = pgTable('source_content', {
-  id: text('id').primaryKey().$default(() => uuidv7()),
+  id: uuid('id').primaryKey().$default(() => uuidv7()),
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
@@ -16,7 +18,7 @@ export const sourceContent = pgTable('source_content', {
   title: text('title'),
   sourceText: text('source_text'),
   metadata: jsonb('metadata').$type<Record<string, any> | null>().default(null),
-  ingestStatus: text('ingest_status').default('pending').notNull(),
+  ingestStatus: ingestStatusEnum('ingest_status').default('pending').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')
     .defaultNow()

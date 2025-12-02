@@ -16,7 +16,7 @@ import { TrialStarted } from '../../emails/TrialStarted'
 import { VerifyEmail } from '../../emails/VerifyEmail'
 import { runtimeConfig } from './runtimeConfig'
 
-const getAppName = () => runtimeConfig.public.appName || 'HouseOfBetterAuth'
+const getAppName = () => runtimeConfig.public.appName || 'Quillio'
 
 export async function renderVerifyEmail(name: string, url: string): Promise<string> {
   return await render(VerifyEmail({ name, url, appName: getAppName() }))

@@ -19,7 +19,7 @@
 import { createError } from 'h3'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 
-const CF_ACCOUNT_ID = runtimeConfig.fileManager.storage.r2.accountId
+const CF_ACCOUNT_ID = runtimeConfig.cfAccountId
 const CF_VECTORIZE_INDEX = process.env.NUXT_CF_VECTORIZE_INDEX || runtimeConfig.cfVectorizeIndex || ''
 const CF_VECTORIZE_API_TOKEN = process.env.NUXT_CF_VECTORIZE_API_TOKEN || runtimeConfig.cfVectorizeApiToken || ''
 const CF_EMBED_MODEL = process.env.NUXT_CF_EMBED_MODEL || runtimeConfig.cfEmbedModel || '@cf/baai/bge-base-en-v1.5'

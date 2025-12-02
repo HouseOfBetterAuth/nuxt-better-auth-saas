@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { GITHUB_INTEGRATION_SCOPES } from '#shared/constants/githubScopes'
+import { GOOGLE_INTEGRATION_SCOPES } from '#shared/constants/googleScopes'
+
 definePageMeta({
   layout: 'dashboard'
 })
@@ -11,12 +14,9 @@ const toast = useToast()
 const { user, useActiveOrganization } = useAuth()
 const activeOrg = useActiveOrganization()
 
-const youtubeScopes = [
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/youtube',
-  'https://www.googleapis.com/auth/youtube.force-ssl'
-]
+const youtubeScopes = [...GOOGLE_INTEGRATION_SCOPES.youtube]
+const googleDriveScopes = [...GOOGLE_INTEGRATION_SCOPES.google_drive]
+const githubScopes = [...GITHUB_INTEGRATION_SCOPES.github]
 
 const organizationId = computed(() => activeOrg.value?.data?.id ?? null)
 interface OrgMember {
@@ -54,7 +54,17 @@ const youtubeIntegration = computed(() => {
   return list.find(item => item.provider === 'youtube') || null
 })
 
-const integrationStatus = computed(() => {
+const googleDriveIntegration = computed(() => {
+  const list = integrations.value || []
+  return list.find(item => item.provider === 'google_drive') || null
+})
+
+const githubIntegration = computed(() => {
+  const list = integrations.value || []
+  return list.find(item => item.provider === 'github') || null
+})
+
+const youtubeIntegrationStatus = computed(() => {
   const integration = youtubeIntegration.value
   if (!integration)
     return 'disconnected'
@@ -63,15 +73,55 @@ const integrationStatus = computed(() => {
   return integration.status
 })
 
-const connectedByUser = computed(() => {
+const googleDriveIntegrationStatus = computed(() => {
+  const integration = googleDriveIntegration.value
+  if (!integration)
+    return 'disconnected'
+  if (!('status' in integration) || integration.status == null)
+    return 'unknown'
+  return integration.status
+})
+
+const githubIntegrationStatus = computed(() => {
+  const integration = githubIntegration.value
+  if (!integration)
+    return 'disconnected'
+  if (!('status' in integration) || integration.status == null)
+    return 'unknown'
+  return integration.status
+})
+
+const youtubeConnectedByUser = computed(() => {
   const integration = youtubeIntegration.value
   if (!integration?.connectedByUserId)
     return null
   return members.value.find(member => member.userId === integration.connectedByUserId) || null
 })
 
-const connectLoading = ref(false)
-const disconnectLoading = ref(false)
+const googleDriveConnectedByUser = computed(() => {
+  const integration = googleDriveIntegration.value
+  if (!integration?.connectedByUserId)
+    return null
+  return members.value.find(member => member.userId === integration.connectedByUserId) || null
+})
+
+const githubConnectedByUser = computed(() => {
+  const integration = githubIntegration.value
+  if (!integration?.connectedByUserId)
+    return null
+  return members.value.find(member => member.userId === integration.connectedByUserId) || null
+})
+
+const connectLoading = reactive({
+  youtube: false,
+  google_drive: false,
+  github: false
+})
+const disconnectLoading = reactive({
+  youtube: false,
+  google_drive: false,
+  github: false
+})
 
 function assertOrgId() {
   if (!organizationId.value) {
@@ -89,7 +139,7 @@ async function connectYoutube() {
     return
   }
 
-  connectLoading.value = true
+  connectLoading.youtube = true
   try {
     const callbackURL = `${window.location.origin}/${slug.value}/settings/integrations?connected=youtube`
     const response = await $fetch<{
@@ -127,7 +177,106 @@ async function connectYoutube() {
       color: 'error'
     })
   } finally {
-    connectLoading.value = false
+    connectLoading.youtube = false
+  }
+}
+
+async function connectGoogleDrive() {
+  if (!import.meta.client)
+    return
+  try {
+    assertOrgId()
+  } catch (error: any) {
+    toast.add({ title: 'Organization unavailable', description: error?.message, color: 'error' })
+    return
+  }
+
+  connectLoading.google_drive = true
+  try {
+    const callbackURL = `${window.location.origin}/${slug.value}/settings/integrations?connected=google_drive`
+    const response = await $fetch<{
+      url?: string
+      redirect?: boolean
+    }>('/api/auth/link-social', {
+      method: 'POST',
+      body: {
+        provider: 'google',
+        scopes: googleDriveScopes,
+        callbackURL,
+        disableRedirect: true
+      }
+    })
+
+    if (!response?.url) {
+      toast.add({
+        title: 'Unable to start Google Drive connection',
+        description: 'Please try again in a few moments.',
+        color: 'error'
+      })
+      return
+    }
+
+    const redirectUrl = new URL(response.url)
+    redirectUrl.searchParams.set('prompt', 'consent')
+    redirectUrl.searchParams.set('access_type', 'offline')
+    redirectUrl.searchParams.set('include_granted_scopes', 'true')
+
+    window.location.href = redirectUrl.toString()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error connecting Google Drive',
+      description: error?.data?.statusMessage || error?.message || 'Unexpected error occurred.',
+      color: 'error'
+    })
+  } finally {
+    connectLoading.google_drive = false
+  }
+}
+
+async function connectGithub() {
+  if (!import.meta.client)
+    return
+  try {
+    assertOrgId()
+  } catch (error: any) {
+    toast.add({ title: 'Organization unavailable', description: error?.message, color: 'error' })
+    return
+  }
+
+  connectLoading.github = true
+  try {
+    const callbackURL = `${window.location.origin}/${slug.value}/settings/integrations?connected=github`
+    const response = await $fetch<{
+      url?: string
+      redirect?: boolean
+    }>('/api/auth/link-social', {
+      method: 'POST',
+      body: {
+        provider: 'github',
+        scopes: githubScopes,
+        callbackURL,
+        disableRedirect: true
+      }
+    })
+
+    if (!response?.url) {
+      toast.add({
+        title: 'Unable to start GitHub connection',
+        description: 'Please try again in a few moments.',
+        color: 'error'
+      })
+      return
+    }
+
+    window.location.href = response.url
+  } catch (error: any) {
+    toast.add({
+      title: 'Error connecting GitHub',
+      description: error?.data?.statusMessage || error?.message || 'Unexpected error occurred.',
+      color: 'error'
+    })
+  } finally {
+    connectLoading.github = false
   }
 }
 
@@ -144,7 +293,7 @@ async function disconnectYoutube() {
   if (!confirmed)
     return
 
-  disconnectLoading.value = true
+  disconnectLoading.youtube = true
   try {
     await $fetch('/api/organization/integration/disconnect', {
       method: 'DELETE',
@@ -162,7 +311,77 @@ async function disconnectYoutube() {
       color: 'error'
     })
   } finally {
-    disconnectLoading.value = false
+    disconnectLoading.youtube = false
+  }
+}
+
+async function disconnectGoogleDrive() {
+  try {
+    assertOrgId()
+  } catch (error: any) {
+    toast.add({ title: 'Organization unavailable', description: error?.message, color: 'error' })
+    return
+  }
+
+  // eslint-disable-next-line no-alert
+  const confirmed = window.confirm('Disconnecting will remove Codex access to Drive and Docs until you reconnect. Continue?')
+  if (!confirmed)
+    return
+
+  disconnectLoading.google_drive = true
+  try {
+    await $fetch('/api/organization/integration/disconnect', {
+      method: 'DELETE',
+      query: {
+        organizationId: organizationId.value!,
+        provider: 'google_drive'
+      }
+    })
+    toast.add({ title: 'Google Drive disconnected', color: 'success' })
+    await refresh()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error disconnecting Google Drive',
+      description: error?.data?.statusMessage || error?.message || 'Unexpected error occurred.',
+      color: 'error'
+    })
+  } finally {
+    disconnectLoading.google_drive = false
+  }
+}
+
+async function disconnectGithub() {
+  try {
+    assertOrgId()
+  } catch (error: any) {
+    toast.add({ title: 'Organization unavailable', description: error?.message, color: 'error' })
+    return
+  }
+
+  // eslint-disable-next-line no-alert
+  const confirmed = window.confirm('Disconnecting will remove Codex access to GitHub repositories until you reconnect. Continue?')
+  if (!confirmed)
+    return
+
+  disconnectLoading.github = true
+  try {
+    await $fetch('/api/organization/integration/disconnect', {
+      method: 'DELETE',
+      query: {
+        organizationId: organizationId.value!,
+        provider: 'github'
+      }
+    })
+    toast.add({ title: 'GitHub disconnected', color: 'success' })
+    await refresh()
+  } catch (error: any) {
+    toast.add({
+      title: 'Error disconnecting GitHub',
+      description: error?.data?.statusMessage || error?.message || 'Unexpected error occurred.',
+      color: 'error'
+    })
+  } finally {
+    disconnectLoading.github = false
   }
 }
 
@@ -180,13 +399,30 @@ if (import.meta.client) {
     watch(
       () => currentRoute.query.connected,
       (value) => {
-        const isYoutubeConnection = Array.isArray(value) ? value.includes('youtube') : value === 'youtube'
-        if (!isYoutubeConnection)
+        const possibleValues = Array.isArray(value) ? value : value ? [value] : []
+        const provider = possibleValues.find(item => item === 'youtube' || item === 'google_drive' || item === 'github')
+        if (!provider)
           return
 
+        const messages = {
+          youtube: {
+            title: 'YouTube connected',
+            description: 'Captions can now be ingested automatically.'
+          },
+          google_drive: {
+            title: 'Google Drive connected',
+            description: 'Docs can now be imported without copying content manually.'
+          },
+          github: {
+            title: 'GitHub connected',
+            description: 'Repositories can now be synced without manual exports.'
+          }
+        } as const
+
+        const message = messages[provider as keyof typeof messages]
         toast.add({
-          title: 'YouTube connected',
-          description: 'Captions can now be ingested automatically.',
+          title: message.title,
+          description: message.description,
           color: 'success'
         })
         stripConnectedQuery()
@@ -205,7 +441,7 @@ if (import.meta.client) {
           Integrations
         </h1>
         <p class="text-muted-500">
-          Connect Codex to YouTube so captions can be ingested automatically for your organization.
+          Connect Codex to YouTube, Google Drive, and GitHub so transcripts, docs, and repos can be ingested automatically.
         </p>
       </div>
 
@@ -243,18 +479,18 @@ if (import.meta.client) {
                 Status
               </span>
               <UBadge
-                :color="integrationStatus === 'connected' ? 'primary' : integrationStatus === 'expired' ? 'warning' : 'neutral'"
+                :color="youtubeIntegrationStatus === 'connected' ? 'primary' : youtubeIntegrationStatus === 'expired' ? 'warning' : 'neutral'"
                 variant="soft"
                 size="xs"
                 class="capitalize"
               >
-                {{ integrationStatus }}
+                {{ youtubeIntegrationStatus }}
               </UBadge>
             </div>
 
             <div class="rounded-lg border border-dashed border-muted-200/70 p-3 text-sm text-muted-500 space-y-1">
-              <p v-if="youtubeIntegration && connectedByUser">
-                Connected by <strong>{{ connectedByUser.name || connectedByUser.email }}</strong>
+              <p v-if="youtubeIntegration && youtubeConnectedByUser">
+                Connected by <strong>{{ youtubeConnectedByUser.name || youtubeConnectedByUser.email }}</strong>
               </p>
               <p v-else-if="youtubeIntegration">
                 Connected by <strong>Unknown user</strong>
@@ -271,7 +507,7 @@ if (import.meta.client) {
               <UButton
                 color="primary"
                 :disabled="!canManageIntegrations"
-                :loading="connectLoading"
+                :loading="connectLoading.youtube"
                 @click="connectYoutube"
               >
                 {{ youtubeIntegration ? 'Reconnect' : 'Connect YouTube' }}
@@ -282,8 +518,154 @@ if (import.meta.client) {
                 color="neutral"
                 variant="ghost"
                 :disabled="!canManageIntegrations"
-                :loading="disconnectLoading"
+                :loading="disconnectLoading.youtube"
                 @click="disconnectYoutube"
+              >
+                Disconnect
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-3">
+              <UAvatar
+                icon="i-lucide-github"
+                color="primary"
+                size="md"
+              />
+              <div>
+                <p class="text-lg font-medium">
+                  GitHub Repos
+                </p>
+                <p class="text-sm text-muted-500">
+                  Required for syncing private repositories into Codex.
+                </p>
+              </div>
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-muted-500">
+                Status
+              </span>
+              <UBadge
+                :color="githubIntegrationStatus === 'connected' ? 'primary' : githubIntegrationStatus === 'expired' ? 'warning' : 'neutral'"
+                variant="soft"
+                size="xs"
+                class="capitalize"
+              >
+                {{ githubIntegrationStatus }}
+              </UBadge>
+            </div>
+
+            <div class="rounded-lg border border-dashed border-muted-200/70 p-3 text-sm text-muted-500 space-y-1">
+              <p v-if="githubIntegration && githubConnectedByUser">
+                Connected by <strong>{{ githubConnectedByUser.name || githubConnectedByUser.email }}</strong>
+              </p>
+              <p v-else-if="githubIntegration">
+                Connected by <strong>Unknown user</strong>
+              </p>
+              <p>
+                Last updated:
+                <strong>
+                  {{ githubIntegration?.updatedAt ? new Date(githubIntegration.updatedAt).toLocaleString() : '—' }}
+                </strong>
+              </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <UButton
+                color="primary"
+                :disabled="!canManageIntegrations"
+                :loading="connectLoading.github"
+                @click="connectGithub"
+              >
+                {{ githubIntegration ? 'Reconnect' : 'Connect GitHub' }}
+              </UButton>
+
+              <UButton
+                v-if="githubIntegration"
+                color="neutral"
+                variant="ghost"
+                :disabled="!canManageIntegrations"
+                :loading="disconnectLoading.github"
+                @click="disconnectGithub"
+              >
+                Disconnect
+              </UButton>
+            </div>
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-3">
+              <UAvatar
+                icon="i-simple-icons-googledrive"
+                color="primary"
+                size="md"
+              />
+              <div>
+                <p class="text-lg font-medium">
+                  Google Drive & Docs
+                </p>
+                <p class="text-sm text-muted-500">
+                  Required for importing shared Google Docs without copy/paste.
+                </p>
+              </div>
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-muted-500">
+                Status
+              </span>
+              <UBadge
+                :color="googleDriveIntegrationStatus === 'connected' ? 'primary' : googleDriveIntegrationStatus === 'expired' ? 'warning' : 'neutral'"
+                variant="soft"
+                size="xs"
+                class="capitalize"
+              >
+                {{ googleDriveIntegrationStatus }}
+              </UBadge>
+            </div>
+
+            <div class="rounded-lg border border-dashed border-muted-200/70 p-3 text-sm text-muted-500 space-y-1">
+              <p v-if="googleDriveIntegration && googleDriveConnectedByUser">
+                Connected by <strong>{{ googleDriveConnectedByUser.name || googleDriveConnectedByUser.email }}</strong>
+              </p>
+              <p v-else-if="googleDriveIntegration">
+                Connected by <strong>Unknown user</strong>
+              </p>
+              <p>
+                Last updated:
+                <strong>
+                  {{ googleDriveIntegration?.updatedAt ? new Date(googleDriveIntegration.updatedAt).toLocaleString() : '—' }}
+                </strong>
+              </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <UButton
+                color="primary"
+                :disabled="!canManageIntegrations"
+                :loading="connectLoading.google_drive"
+                @click="connectGoogleDrive"
+              >
+                {{ googleDriveIntegration ? 'Reconnect' : 'Connect Google Drive' }}
+              </UButton>
+
+              <UButton
+                v-if="googleDriveIntegration"
+                color="neutral"
+                variant="ghost"
+                :disabled="!canManageIntegrations"
+                :loading="disconnectLoading.google_drive"
+                @click="disconnectGoogleDrive"
               >
                 Disconnect
               </UButton>
@@ -300,16 +682,16 @@ if (import.meta.client) {
 
           <ol class="space-y-3 text-sm text-muted-500">
             <li>
-              1. Click <strong>Connect YouTube</strong> and sign in with the Google account that manages your channel captions.
+              1. Click <strong>Connect</strong> on the integration you need and sign in with the account that has access.
             </li>
             <li>
-              2. Approve the requested scopes so Codex can read caption tracks (read-only, no publishing).
+              2. Approve the requested scopes so Codex can read captions, Google Docs, or GitHub repositories (read-only unless stated otherwise).
             </li>
             <li>
-              3. Once connected, any team member can paste a YouTube link in chat and Codex will automatically ingest the transcript.
+              3. Once connected, teammates can share YouTube links, Google Docs, or GitHub repos and Codex will ingest them automatically.
             </li>
             <li>
-              4. If the token expires, reconnect to refresh the Google consent.
+              4. If a token expires, reconnect to refresh the consent with the provider.
             </li>
           </ol>
         </UCard>
@@ -327,6 +709,8 @@ if (import.meta.client) {
         v-else-if="pending"
         class="space-y-2"
       >
+        <div class="h-16 rounded-lg bg-muted animate-pulse" />
+        <div class="h-16 rounded-lg bg-muted animate-pulse" />
         <div class="h-16 rounded-lg bg-muted animate-pulse" />
         <div class="h-16 rounded-lg bg-muted animate-pulse" />
       </div>

@@ -24,7 +24,18 @@ const DEFAULT_CHUNK_SIZE = 1200
 const DEFAULT_CHUNK_OVERLAP = 200
 const MAX_CHUNK_SIZE = 8000
 
-export async function chunkSourceContentText({
+/**
+ * Creates chunks from source content text for RAG (Retrieval Augmented Generation)
+ *
+ * @param options - Options for chunking source content
+ * @param options.db - Database instance
+ * @param options.sourceContent - Source content record to chunk
+ * @param options.chunkSize - Size of each chunk in characters (default: 1200)
+ * @param options.chunkOverlap - Overlap between chunks in characters (default: 200)
+ * @param options.onProgress - Optional progress callback
+ * @returns Array of created chunk records
+ */
+export async function createChunksFromSourceContentText({
   db,
   sourceContent,
   chunkSize = DEFAULT_CHUNK_SIZE,
