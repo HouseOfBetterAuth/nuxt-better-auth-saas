@@ -1,7 +1,7 @@
 {
   "en": {
     "home": {
-      "slogan": "Production-Ready Nuxt SaaS Starter with Better Auth & Stripe",
+      "slogan": "Create SEO-ready blogs from YouTube",
       "getStarted": "Get Started",
       "viewOnGithub": "View on GitHub",
       "tryQuillioChat": "Try Quillio chat",
@@ -50,7 +50,7 @@
   },
   "zh-CN": {
     "home": {
-      "slogan": "Nuxt.js 全栈 SaaS 起步工具包 - 免费开源",
+      "slogan": "从 YouTube 创建 SEO 就绪的博客",
       "getStarted": "开始使用",
       "viewOnGithub": "在 GitHub 上查看",
       "tryQuillioChat": "试用 Quillio 聊天",
@@ -99,7 +99,7 @@
   },
   "ja": {
     "home": {
-      "slogan": "Nuxt.js フルスタック SaaS スターターキット - 無料＆オープンソース",
+      "slogan": "YouTubeからSEO対応のブログを作成",
       "getStarted": "始めましょう",
       "viewOnGithub": "GitHub で見る",
       "tryQuillioChat": "Quillio チャットを試す",
@@ -148,7 +148,7 @@
   },
   "fr": {
     "home": {
-      "slogan": "Kit de Démarrage SaaS Full-Stack Nuxt.js - Gratuit et Open Source",
+      "slogan": "Créez des blogs optimisés SEO à partir de YouTube",
       "getStarted": "Commencer",
       "viewOnGithub": "Voir sur GitHub",
       "tryQuillioChat": "Essayer le chat Quillio",

@@ -1,23 +1,23 @@
 <p align="center">
-  <img src="/public/HouseOfBetterAuth.png" alt="HouseOfBetterAuth" height="80" />
+  <img src="/public/HouseOfBetterAuth.png" alt="Quillio" height="80" />
   &nbsp;&nbsp;&nbsp;
-  <strong style="font-size: 2em;">HouseOfBetterAuth</strong>
+  <strong style="font-size: 2em;">Quillio</strong>
 </p>
 
 <p align="center">
-  <em>Open-source SaaS starters powered by Better Auth</em>
+  <em>Create SEO-ready blogs from YouTube</em>
 </p>
 
 <p align="center">
-  We build production-ready, open-source SaaS templates using <a href="https://better-auth.com">Better Auth</a>.<br/>
-  Skip the boilerplate. Ship faster.
+  Transform YouTube videos into SEO-optimized blog posts automatically.<br/>
+  Powered by AI and built with modern web technologies.
 </p>
 
 ---
 
-## House of Better Auth Nuxt SaaS Starter
+## Quillio
 
-A production-ready Nuxt SaaS starter with authentication, billing, teams, and more.
+Create SEO-ready blogs from YouTube videos. Transform video content into well-structured, search-engine optimized articles automatically.
 
 > **Note:** This template is opinionated and built for my own apps. It's designed specifically for:
 > - **Stripe-only billing** — Polar and other payment providers will not be supported
@@ -400,5 +400,5 @@ MIT. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <em>Built by <a href="https://github.com/HouseOfBetterAuth">HouseOfBetterAuth</a></em>
+  <em>Built by <a href="https://getquillio.com">Quillio</a></em>
 </p>
