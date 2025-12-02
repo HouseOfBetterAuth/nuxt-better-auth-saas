@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/public/HouseOfBetterAuth.png" alt="Quillio" height="80" />
+  <img src="/public/quillio-logo.png" alt="Quillio" height="80" />
   &nbsp;&nbsp;&nbsp;
   <strong style="font-size: 2em;">Quillio</strong>
 </p>
