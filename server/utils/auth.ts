@@ -106,14 +106,40 @@ export const createBetterAuth = () => betterAuth({
         }
       },
       update: {
-        after: async (user) => {
+        before: async (user, ctx) => {
+          // Capture previous email before update to detect changes
+          if (user.id) {
+            const db = getDB()
+            const previousUser = await db.query.user.findFirst({
+              where: eq(schema.user.id, user.id)
+            })
+            // Store previous email in context for use in after hook
+            if (previousUser) {
+              (ctx as any).previousEmail = previousUser.email
+            }
+          }
+        },
+        after: async (user, ctx) => {
           // When user email changes, update Stripe customer email for orgs they own
-          console.log('[Auth] User update hook triggered:', { userId: user.id, email: user.email, emailVerified: user.emailVerified })
+          // Only sync if email is verified (email ownership validation)
+          const previousEmail = (ctx as any).previousEmail
+          const emailChanged = previousEmail && previousEmail !== user.email
 
-          // Always sync email to Stripe when user is updated (email is verified by the change-email flow)
-          if (user.email) {
+          if (user.email && user.emailVerified && emailChanged) {
             try {
               const db = getDB()
+
+              // Log email update for audit
+              await logAuditEvent({
+                userId: user.id,
+                category: 'email',
+                action: 'email_updated',
+                targetType: 'email',
+                targetId: user.email,
+                status: 'success',
+                details: `Email changed from ${previousEmail} to ${user.email}`
+              })
+
               // Find all orgs where this user is owner and has a Stripe customer
               const ownedOrgs = await db
                 .select()
@@ -123,8 +149,6 @@ export const createBetterAuth = () => betterAuth({
                   eq(schema.member.userId, user.id),
                   eq(schema.member.role, 'owner')
                 ))
-
-              console.log('[Auth] Found owned orgs:', ownedOrgs.length)
 
               if (ownedOrgs.length > 0) {
                 const stripe = createStripeClient()
@@ -137,14 +161,32 @@ export const createBetterAuth = () => betterAuth({
                       email: user.email,
                       name: org.name
                     })
-                    console.log(`[Auth] Updated Stripe customer ${org.stripeCustomerId} email to ${user.email}, name to "${org.name}"`)
-                  } else {
-                    console.log(`[Auth] Org ${org.id} has no stripeCustomerId`)
+
+                    // Log Stripe sync for audit
+                    await logAuditEvent({
+                      userId: user.id,
+                      category: 'payment',
+                      action: 'stripe_customer_email_synced',
+                      targetType: 'organization',
+                      targetId: org.id,
+                      status: 'success',
+                      details: `Stripe customer ${org.stripeCustomerId} email updated to ${user.email}`
+                    })
                   }
                 }
               }
             } catch (e) {
               console.error('[Auth] Failed to update Stripe customer email:', e)
+              // Log failure for audit
+              await logAuditEvent({
+                userId: user.id,
+                category: 'email',
+                action: 'email_update_failed',
+                targetType: 'email',
+                targetId: user.email,
+                status: 'failure',
+                details: e instanceof Error ? e.message : 'Unknown error'
+              })
             }
           }
         }
@@ -337,23 +379,19 @@ export const createBetterAuth = () => betterAuth({
             return // No organization restriction if no orgId in metadata
           }
 
-          // Count existing API keys for this organization
+          // Count existing API keys for this organization across all users
           const db = getDB()
-          const userId = key.userId
-          if (!userId) {
-            return // No user ID, skip validation
-          }
 
-          const existingKeys = await db.query.apiKey.findMany({
-            where: eq(schema.apiKey.userId, userId)
-          })
+          // Fetch all API keys (without userId filter) to count organization-wide
+          const allKeys = await db.query.apiKey.findMany()
 
-          // Filter keys that belong to this organization
-          const orgKeys = existingKeys.filter((k: any) => {
+          // Filter keys that belong to this organization (across all users)
+          const orgKeys = allKeys.filter((k: any) => {
             if (!k.metadata)
               return false
             try {
               let meta: any = k.metadata
+              // Handle potentially double-encoded JSON string
               if (typeof meta === 'string') {
                 try {
                   meta = JSON.parse(meta)
@@ -361,6 +399,7 @@ export const createBetterAuth = () => betterAuth({
                   return false
                 }
               }
+              // Try parsing again if it's still a string (double encoded)
               if (typeof meta === 'string') {
                 try {
                   meta = JSON.parse(meta)
@@ -390,12 +429,28 @@ export const createBetterAuth = () => betterAuth({
     sendResetPassword: async ({ user, url }) => {
       const name = user.name || user.email.split('@')[0]
       const html = await renderResetPassword(name, url)
+
+      // Generate plain text version for better deliverability and accessibility
+      const { render } = await import('@react-email/render')
+      const { ResetPassword } = await import('../../emails/ResetPassword')
+      const text = await render(ResetPassword({ name, url, appName: runtimeConfig.public.appName }), { plainText: true })
+
+      // Only log links in development
+      if (runtimeConfig.public.appEnv === 'development') {
+        console.log('>>> RESET PASSWORD LINK <<<')
+        console.log(`To: ${user.email}`)
+        console.log(url)
+        console.log('>>> ------------------------ <<<')
+      }
+
       const response = await resendInstance.emails.send({
         from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
         to: user.email,
         subject: 'Reset your password',
-        html
+        html,
+        text
       })
+
       await logAuditEvent({
         userId: user.id,
         category: 'email',
@@ -405,6 +460,7 @@ export const createBetterAuth = () => betterAuth({
         status: response.error ? 'failure' : 'success',
         details: response.error?.message
       })
+
       if (response.error) {
         console.error(`Failed to send reset password email: ${response.error.message}`)
         throw createError({
@@ -418,10 +474,13 @@ export const createBetterAuth = () => betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      console.log('>>> EMAIL VERIFICATION LINK <<<')
-      console.log(`To: ${user.email}`)
-      console.log(url)
-      console.log('>>> ------------------------ <<<')
+      // Only log links in development
+      if (runtimeConfig.public.appEnv === 'development') {
+        console.log('>>> EMAIL VERIFICATION LINK <<<')
+        console.log(`To: ${user.email}`)
+        console.log(url)
+        console.log('>>> ------------------------ <<<')
+      }
       try {
         const name = user.name || user.email.split('@')[0]
         const html = await renderVerifyEmail(name, url)
@@ -445,9 +504,12 @@ export const createBetterAuth = () => betterAuth({
         }
       } catch (e) {
         console.warn('Failed to send verification email:', e)
-        console.log('>>> MANUAL VERIFICATION LINK <<<')
-        console.log(url)
-        console.log('>>> ------------------------ <<<')
+        // Only log links in development
+        if (runtimeConfig.public.appEnv === 'development') {
+          console.log('>>> MANUAL VERIFICATION LINK <<<')
+          console.log(url)
+          console.log('>>> ------------------------ <<<')
+        }
       }
     }
   },

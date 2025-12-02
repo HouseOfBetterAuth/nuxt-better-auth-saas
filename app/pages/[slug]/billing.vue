@@ -33,6 +33,7 @@ onMounted(async () => {
     // Poll for up to 10 seconds (5 attempts x 2s)
     let attempts = 0
     const maxAttempts = 5
+    let foundPro = false
 
     while (attempts < maxAttempts) {
       // Wait 2s between checks
@@ -47,6 +48,7 @@ onMounted(async () => {
 
       if (hasPro) {
         console.log('Pro subscription found!')
+        foundPro = true
         break
       }
 
@@ -74,11 +76,20 @@ onMounted(async () => {
 
     router.replace({ query: newQuery })
 
-    toast.add({
-      title: 'Subscription updated',
-      description: 'Your plan has been successfully updated.',
-      color: 'success'
-    })
+    // Only show success toast if Pro subscription was found
+    if (foundPro) {
+      toast.add({
+        title: 'Subscription updated',
+        description: 'Your plan has been successfully updated.',
+        color: 'success'
+      })
+    } else {
+      toast.add({
+        title: 'Subscription update failed',
+        description: 'Unable to verify subscription update. Please check your billing status.',
+        color: 'error'
+      })
+    }
   }
 })
 
