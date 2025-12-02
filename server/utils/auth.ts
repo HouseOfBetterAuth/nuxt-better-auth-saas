@@ -551,8 +551,10 @@ export const createBetterAuth = () => betterAuth({
   },
   account: {
     accountLinking: {
-      enabled: true
+      enabled: true,
+      allowDifferentEmails: true
       // Better Auth v1.4.1+ enforces email matching between linked providers by default
+      // allowDifferentEmails: true allows linking accounts with different email addresses
       // User notifications are handled in the frontend (see app/pages/[slug]/profile.vue)
       // Email verification is required before account creation, which provides additional security
     }
