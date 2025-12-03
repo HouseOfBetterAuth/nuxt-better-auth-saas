@@ -20,15 +20,13 @@
     "build": "nuxt build",
     "serve": "node .output/server/index.mjs",
     "preview:cf": "wrangler dev --x-remote-bindings",
-    "deploy:pages": "pnpm build && cp -r .output/server/chunks .output/public/ && cp .output/server/index.mjs .output/public/_worker.js && npx wrangler pages deploy .output/public --project-name=quill-nuxt-saas-v1 --branch=main",
-    "deploy:worker": "pnpm build && npx wrangler deploy --config wrangler.toml",
-    "deploy:all": "pnpm deploy:pages && pnpm deploy:worker",
     "deploy": "wrangler deploy",
     "prepare": "husky"
   },
   "dependencies": {
     "@better-auth/stripe": "^1.4.1",
     "@nuxt/ui": "^4.2.1",
+    "@nuxthub/core": "^0.9.1",
     "@nuxtjs/i18n": "^9.5.6",
     "@nuxtjs/seo": "^3.2.2",
     "@react-email/render": "^2.0.0",

@@ -104,20 +104,20 @@ pnpm run db:migrate
 
 **Important**: Run migrations before deploying your application to ensure the database schema is up-to-date. This is especially important for the `isAnonymous` column added to the user table for anonymous session support.
 
-**Deploy to Cloudflare Pages:**
+**Deploy to NuxtHub:**
 
 ```bash
 # Build the project
 pnpm build
 
-# Deploy to Cloudflare Pages
-npx wrangler pages deploy dist/public --project-name=your-project-name
+# Deploy to NuxtHub
+npx nuxthub deploy
 ```
 
 **Note:** 
-- Pages project name: Replace `your-project-name` with your own Cloudflare Pages project name
-- Worker name: Replace with your own worker name (configured in `wrangler.toml`)
-- You can also set up automatic deployments by connecting your Git repository to Cloudflare Pages in the dashboard
+- NuxtHub automatically manages Workers, KV, and other Cloudflare resources
+- Make sure you have a NuxtHub project linked (run `npx nuxthub link` if needed)
+- Environment variables should be set in your NuxtHub project dashboard
 
 ### Environment Variables
 
@@ -151,51 +151,33 @@ export const createBetterAuth = () => betterAuth({
 
 Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfig.public.baseURL`.
 
-### Cloudflare Pages Setup
+### NuxtHub Setup
 
-**Required Cloudflare Resources:**
+**Required Resources:**
 
-1. **Create a Cloudflare Pages Project:**
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → Workers & Pages
-   - Create a new Pages project with your own project name (example: `<YOUR_PROJECT_NAME>`)
-   - Note your project name for deployment
+1. **Create a NuxtHub Project:**
+   - Go to [NuxtHub Dashboard](https://hub.nuxt.com) and create a new project
+   - Link your project: `npx nuxthub link`
+   - NuxtHub will automatically manage Workers, KV, and other Cloudflare resources
 
-2. **Create a Cloudflare Worker:**
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → Workers & Pages → Workers
-   - The Worker will be created automatically on first deploy, or create manually with your own name (e.g., `<YOUR_PROJECT_NAME>-api`)
-   - Configure routes: Route `<YOUR_DOMAIN>/api/*` to the Worker (or use subdomain `api.<YOUR_DOMAIN>/*`)
-
-3. **Configure Bindings (both Pages and Worker):**
-   - **KV Namespace:** Create a new KV namespace in Cloudflare Dashboard → Workers & Pages → KV
-     - Note the namespace ID (example: `478cd88118ad4446934dfad3181f0e8b` — **replace with your own**)
-     - Bind as `KV` in both Pages and Worker
-   - **R2 Bucket (optional):** Create an R2 bucket and bind it as `BLOB` (if using R2 storage)
-   - **Hyperdrive:** Create a new Hyperdrive configuration in Cloudflare Dashboard → Workers & Pages → Hyperdrive
-     - Note the Hyperdrive ID (example: `90c21a37166347518f70398ad1b827b9` — **replace with your own**)
-     - Bind as `HYPERDRIVE` in both Pages and Worker
+2. **Configure Bindings:**
+   - **KV Namespace:** Automatically managed by NuxtHub
+   - **R2 Bucket (optional):** Configure in NuxtHub dashboard if using R2 storage
+   - **Hyperdrive:** Set `NUXT_CF_HYPERDRIVE_ID` environment variable in NuxtHub dashboard
      - Points to your PostgreSQL database for connection pooling
-   
-   **Important:** The IDs shown above (`478cd88118ad4446934dfad3181f0e8b` and `90c21a37166347518f70398ad1b827b9`) are **examples only**. You must create your own KV namespace and Hyperdrive configuration and use your own resource IDs.
 
-4. **Set Environment Variables:**
-   - **Pages:** Add all required environment variables in Pages project settings
-   - **Worker:** Set same variables via:
-     - `wrangler secret put <VAR_NAME>` (for secrets like API keys)
-     - Cloudflare Dashboard → Workers → `<YOUR_WORKER_NAME>` → Settings → Variables (for plaintext)
-   - Key variables: `NUXT_APP_URL`, `NUXT_DATABASE_URL`, `NUXT_BETTER_AUTH_SECRET`, `NUXT_STRIPE_SECRET_KEY`, `NUXT_CF_*`, etc.
-
-5. **Runtime Configuration:**
-   - **Pages:** Set Compatibility date: `2025-07-22` (or later), Enable Compatibility flag: `nodejs_compat`
-   - **Worker:** Configured in `wrangler.toml` (compatibility_date: `2025-07-22`, flags: `nodejs_compat`)
+3. **Set Environment Variables:**
+   - Add all required environment variables in NuxtHub project dashboard
+   - Key variables: `NUXT_APP_URL`, `NUXT_DATABASE_URL`, `NUXT_BETTER_AUTH_SECRET`, `NUXT_STRIPE_SECRET_KEY`, `NUXT_CF_HYPERDRIVE_ID`, etc.
 
 **Recommended Stack:**
-- **Cloudflare Pages** — serverless hosting with Functions support
+- **NuxtHub** — managed Cloudflare Workers deployment
 - **Neon Postgres** — serverless PostgreSQL database
-- **Cloudflare Hyperdrive** — connection pooling for Postgres
-- **Cloudflare KV** — session caching and rate limiting (no Redis needed)
-- **Cloudflare R2** — file storage for uploads
+- **Cloudflare Hyperdrive** — connection pooling for Postgres (configured via `NUXT_CF_HYPERDRIVE_ID`)
+- **Cloudflare KV** — session caching and rate limiting (automatically managed by NuxtHub)
+- **Cloudflare R2** — file storage for uploads (optional, configured in NuxtHub)
 
-The app automatically uses Cloudflare KV and R2 when deployed to Cloudflare Pages via the configured bindings.
+The app automatically uses Cloudflare KV and other bindings when deployed via NuxtHub.
 
 ---
 

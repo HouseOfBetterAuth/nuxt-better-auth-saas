@@ -15,7 +15,8 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@nuxtjs/seo',
     'nuxt-echarts',
-    ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : [])
+    ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
+    ...(process.env.NUXT_NITRO_PRESET !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
   i18n: {
     vueI18n: '~/i18n/i18n.config.ts',
@@ -89,6 +90,20 @@ export default defineNuxtConfig({
       // console.log(`\n`)
     }
   },
+  ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
+    ? {
+        hub: {
+          workers: true,
+          kv: true,
+          blob: true,
+          bindings: {
+            hyperdrive: {
+              HYPERDRIVE: process.env.NUXT_CF_HYPERDRIVE_ID as string
+            }
+          }
+        }
+      }
+    : {}),
   runtimeConfig: generateRuntimeConfig(),
   app: {
     head: {

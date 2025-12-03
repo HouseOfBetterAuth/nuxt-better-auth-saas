@@ -55,14 +55,11 @@ export const cacheClient = {
       const value = await client.get(key)
       return value
     } else {
-      // Use Cloudflare KV directly
-      // @ts-expect-error KV is available in Cloudflare Workers runtime
-      const kv = typeof KV !== 'undefined' ? KV : globalThis.KV
-      if (kv) {
-        const value = await kv.get(key)
-        return value
+      const value = await hubKV().get(key)
+      if (!value) {
+        return null
       }
-      return null
+      return JSON.stringify(value)
     }
   },
   set: async (key: string, value: string, ttl: number | undefined) => {
@@ -75,12 +72,10 @@ export const cacheClient = {
         await client.set(key, stringValue)
       }
     } else {
-      // Use Cloudflare KV directly
-      // @ts-expect-error KV is available in Cloudflare Workers runtime
-      const kv = typeof KV !== 'undefined' ? KV : globalThis.KV
-      if (kv) {
-        const putOptions = ttl ? { expirationTtl: ttl } : {}
-        await kv.put(key, stringValue, putOptions)
+      if (ttl) {
+        await hubKV().set(key, stringValue, { ttl })
+      } else {
+        await hubKV().set(key, stringValue)
       }
     }
   },
@@ -89,12 +84,7 @@ export const cacheClient = {
     if (client) {
       await client.del(key)
     } else {
-      // Use Cloudflare KV directly
-      // @ts-expect-error KV is available in Cloudflare Workers runtime
-      const kv = typeof KV !== 'undefined' ? KV : globalThis.KV
-      if (kv) {
-        await kv.delete(key)
-      }
+      await hubKV().del(key)
     }
   }
 }
