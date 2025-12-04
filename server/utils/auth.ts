@@ -34,12 +34,6 @@ const trustedOrigins = [
   runtimeConfig.public.baseURL
 ]
 
-if (process.env.NODE_ENV === 'production') {
-  console.log('[Auth] Better Auth NUXT_APP_URL (env):', process.env.NUXT_APP_URL)
-  console.log('[Auth] Better Auth runtimeConfig.public.baseURL:', runtimeConfig.public.baseURL)
-  console.log('[Auth] Better Auth trustedOrigins:', trustedOrigins)
-}
-
 export const createBetterAuth = () => betterAuth({
   baseURL: runtimeConfig.public.baseURL,
   trustedOrigins,
