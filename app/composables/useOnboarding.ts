@@ -1,5 +1,3 @@
-import type { AsyncData } from 'nuxt/app'
-
 interface OnboardingModalState {
   isOpen: boolean
 }
@@ -34,7 +32,7 @@ export function useOnboarding() {
     }
   })
 
-  const showOnboarding = () => {
+  const showOnboarding = async () => {
     modalState.value.isOpen = true
   }
 
@@ -42,7 +40,7 @@ export function useOnboarding() {
     modalState.value.isOpen = false
   }
 
-  const refreshOrganizations: AsyncData<any, any>['refresh'] = async () => {
+  const refreshOrganizations = async () => {
     await organizationsQuery.refresh()
   }
 

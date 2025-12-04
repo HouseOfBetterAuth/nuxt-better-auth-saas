@@ -75,7 +75,7 @@ watch(isOnboardingOpen, (open) => {
 })
 
 async function createTeam() {
-  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value)
+  if (!newTeamName.value.trim() || !newTeamSlug.value.trim() || slugError.value || isCheckingSlug.value)
     return
 
   creating.value = true
@@ -220,7 +220,7 @@ async function acceptInvite(inviteId: string, orgId?: string) {
               <UButton
                 block
                 :loading="creating"
-                :disabled="!newTeamName.trim() || !newTeamSlug.trim() || !!slugError"
+                :disabled="!newTeamName.trim() || !newTeamSlug.trim() || !!slugError || isCheckingSlug"
                 @click="createTeam"
               >
                 Create Team
@@ -280,7 +280,7 @@ async function acceptInvite(inviteId: string, orgId?: string) {
           v-else-if="!invitationsPending"
           icon="i-lucide-info"
           title="No invitations found"
-          description="If you're expecting an invite, double-check that it was sent to {{ user?.email }}."
+          :description="`If you're expecting an invite, double-check that it was sent to ${user?.email}.`"
         />
         <UAlert
           v-else

@@ -44,13 +44,13 @@ const isPro = computed(() => {
 
 // Check if we need to set an active org on mount
 onMounted(async () => {
-  if (!session.value?.activeOrganizationId) {
+  if (!(session.value as any)?.activeOrganizationId) {
     const { data } = await organization.list()
-    if (data && data.length > 0) {
+    if (data && data.length > 0 && data[0]?.id) {
       await organization.setActive({ organizationId: data[0].id })
       await fetchSession()
     } else {
-      showOnboarding()
+      await showOnboarding()
       await navigateTo('/')
     }
   }
@@ -193,7 +193,7 @@ const roles = [
       <UButton
         icon="i-lucide-refresh-cw"
         variant="ghost"
-        color="gray"
+        color="neutral"
         :loading="loading"
         @click="refreshPage"
       />

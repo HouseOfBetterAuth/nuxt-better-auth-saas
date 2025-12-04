@@ -75,7 +75,7 @@ async function leaveTeam() {
       window.location.href = `/${nextOrg.slug}/dashboard`
     } else {
       await fetchSession()
-      showOnboarding()
+      await showOnboarding()
       await navigateTo('/')
     }
   } catch (e: any) {
@@ -193,7 +193,7 @@ async function deleteTeam() {
     } else {
       // No teams left
       await fetchSession()
-      showOnboarding()
+      await showOnboarding()
       await navigateTo('/')
     }
   } catch (e: any) {
