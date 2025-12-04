@@ -434,8 +434,8 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 py-8">
-    <UContainer class="space-y-6">
+  <UContainer class="py-10">
+    <div class="max-w-5xl mx-auto space-y-8">
       <div class="space-y-1">
         <h1 class="text-3xl font-semibold">
           Integrations
@@ -715,6 +715,6 @@ if (import.meta.client) {
           class="h-16 rounded-lg border border-muted-200/70"
         />
       </div>
-    </UContainer>
-  </div>
+    </div>
+  </UContainer>
 </template>

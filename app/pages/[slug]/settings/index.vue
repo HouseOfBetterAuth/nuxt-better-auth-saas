@@ -204,127 +204,141 @@ async function deleteTeam() {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto py-8 px-4">
-    <h1 class="text-3xl font-semibold mb-8">
-      Organization settings
-    </h1>
-
-    <div
-      v-if="canUpdateSettings"
-      class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8"
-    >
-      <h2 class="text-xl font-semibold mb-4">
-        General information
-      </h2>
-      <p class="text-sm text-gray-500 mb-6">
-        For billing purposes you can use the organization ID below.
-      </p>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <UFormField label="Organization name">
-          <UInput v-model="teamName" />
-        </UFormField>
-        <UFormField label="Organization slug">
-          <UInput
-            v-model="teamSlug"
-            readonly
-            icon="i-lucide-link"
-          />
-        </UFormField>
+  <UContainer class="py-10">
+    <div class="max-w-5xl mx-auto space-y-8">
+      <div class="space-y-2">
+        <h1 class="text-3xl font-semibold">
+          Organization settings
+        </h1>
+        <p class="text-muted-500">
+          Manage your team details, access, and integrations from a single place.
+        </p>
       </div>
 
-      <UFormField
-        label="Organization ID"
-        class="mb-6"
+      <UCard
+        v-if="canUpdateSettings"
+        class="space-y-6"
       >
-        <div class="flex gap-2">
-          <UInput
-            :model-value="activeOrg?.data?.id"
-            readonly
-            class="flex-1 font-mono text-sm bg-gray-50 dark:bg-gray-800"
-          />
-          <UButton
-            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-            color="neutral"
-            variant="ghost"
-            @click="copyId"
-          />
-        </div>
-      </UFormField>
-
-      <UButton
-        label="Save"
-        color="primary"
-        :loading="loading"
-        @click="updateTeam"
-      />
-    </div>
-
-    <div
-      v-if="canUpdateSettings"
-      class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 bg-white dark:bg-gray-900 mb-8"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 class="text-xl font-semibold mb-2">
-            Integrations
+        <div class="space-y-1">
+          <h2 class="text-xl font-semibold">
+            General information
           </h2>
-          <p class="text-sm text-gray-500">
-            Manage YouTube access and future provider connections for automated ingest.
+          <p class="text-sm text-muted-500">
+            For billing purposes you can use the organization ID below.
           </p>
         </div>
-        <UButton
-          color="primary"
-          icon="i-lucide-arrow-up-right"
-          :to="`/${slug}/settings/integrations`"
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <UFormField label="Organization name">
+            <UInput v-model="teamName" />
+          </UFormField>
+          <UFormField label="Organization slug">
+            <UInput
+              v-model="teamSlug"
+              readonly
+              icon="i-lucide-link"
+            />
+          </UFormField>
+        </div>
+
+        <UFormField label="Organization ID">
+          <div class="flex gap-2">
+            <UInput
+              :model-value="activeOrg?.data?.id"
+              readonly
+              class="flex-1 font-mono text-sm bg-gray-50 dark:bg-gray-800"
+            />
+            <UButton
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+              color="neutral"
+              variant="ghost"
+              @click="copyId"
+            />
+          </div>
+        </UFormField>
+
+        <div class="flex justify-end">
+          <UButton
+            label="Save"
+            color="primary"
+            :loading="loading"
+            @click="updateTeam"
+          />
+        </div>
+      </UCard>
+
+      <UCard
+        v-if="canUpdateSettings"
+        class="space-y-4"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="space-y-1">
+            <h2 class="text-xl font-semibold">
+              Integrations
+            </h2>
+            <p class="text-sm text-muted-500">
+              Manage YouTube access and future provider connections for automated ingest.
+            </p>
+          </div>
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-up-right"
+            :to="`/${slug}/settings/integrations`"
+          >
+            Manage integrations
+          </UButton>
+        </div>
+      </UCard>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <UCard
+          v-if="canLeaveTeam"
+          class="border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10"
         >
-          Manage integrations
-        </UButton>
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold text-red-600 dark:text-red-400">
+              Leave organization
+            </h2>
+            <p class="text-sm text-muted-500">
+              Revoke your access to this organization. You will need to be re-invited to join again.
+            </p>
+            <UButton
+              color="error"
+              variant="outline"
+              icon="i-lucide-log-out"
+              :loading="leaveLoading"
+              class="cursor-pointer"
+              @click="leaveTeam"
+            >
+              Leave Team
+            </UButton>
+          </div>
+        </UCard>
+
+        <UCard
+          v-if="canDeleteTeam"
+          class="border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10"
+        >
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold text-red-600 dark:text-red-400">
+              Delete organization
+            </h2>
+            <p class="text-sm text-muted-500">
+              Once you delete a team, there is no going back. Please be certain.
+            </p>
+            <UButton
+              color="error"
+              variant="outline"
+              icon="i-lucide-trash-2"
+              :loading="deleteLoading"
+              class="cursor-pointer"
+              @click="deleteTeam"
+            >
+              Delete Team
+            </UButton>
+          </div>
+        </UCard>
       </div>
     </div>
-
-    <div
-      v-if="canLeaveTeam"
-      class="border border-red-200 dark:border-red-900/50 rounded-lg p-6 bg-red-50/50 dark:bg-red-900/10 mb-8"
-    >
-      <h2 class="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">
-        Leave organization
-      </h2>
-      <p class="text-sm text-gray-500 mb-6">
-        Revoke your access to this organization. You will need to be re-invited to join again.
-      </p>
-      <UButton
-        color="error"
-        variant="outline"
-        icon="i-lucide-log-out"
-        :loading="leaveLoading"
-        class="cursor-pointer"
-        @click="leaveTeam"
-      >
-        Leave Team
-      </UButton>
-    </div>
-
-    <div
-      v-if="canDeleteTeam"
-      class="border border-red-200 dark:border-red-900/50 rounded-lg p-6 bg-red-50/50 dark:bg-red-900/10"
-    >
-      <h2 class="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">
-        Delete organization
-      </h2>
-      <p class="text-sm text-gray-500 mb-6">
-        Once you delete a team, there is no going back. Please be certain.
-      </p>
-      <UButton
-        color="error"
-        variant="outline"
-        icon="i-lucide-trash-2"
-        :loading="deleteLoading"
-        class="cursor-pointer"
-        @click="deleteTeam"
-      >
-        Delete Team
-      </UButton>
-    </div>
-  </div>
+  </UContainer>
 </template>
