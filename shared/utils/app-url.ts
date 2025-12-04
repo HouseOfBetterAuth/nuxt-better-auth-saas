@@ -27,13 +27,14 @@ export const getAppUrl = (): string => {
   }
 
   if (nodeEnv === 'production') {
-    const url = process.env.NUXT_APP_URL
-    if (!url) {
-      throw new Error('NUXT_APP_URL must be set in production environment')
-    }
+    // In production, use NUXT_APP_URL (should be https://getquillio.com)
+    // Fallback to getquillio.com if not set (though it should always be set)
+    const url = process.env.NUXT_APP_URL || 'https://getquillio.com'
     assertValidProductionUrl(url)
     return url
   }
 
-  return process.env.NUXT_APP_URL || 'http://localhost:3000'
+  // In development, always use localhost:3000 regardless of NUXT_APP_URL
+  // This ensures OAuth callbacks work correctly in local development
+  return 'http://localhost:3000'
 }
