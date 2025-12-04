@@ -21,20 +21,28 @@ if (runtimeConfig.public.appEnv === 'development') {
   console.log('Schema keys:', Object.keys(schema))
 }
 
+const trustedOrigins = [
+  'http://localhost:8787',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:4000',
+  'http://127.0.0.1:8787',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4000',
+  runtimeConfig.public.baseURL
+]
+
+if (process.env.NODE_ENV === 'production') {
+  console.log('[Auth] Better Auth NUXT_APP_URL (env):', process.env.NUXT_APP_URL)
+  console.log('[Auth] Better Auth runtimeConfig.public.baseURL:', runtimeConfig.public.baseURL)
+  console.log('[Auth] Better Auth trustedOrigins:', trustedOrigins)
+}
+
 export const createBetterAuth = () => betterAuth({
   baseURL: runtimeConfig.public.baseURL,
-  trustedOrigins: [
-    'http://localhost:8787',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:4000',
-    'http://127.0.0.1:8787',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:4000',
-    runtimeConfig.public.baseURL
-  ],
+  trustedOrigins,
   secret: runtimeConfig.betterAuthSecret,
   session: {
     cookieCache: {
