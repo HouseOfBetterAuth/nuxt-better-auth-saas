@@ -24,11 +24,7 @@ const promptSubmitting = ref(false)
 const createDraftLoading = ref(false)
 const createDraftError = ref<string | null>(null)
 const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
-const quickActionsState = reactive({
-  transcript: false
-})
 const linkedSources = ref<Array<{ id: string, type: 'transcript', value: string }>>([])
-const toolSubmitLoading = ref<'transcript' | null>(null)
 
 const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = ref<any | null>(null)
@@ -86,7 +82,6 @@ const contentEntries = computed(() => {
   })
 })
 
-const hasContent = computed(() => contentEntries.value.length > 0)
 const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
 const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceActive.value && !workspaceDetail.value)
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
@@ -102,6 +97,11 @@ const createDraftCta = computed(() => {
 const handlePromptSubmit = async () => {
   const trimmed = prompt.value.trim()
   if (!trimmed) {
+    return
+  }
+  const transcriptHandled = await maybeHandleTranscriptSubmission(trimmed)
+  if (transcriptHandled) {
+    prompt.value = ''
     return
   }
   promptSubmitting.value = true
@@ -131,18 +131,39 @@ function addLinkedSource(entry: { type: 'transcript', value: string }) {
   ]
 }
 
-const handleTranscriptTool = async (payload: { text: string }) => {
+const transcriptPrefixPattern = /^transcript attachment:\s*/i
+
+function shouldTreatAsTranscript(input: string) {
+  const value = input.trim()
+  if (!value) {
+    return false
+  }
+  if (transcriptPrefixPattern.test(value)) {
+    return true
+  }
+  const timestampMatches = value.match(/\b\d{2}:\d{2}:\d{2}\b/g)?.length ?? 0
+  const hashHeadingMatches = value.split(/\n+/).filter(line => line.trim().startsWith('#')).length
+  return value.length > 800 && (timestampMatches >= 3 || hashHeadingMatches >= 2)
+}
+
+function extractTranscriptBody(input: string) {
+  return input.replace(transcriptPrefixPattern, '').trim()
+}
+
+async function submitTranscript(text: string) {
+  if (!text) {
+    return
+  }
   const transcriptMessage = [
     'Transcript attachment:',
-    payload.text
+    text
   ].join('\n\n')
-  const summary = `Transcript attached (${payload.text.length.toLocaleString()} characters)`
+  const summary = `Transcript attached (${text.length.toLocaleString()} characters)`
 
-  toolSubmitLoading.value = 'transcript'
+  promptSubmitting.value = true
   try {
     await sendMessage(transcriptMessage, { displayContent: summary })
-    addLinkedSource({ type: 'transcript', value: payload.text })
-    quickActionsState.transcript = false
+    addLinkedSource({ type: 'transcript', value: text })
   } catch (error: any) {
     console.error('Failed to send transcript message', error)
     const errorMsg = error?.data?.message || error?.message || 'Unable to send transcript. Please try again.'
@@ -153,8 +174,17 @@ const handleTranscriptTool = async (payload: { text: string }) => {
       createdAt: new Date()
     })
   } finally {
-    toolSubmitLoading.value = null
+    promptSubmitting.value = false
   }
+}
+
+async function maybeHandleTranscriptSubmission(raw: string) {
+  if (!shouldTreatAsTranscript(raw)) {
+    return false
+  }
+  const text = extractTranscriptBody(raw)
+  await submitTranscript(text || raw.trim())
+  return true
 }
 
 function removeLinkedSource(id: string) {
@@ -309,32 +339,12 @@ if (import.meta.client) {
           What should we write next?
         </h1>
 
-        <!-- Empty state: Context-first flow with clear action buttons -->
+        <!-- Empty state helper -->
         <div
           v-if="!messages.length"
-          class="space-y-4 w-full"
+          class="text-sm text-muted-500 text-center"
         >
-          <div class="flex flex-wrap items-center justify-center gap-3 w-full">
-            <UButton
-              size="lg"
-              variant="soft"
-              color="primary"
-              icon="i-lucide-file-text"
-              :disabled="toolSubmitLoading !== null"
-              @click="quickActionsState.transcript = !quickActionsState.transcript"
-            >
-              Paste transcript
-            </UButton>
-          </div>
-
-          <!-- Tools appear when buttons are clicked -->
-          <div class="w-full space-y-3">
-            <ToolTranscript
-              v-model:open="quickActionsState.transcript"
-              :loading="toolSubmitLoading === 'transcript'"
-              @submit="handleTranscriptTool"
-            />
-          </div>
+          Paste a YouTube transcript directly into the chat input below or describe what you need.
         </div>
       </div>
       <div class="space-y-6">
@@ -424,38 +434,11 @@ if (import.meta.client) {
             </div>
 
             <!-- Add more information -->
-            <div
-              v-if="messages.length"
-              class="flex flex-wrap items-center gap-2"
-            >
-              <UButton
-                size="sm"
-                variant="soft"
-                color="primary"
-                icon="i-lucide-file-text"
-                @click="quickActionsState.transcript = !quickActionsState.transcript"
-              >
-                Paste transcript
-              </UButton>
-            </div>
-
-            <!-- Tools appear here when clicked (only when messages exist) -->
-            <div
-              v-if="messages.length"
-              class="w-full space-y-3"
-            >
-              <ToolTranscript
-                v-model:open="quickActionsState.transcript"
-                :loading="toolSubmitLoading === 'transcript'"
-                @submit="handleTranscriptTool"
-              />
-            </div>
-
             <!-- Main chat input -->
             <div class="flex flex-col gap-3 sm:flex-row w-full">
               <UChatPrompt
                 v-model="prompt"
-                placeholder="Describe what you need..."
+                placeholder="Paste a transcript or describe what you need..."
                 variant="subtle"
                 :disabled="isBusy || promptSubmitting"
                 class="flex-1 w-full"
@@ -508,7 +491,6 @@ if (import.meta.client) {
       <ChatDraftsList
         v-if="!isWorkspaceActive"
         :drafts-pending="draftsPending"
-        :has-content="hasContent"
         :content-entries="contentEntries"
         @open-workspace="openWorkspace"
       />
