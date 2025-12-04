@@ -2,6 +2,7 @@
 
 <script setup lang="ts">
 import { useDebounceFn } from '@vueuse/core'
+import { useSidebarCollapse } from '~/composables/useSidebarCollapse'
 import SearchPalette from './components/SearchPalette.vue'
 import { getUserMenus } from './menu'
 
@@ -14,8 +15,7 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const localePath = useLocalePath()
-const isCollapsed = ref(false)
-const runtimeConfig = useRuntimeConfig()
+const { isCollapsed, toggle } = useSidebarCollapse()
 
 // Fetch organization data with SSR to ensure members data is available for canManageTeam
 // SSR-only to prevent flicker on page load
@@ -332,16 +332,14 @@ watch([needsUpgrade, () => route.path], ([upgradeNeeded, currentPath]) => {
 defineShortcuts({
   'g-1': () => router.push(localePath(`/${activeOrgSlug.value}/dashboard`))
 })
-const pathNameItemMap: StringDict<NavigationMenuItem> = {}
 const pathNameParentMap: StringDict<NavigationMenuItem | undefined> = {}
 
 // Pass user role to menu instead of boolean flags
-const menus = computed(() => getUserMenus(t, localePath, runtimeConfig.public.appRepo, activeOrgSlug.value, currentUserRole.value, needsUpgrade.value))
+const menus = computed(() => getUserMenus(localePath, activeOrgSlug.value, currentUserRole.value, needsUpgrade.value))
 
 const menuIterator = (menus: NavigationMenuItem[], parent?: NavigationMenuItem) => {
   for (const menu of menus) {
     const to = `${menu.to}`
-    pathNameItemMap[to] = menu!
     pathNameParentMap[to] = parent
     if (menu.to == route.path) {
       if (pathNameParentMap[to]) {
@@ -475,6 +473,18 @@ async function createTeam() {
           <SearchPalette
             :collapsed="isCollapsed"
             :t="t"
+          />
+        </div>
+        <div
+          class="flex justify-end mb-2"
+          :class="{ 'pl-2 pr-2': !isCollapsed }"
+        >
+          <UButton
+            :icon="isCollapsed ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'"
+            class="w-8 h-8"
+            color="neutral"
+            variant="ghost"
+            @click="toggle()"
           />
         </div>
         <UNavigationMenu
@@ -623,15 +633,6 @@ async function createTeam() {
               </div>
             </template>
           </UDrawer>
-          <UButton
-            :icon="isCollapsed ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'"
-            class="w-8 h-8 hidden sm:block"
-            color="neutral"
-            variant="ghost"
-            @click="isCollapsed = !isCollapsed"
-          />
-          <title>{{ pathNameItemMap[$route.path]?.label }}</title>
-          <h1>{{ pathNameItemMap[$route.path]?.label }} </h1>
           <slot name="navLeft" />
         </template>
         <template #middle>
@@ -639,10 +640,6 @@ async function createTeam() {
         </template>
         <template #right>
           <slot name="navRight" />
-          <LocaleToggler />
-          <ClientOnly>
-            <ColorModeToggler />
-          </ClientOnly>
         </template>
       </FlexThreeColumn>
 
