@@ -47,7 +47,7 @@ const clickSignOut = () => {
 <template>
   <div>
     <aside
-      class="fixed top-0 left-0 transition-all duration-300 hidden sm:block"
+      class="fixed top-0 left-0 transition-all duration-300 hidden"
       :class="[isCollapsed ? 'w-15' : 'w-64']"
     >
       <div class="h-screen flex flex-col px-3 py-4 bg-neutral-100 dark:bg-neutral-800">
@@ -140,12 +140,10 @@ const clickSignOut = () => {
     </aside>
     <div
       class="p-2 h-screen bg-white dark:bg-neutral-900 transition-all duration-300 overflow-hidden flex flex-col"
-      :class="[isCollapsed ? 'sm:ml-15' : 'sm:ml-64']"
     >
       <FlexThreeColumn class="mb-2 flex-none">
         <template #left>
           <UDrawer
-            class="sm:hidden"
             direction="left"
             as="aside"
             :handle="false"

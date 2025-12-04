@@ -688,7 +688,7 @@ async function confirmPlanChange() {
 
     <!-- Current Plan Section -->
     <UCard>
-      <div class="flex flex-col md:flex-row gap-6 justify-between">
+      <div class="flex flex-col gap-6 justify-between">
         <div>
           <div class="flex items-center gap-3 mb-2">
             <h2 class="text-xl font-bold">
@@ -925,14 +925,14 @@ async function confirmPlanChange() {
     <!-- Upgrade Section (Only show if free) -->
     <div
       v-if="currentPlan === 'free'"
-      class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 border border-primary/20 p-6 md:p-8"
+      class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 border border-primary/20 p-6"
     >
       <!-- Background decoration -->
       <div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
 
       <div class="relative">
         <!-- Header with toggle -->
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div class="flex flex-col gap-4 mb-6">
           <div>
             <div class="flex items-center gap-2 mb-1">
               <UIcon
@@ -974,7 +974,7 @@ async function confirmPlanChange() {
         <!-- Pricing Card -->
         <div class="bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div class="p-6">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div class="flex flex-col gap-6">
               <!-- Price Section -->
               <div class="flex-shrink-0">
                 <div class="flex items-baseline gap-1">
@@ -1003,7 +1003,7 @@ async function confirmPlanChange() {
                   :label="hasUsedTrial ? 'Upgrade to Pro' : 'Start Free Trial'"
                   color="primary"
                   :loading="loading"
-                  class="cursor-pointer w-full md:w-auto px-8"
+                  class="cursor-pointer w-full px-8"
                   @click="handleUpgrade"
                 >
                   <template #trailing>
@@ -1019,7 +1019,7 @@ async function confirmPlanChange() {
             <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
               Everything you need to grow
             </p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 gap-3">
               <div
                 v-for="(feature, i) in activePlan.features"
                 :key="i"

@@ -355,17 +355,17 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full py-6 sm:py-8 lg:py-12 space-y-6 sm:space-y-8">
-    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="w-full py-6 space-y-6">
+    <div class="max-w-3xl mx-auto px-4">
       <div
         v-if="!isWorkspaceActive"
-        class="space-y-4 sm:space-y-6"
+        class="space-y-4"
       >
-        <h1 class="text-xl sm:text-2xl lg:text-3xl font-semibold text-center">
+        <h1 class="text-2xl font-semibold text-center">
           What should we write next?
         </h1>
       </div>
-      <div class="space-y-6 sm:space-y-8">
+      <div class="space-y-6">
         <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
         <UAlert
           v-if="errorMessage && !messages.length"
@@ -405,18 +405,18 @@ if (import.meta.client) {
         <template v-else>
           <div
             v-if="messages.length"
-            class="space-y-4 sm:space-y-6 w-full"
+            class="space-y-4 w-full"
           >
             <div class="w-full">
               <div
                 v-if="isStreaming"
-                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4 sm:mb-6"
+                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
               >
                 <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
                 <span>Quillio is thinking...</span>
               </div>
 
-              <div class="min-h-[250px] sm:min-h-[300px]">
+              <div class="min-h-[250px]">
                 <UChatMessages
                   :messages="messages"
                   :status="uiStatus"
@@ -465,7 +465,7 @@ if (import.meta.client) {
             </div>
           </div>
 
-          <div class="w-full space-y-4 sm:space-y-6">
+          <div class="w-full space-y-4">
             <!-- Show linked sources if any -->
             <div
               v-if="linkedSources.length"
@@ -493,7 +493,7 @@ if (import.meta.client) {
 
             <!-- Add more information -->
             <!-- Main chat input -->
-            <div class="flex flex-col gap-3 sm:gap-4 sm:flex-row w-full">
+            <div class="flex flex-col gap-3 w-full">
               <UChatPrompt
                 v-model="prompt"
                 placeholder="Paste a transcript or describe what you need..."
@@ -509,7 +509,7 @@ if (import.meta.client) {
                 v-model="selectedContentType"
                 :items="CONTENT_TYPE_OPTIONS"
                 value-key="value"
-                class="w-full sm:w-[160px]"
+                class="w-full"
                 size="md"
               />
             </div>

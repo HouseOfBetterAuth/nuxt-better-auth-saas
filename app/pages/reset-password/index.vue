@@ -61,7 +61,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 </script>
 
 <template>
-  <UContainer class="flex items-center justify-center sm:p-4 sm:min-w-160">
+  <UContainer class="flex items-center justify-center">
     <UCard class="w-full max-w-md">
       <template #header>
         <div class="text-center p-4">

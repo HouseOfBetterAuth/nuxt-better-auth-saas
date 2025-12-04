@@ -691,7 +691,7 @@ onBeforeUnmount(() => {
           :description="chatErrorMessage"
         />
 
-        <UContainer class="flex-1 flex flex-col gap-4 sm:gap-6">
+        <UContainer class="flex-1 flex flex-col gap-4">
           <UChatMessages
             :messages="displayMessages"
             :status="uiStatus"
@@ -877,7 +877,7 @@ onBeforeUnmount(() => {
                 {{ frontmatter?.description || '—' }}
               </p>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Content type
@@ -895,7 +895,7 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Primary keyword
@@ -960,7 +960,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <div class="space-y-4 text-sm">
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Plan title
@@ -1005,7 +1005,7 @@ onBeforeUnmount(() => {
                 </UBadge>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Primary keyword
@@ -1033,7 +1033,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <div class="space-y-4 text-sm">
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Engine
@@ -1071,7 +1071,7 @@ onBeforeUnmount(() => {
                 </UBadge>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Source type
@@ -1089,7 +1089,7 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Source status

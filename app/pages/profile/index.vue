@@ -54,7 +54,7 @@ onMounted(() => {
           </UButton>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-4">
           <div class="space-y-2">
             <p class="flex justify-between">
               <span class="text-neutral-500 dark:text-neutral-400">{{ t('profile.role') }}:</span>

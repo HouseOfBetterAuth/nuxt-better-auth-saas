@@ -319,7 +319,7 @@ async function handleUpgrade() {
       <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Invite a team member</label>
 
       <!-- Desktop: Single row layout -->
-      <div class="hidden sm:flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 transition-all">
+      <div class="hidden items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 transition-all">
         <!-- Email Input -->
         <div class="flex-1 flex items-center gap-2 pl-2">
           <UIcon
@@ -385,7 +385,7 @@ async function handleUpgrade() {
       </div>
 
       <!-- Mobile: Stacked layout -->
-      <div class="sm:hidden space-y-3">
+      <div class="space-y-3">
         <!-- Email Input -->
         <div class="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 transition-all">
           <UIcon

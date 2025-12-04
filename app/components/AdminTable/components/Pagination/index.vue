@@ -18,7 +18,7 @@ const sizes = [5, 20, 50, 100]
 </script>
 
 <template>
-  <div class="w-full flex flex-col sm:flex-row items-center justify-between py-2 text-sm text-muted border-t border-accented">
+  <div class="w-full flex flex-col items-center justify-between py-2 text-sm text-muted border-t border-accented">
     <div class="px-4">
       <span
         v-if="canSelect"
@@ -32,7 +32,7 @@ const sizes = [5, 20, 50, 100]
       v-if="!hidePagination"
       class="flex items-center"
     >
-      <span class="ml-4 mr-1 text-sm hidden sm:block">{{ t('pagination.rowsPerPage') }}</span>
+      <span class="ml-4 mr-1 text-sm hidden">{{ t('pagination.rowsPerPage') }}</span>
       <USelect
         v-model="limit"
         :items="sizes"

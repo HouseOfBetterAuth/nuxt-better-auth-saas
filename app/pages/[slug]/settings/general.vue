@@ -7,7 +7,7 @@ definePageMeta({
 <template>
   <UContainer class="py-10">
     <div class="max-w-5xl mx-auto space-y-8">
-      <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div class="flex flex-col gap-4">
         <div class="space-y-1">
           <h1 class="text-3xl font-semibold">
             General
