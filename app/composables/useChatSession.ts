@@ -191,7 +191,9 @@ export function useChatSession() {
 
     return await callChatEndpoint({
       message: trimmed,
-      contentId: options?.contentId || sessionContentId.value || undefined,
+      contentId: options?.contentId !== undefined
+        ? options.contentId
+        : (sessionContentId.value || undefined),
       action: options?.action
     })
   }
@@ -228,7 +230,7 @@ export function useChatSession() {
     if (workspace?.content?.id) {
       hydrateSession({
         sessionId: workspace.chatSession?.id ?? null,
-        sessionContentId: workspace.chatSession?.contentId ?? workspace.content.id,
+        sessionContentId: workspace.chatSession?.sourceContentId ?? workspace.content.id,
         messages: workspace.chatMessages,
         logs: workspace.chatLogs
       })

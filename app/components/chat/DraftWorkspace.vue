@@ -257,7 +257,7 @@ watch(content, (value) => {
 
   hydrateSession({
     sessionId: value.chatSession?.id ?? sessionId.value,
-    sessionContentId: value.chatSession?.contentId ?? value.content.id,
+    sessionContentId: value.chatSession?.sourceContentId ?? value.content.id,
     messages: value.chatMessages ?? undefined,
     logs: value.chatLogs ?? undefined
   })
