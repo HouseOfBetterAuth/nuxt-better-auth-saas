@@ -3,7 +3,7 @@ import type { ContentType } from '#shared/constants/contentTypes'
 import type { ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { ANONYMOUS_DRAFT_LIMIT } from '#shared/constants/limits'
-import { useClipboard, useLocalStorage } from '@vueuse/core'
+import { useClipboard } from '@vueuse/core'
 
 const router = useRouter()
 const route = useRoute()

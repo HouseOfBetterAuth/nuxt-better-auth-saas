@@ -10,6 +10,36 @@ declare module '@nuxt/schema' {
 
 let runtimeConfigInstance: NitroRuntimeConfig
 
+/**
+ * Determines the correct app URL based on environment
+ * - Test: Uses NUXT_TEST_APP_URL
+ * - Development: Defaults to http://localhost:3000 if NUXT_APP_URL not set
+ * - Production: Requires NUXT_APP_URL to be set (fails if localhost)
+ */
+const getAppUrl = (): string => {
+  const nodeEnv = process.env.NODE_ENV || 'development'
+
+  // Test environment: use test URL
+  if (nodeEnv === 'test') {
+    return process.env.NUXT_TEST_APP_URL || 'http://localhost:3000'
+  }
+
+  // Production: require explicit URL and prevent localhost
+  if (nodeEnv === 'production') {
+    const url = process.env.NUXT_APP_URL
+    if (!url) {
+      throw new Error('NUXT_APP_URL must be set in production environment')
+    }
+    if (url.includes('localhost') || url.includes('127.0.0.1')) {
+      throw new Error('NUXT_APP_URL cannot be localhost in production. Set it to your production URL.')
+    }
+    return url
+  }
+
+  // Development: use NUXT_APP_URL if set, otherwise default to localhost
+  return process.env.NUXT_APP_URL || 'http://localhost:3000'
+}
+
 export const generateRuntimeConfig = () => ({
   preset: process.env.NUXT_NITRO_PRESET,
   betterAuthSecret: process.env.NUXT_BETTER_AUTH_SECRET,
@@ -68,7 +98,7 @@ export const generateRuntimeConfig = () => ({
     }
   } satisfies FileManagerConfig,
   public: {
-    baseURL: process.env.NUXT_APP_URL,
+    baseURL: getAppUrl(),
     appName: process.env.NUXT_APP_NAME,
     appEnv: process.env.NODE_ENV,
     appRepo: process.env.NUXT_APP_REPO,
