@@ -202,11 +202,19 @@ async function loadHeaderData() {
     return
   }
 
+  // Capture current contentId to prevent stale responses
+  const currentContentId = contentId.value
+
   // Check cache first (from drafts list)
   const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
-  const cached = draftsListCache.value.get(contentId.value)
+  const cached = draftsListCache.value.get(currentContentId)
 
   if (cached) {
+    // Verify contentId hasn't changed before updating state
+    if (contentId.value !== currentContentId) {
+      return
+    }
+
     // Use cached data immediately - no API call needed!
     const updatedAt = cached.content?.updatedAt
     const updatedAtLabel = updatedAt
@@ -221,6 +229,11 @@ async function loadHeaderData() {
     const seoTitle = cached.currentVersion?.frontmatter?.seoTitle
     const frontmatterTitle = cached.currentVersion?.frontmatter?.title
     const displayTitle = seoTitle || frontmatterTitle || title
+
+    // Verify again before setting state
+    if (contentId.value !== currentContentId) {
+      return
+    }
 
     headerData.value = {
       title: displayTitle,
@@ -245,14 +258,21 @@ async function loadHeaderData() {
       additions: number
       deletions: number
     }>('/api/chat/workspace-header', {
-      query: { contentId: contentId.value }
+      query: { contentId: currentContentId }
     })
-    headerData.value = header
+
+    // Verify contentId hasn't changed before updating state
+    if (contentId.value === currentContentId) {
+      headerData.value = header
+    }
   } catch (err: any) {
     // Header load failure is non-critical, continue with full load
     console.warn('Failed to load header data', err)
   } finally {
-    headerPending.value = false
+    // Only update pending state if this is still the current request
+    if (contentId.value === currentContentId) {
+      headerPending.value = false
+    }
   }
 }
 
