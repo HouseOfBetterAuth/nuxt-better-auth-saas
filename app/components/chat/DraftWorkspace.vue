@@ -579,6 +579,11 @@ function handleRegenerate(message: ChatMessage) {
     const fallbackSectionId = sections.value[0]?.id
     if (fallbackSectionId) {
       setActiveSection(fallbackSectionId)
+      toast.add({
+        title: 'Section auto-selected',
+        description: `Regenerating content for “${sections.value[0]?.title || 'Untitled section'}”.`,
+        color: 'info'
+      })
     } else {
       toast.add({
         title: 'Select a section',

@@ -1,8 +1,9 @@
-const LOOPBACK_HOSTS = new Set(['localhost', '::1', '0.0.0.0'])
+const LOOPBACK_HOSTS = new Set(['localhost', '::1'])
+const INVALID_PRODUCTION_HOSTS = new Set(['0.0.0.0'])
 const IPV4_LOOPBACK_REGEX = /^127(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
 
-const isLoopbackHostname = (hostname: string) => {
-  return LOOPBACK_HOSTS.has(hostname) || IPV4_LOOPBACK_REGEX.test(hostname)
+const isInvalidProductionHostname = (hostname: string) => {
+  return LOOPBACK_HOSTS.has(hostname) || INVALID_PRODUCTION_HOSTS.has(hostname) || IPV4_LOOPBACK_REGEX.test(hostname)
 }
 
 const assertValidProductionUrl = (value: string) => {
@@ -13,8 +14,8 @@ const assertValidProductionUrl = (value: string) => {
     throw new Error(`NUXT_APP_URL must be a valid absolute URL. Received: ${value}`)
   }
 
-  if (isLoopbackHostname(parsed.hostname)) {
-    throw new Error('NUXT_APP_URL cannot be a localhost/loopback address in production.')
+  if (isInvalidProductionHostname(parsed.hostname)) {
+    throw new Error('NUXT_APP_URL cannot be a localhost/loopback/wildcard address in production.')
   }
 }
 
