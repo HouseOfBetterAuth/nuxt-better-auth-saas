@@ -21,7 +21,8 @@ interface ChatResponse {
   messages?: Array<{
     id: string
     role: 'user' | 'assistant' | 'system'
-    content: string
+    content?: string
+    parts?: Array<{ type: 'text', text: string }>
     createdAt: string | Date
     payload?: Record<string, any> | null
   }>
@@ -58,7 +59,9 @@ function normalizeMessages(list: ChatResponse['messages']) {
     .map(message => ({
       id: message.id || createId(),
       role: message.role as ChatMessage['role'],
-      content: message.content,
+      parts: Array.isArray(message.parts) && message.parts.length > 0
+        ? message.parts
+        : [{ type: 'text', text: message.content || '' }],
       createdAt: toDate(message.createdAt),
       payload: message.payload ?? null
     }))
@@ -142,7 +145,7 @@ export function useChatSession() {
           {
             id: createId(),
             role: 'assistant',
-            content: response.assistantMessage,
+            parts: [{ type: 'text', text: response.assistantMessage }],
             createdAt: new Date()
           }
         ]
@@ -165,7 +168,7 @@ export function useChatSession() {
       messages.value.push({
         id: createId(),
         role: 'assistant',
-        content: `❌ Error: ${errorMsg}`,
+        parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
         createdAt: new Date()
       })
 
@@ -182,7 +185,7 @@ export function useChatSession() {
     messages.value.push({
       id: createId(),
       role: 'user',
-      content: options?.displayContent?.trim() || trimmed,
+      parts: [{ type: 'text', text: options?.displayContent?.trim() || trimmed }],
       createdAt: new Date()
     })
 
@@ -233,7 +236,7 @@ export function useChatSession() {
       messages.value.push({
         id: createId(),
         role: 'assistant',
-        content: messageContent,
+        parts: [{ type: 'text', text: messageContent }],
         createdAt: new Date()
       })
 
@@ -247,7 +250,7 @@ export function useChatSession() {
       messages.value.push({
         id: createId(),
         role: 'assistant',
-        content: `❌ Error: ${errorMsg}`,
+        parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
         createdAt: new Date()
       })
     }

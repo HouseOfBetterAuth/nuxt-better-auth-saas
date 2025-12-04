@@ -8,7 +8,7 @@ export type ChatRole = 'user' | 'assistant'
 export interface ChatMessage {
   id: string
   role: ChatRole
-  content: string
+  parts: Array<{ type: 'text', text: string }>
   createdAt: Date
   payload?: Record<string, any> | null
 }

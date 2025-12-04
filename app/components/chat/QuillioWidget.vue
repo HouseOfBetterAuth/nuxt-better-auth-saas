@@ -3,6 +3,7 @@ import type { ContentType } from '#shared/constants/contentTypes'
 import type { ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { ANONYMOUS_DRAFT_LIMIT } from '#shared/constants/limits'
+import { useClipboard, useLocalStorage } from '@vueuse/core'
 
 const router = useRouter()
 const route = useRoute()
@@ -25,6 +26,8 @@ const createDraftLoading = ref(false)
 const createDraftError = ref<string | null>(null)
 const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
 const linkedSources = ref<Array<{ id: string, type: 'transcript', value: string }>>([])
+const { copy } = useClipboard()
+const toast = useToast()
 
 const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = ref<any | null>(null)
@@ -103,6 +106,7 @@ const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => e
 const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceActive.value && !workspaceDetail.value)
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
+const uiStatus = computed(() => status.value === 'idle' ? 'ready' : status.value)
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
@@ -111,8 +115,9 @@ const createDraftCta = computed(() => {
   return loggedIn.value ? 'Create draft' : `Save draft (${remainingAnonDrafts.value} left)`
 })
 
-const handlePromptSubmit = async () => {
-  const trimmed = prompt.value.trim()
+const handlePromptSubmit = async (value?: string) => {
+  const input = typeof value === 'string' ? value : prompt.value
+  const trimmed = input.trim()
   if (!trimmed) {
     return
   }
@@ -285,7 +290,7 @@ const handleCreateDraft = async () => {
     const firstUserMessage = messages.value.find(message => message.role === 'user')
     const fallbackTitle = 'Quillio draft'
     const response = await createContentFromConversation({
-      title: firstUserMessage?.content?.slice(0, 80) || fallbackTitle,
+      title: firstUserMessage?.parts?.[0]?.text?.slice(0, 80) || fallbackTitle,
       contentType: selectedContentType.value,
       messageIds: messages.value.map(message => message.id)
     })
@@ -302,7 +307,7 @@ const handleCreateDraft = async () => {
     messages.value.push({
       id: createLocalId(),
       role: 'assistant',
-      content: `❌ Error: ${errorMsg}`,
+      parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
       createdAt: new Date()
     })
   } finally {
@@ -327,8 +332,19 @@ const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value) {
     return
   }
-  prompt.value = message.content
-  await handlePromptSubmit()
+  const text = message.parts[0]?.text || ''
+  prompt.value = text
+  await handlePromptSubmit(text)
+}
+
+function handleCopy(message: ChatMessage) {
+  const text = message.parts[0]?.text || ''
+  copy(text)
+  toast.add({
+    title: 'Copied to clipboard',
+    description: 'Message copied successfully.',
+    color: 'primary'
+  })
 }
 
 if (import.meta.client) {
@@ -409,10 +425,50 @@ if (import.meta.client) {
               </div>
 
               <div class="min-h-[200px]">
-                <ChatMessagesList
+                <UChatMessages
                   :messages="messages"
-                  @regenerate="handleRegenerate"
-                />
+                  :status="uiStatus"
+                  should-auto-scroll
+                  :assistant="{
+                    actions: [
+                      {
+                        label: 'Copy',
+                        icon: 'i-lucide-copy',
+                        onClick: (e, message) => handleCopy(message as ChatMessage)
+                      },
+                      {
+                        label: 'Regenerate',
+                        icon: 'i-lucide-rotate-ccw',
+                        onClick: (e, message) => handleRegenerate(message as ChatMessage)
+                      }
+                    ]
+                  }"
+                  :user="{
+                    actions: [
+                      {
+                        label: 'Copy',
+                        icon: 'i-lucide-copy',
+                        onClick: (e, message) => handleCopy(message as ChatMessage)
+                      },
+                      {
+                        label: 'Send again',
+                        icon: 'i-lucide-send',
+                        onClick: (e, message) => {
+                          const text = (message as ChatMessage).parts[0]?.text || ''
+                          if (text) {
+                            handlePromptSubmit(text)
+                          }
+                        }
+                      }
+                    ]
+                  }"
+                >
+                  <template #content="{ message }">
+                    <div class="whitespace-pre-line">
+                      {{ message.parts[0]?.text }}
+                    </div>
+                  </template>
+                </UChatMessages>
               </div>
             </div>
           </div>
@@ -454,7 +510,7 @@ if (import.meta.client) {
                 class="flex-1 w-full"
                 @submit="handlePromptSubmit"
               >
-                <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : status" />
+                <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" />
               </UChatPrompt>
 
               <USelectMenu
