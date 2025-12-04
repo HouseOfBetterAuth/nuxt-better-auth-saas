@@ -3,6 +3,7 @@ import type { ChatMessage } from '#shared/utils/types'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import PromptComposer from './PromptComposer.vue'
 
 type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
 
@@ -175,7 +176,16 @@ const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 
 const content = ref<ContentResponse | null>(props.initialPayload ?? null)
+const headerData = ref<{
+  title: string
+  contentType: string | null
+  updatedAtLabel: string
+  versionId: string | null
+  additions: number
+  deletions: number
+} | null>(null)
 const pending = ref(!content.value)
+const headerPending = ref(!content.value)
 const error = ref<any>(null)
 const readyEmitted = ref(false)
 
@@ -183,6 +193,86 @@ const emitReady = () => {
   if (!readyEmitted.value) {
     emit('ready')
     readyEmitted.value = true
+  }
+}
+
+async function loadHeaderData() {
+  if (!contentId.value) {
+    headerData.value = null
+    return
+  }
+
+  // Capture current contentId to prevent stale responses
+  const currentContentId = contentId.value
+
+  // Check cache first (from drafts list)
+  const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+  const cached = draftsListCache.value.get(currentContentId)
+
+  if (cached) {
+    // Verify contentId hasn't changed before updating state
+    if (contentId.value !== currentContentId) {
+      return
+    }
+
+    // Use cached data immediately - no API call needed!
+    const updatedAt = cached.content?.updatedAt
+    const updatedAtLabel = updatedAt
+      ? new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        }).format(new Date(updatedAt))
+      : '—'
+
+    const contentType = cached.currentVersion?.frontmatter?.contentType || cached.content?.contentType || null
+    const title = cached.content?.title || 'Untitled draft'
+    const seoTitle = cached.currentVersion?.frontmatter?.seoTitle
+    const frontmatterTitle = cached.currentVersion?.frontmatter?.title
+    const displayTitle = seoTitle || frontmatterTitle || title
+
+    // Verify again before setting state
+    if (contentId.value !== currentContentId) {
+      return
+    }
+
+    headerData.value = {
+      title: displayTitle,
+      contentType,
+      updatedAtLabel,
+      versionId: cached.content?.currentVersionId || null,
+      additions: cached._computed?.additions || 0,
+      deletions: cached._computed?.deletions || 0
+    }
+    headerPending.value = false
+    return // Skip API call!
+  }
+
+  // Only fetch if not in cache
+  headerPending.value = true
+  try {
+    const header = await $fetch<{
+      title: string
+      contentType: string | null
+      updatedAtLabel: string
+      versionId: string | null
+      additions: number
+      deletions: number
+    }>('/api/chat/workspace-header', {
+      query: { contentId: currentContentId }
+    })
+
+    // Verify contentId hasn't changed before updating state
+    if (contentId.value === currentContentId) {
+      headerData.value = header
+    }
+  } catch (err: any) {
+    // Header load failure is non-critical, continue with full load
+    console.warn('Failed to load header data', err)
+  } finally {
+    // Only update pending state if this is still the current request
+    if (contentId.value === currentContentId) {
+      headerPending.value = false
+    }
   }
 }
 
@@ -208,9 +298,14 @@ async function loadWorkspacePayload() {
 
 if (content.value) {
   pending.value = false
+  headerPending.value = false
   emitReady()
 } else {
-  await loadWorkspacePayload()
+  // Load header first (lightweight), then full workspace
+  await Promise.all([
+    loadHeaderData(),
+    loadWorkspacePayload()
+  ])
 }
 
 watch(() => props.initialPayload, (value) => {
@@ -229,10 +324,15 @@ watch(() => contentId.value, async (next, prev) => {
   if (props.initialPayload && props.initialPayload.content.id === next) {
     content.value = props.initialPayload
     pending.value = false
+    headerPending.value = false
     emitReady()
     return
   }
-  await loadWorkspacePayload()
+  // Load header first (lightweight), then full workspace
+  await Promise.all([
+    loadHeaderData(),
+    loadWorkspacePayload()
+  ])
 })
 
 const contentRecord = computed(() => content.value?.content ?? null)
@@ -256,6 +356,23 @@ watch(content, (value) => {
     return
   }
 
+  // Update cache with full workspace data when it loads
+  const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+  draftsListCache.value.set(value.content.id, {
+    content: value.content,
+    currentVersion: value.currentVersion,
+    sourceContent: value.sourceContent,
+    _computed: {
+      wordCount: value.currentVersion?.sections?.reduce((sum: number, section: any) => {
+        const wc = typeof section.wordCount === 'number' ? section.wordCount : 0
+        return sum + wc
+      }, 0) || 0,
+      sectionsCount: Array.isArray(value.currentVersion?.sections) ? value.currentVersion.sections.length : 0,
+      additions: value.currentVersion?.diffStats?.additions || value.currentVersion?.frontmatter?.diffStats?.additions || 0,
+      deletions: value.currentVersion?.diffStats?.deletions || value.currentVersion?.frontmatter?.diffStats?.deletions || 0
+    }
+  })
+
   hydrateSession({
     sessionId: value.chatSession?.id ?? sessionId.value,
     sessionContentId: value.chatSession?.contentId ?? value.content.id,
@@ -265,8 +382,6 @@ watch(content, (value) => {
 }, { immediate: true })
 
 const title = computed(() => contentRecord.value?.title || 'Untitled draft')
-const contentStatus = computed<ContentStatus>(() => (contentRecord.value?.status as ContentStatus) || 'draft')
-const isPublished = computed(() => contentStatus.value === 'published')
 const generatedContent = computed(() => currentVersion.value?.bodyMdx || currentVersion.value?.bodyHtml || null)
 const hasGeneratedContent = computed(() => !!generatedContent.value)
 const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
@@ -378,16 +493,6 @@ const _sourceLink = computed(() => {
   return null
 })
 
-const publicContentUrl = computed(() => {
-  if (!frontmatter.value?.slug) {
-    return null
-  }
-  return `/${frontmatter.value.slug}`
-})
-
-const primaryActionLabel = computed(() => (isPublished.value ? 'View' : 'Publish'))
-const primaryActionColor = computed(() => (isPublished.value ? 'primary' : 'success'))
-const primaryActionDisabled = computed(() => !isPublished.value && pending.value)
 const diffStats = computed(() => {
   const versionStats = currentVersion.value?.diffStats
   const fmStats = frontmatter.value?.diffStats as { additions?: number, deletions?: number } | undefined
@@ -400,6 +505,28 @@ const diffStats = computed(() => {
 })
 
 const headerPayload = computed<WorkspaceHeaderState | null>(() => {
+  // Use lightweight header data if available (faster), fallback to full content
+  if (headerData.value) {
+    return {
+      title: headerData.value.title,
+      contentType: headerData.value.contentType || 'content',
+      updatedAtLabel: headerData.value.updatedAtLabel,
+      versionId: headerData.value.versionId,
+      additions: headerData.value.additions,
+      deletions: headerData.value.deletions,
+      showBackButton: showBackButton.value,
+      onBack: showBackButton.value ? handleBackNavigation : null,
+      // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
+      onArchive: null,
+      onShare: null,
+      onPrimaryAction: null,
+      primaryActionLabel: '',
+      primaryActionColor: '',
+      primaryActionDisabled: false
+    }
+  }
+
+  // Fallback to full content when available
   if (!contentRecord.value) {
     return null
   }
@@ -412,12 +539,13 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
     deletions: diffStats.value.deletions,
     showBackButton: showBackButton.value,
     onBack: showBackButton.value ? handleBackNavigation : null,
-    onArchive: handleArchive,
-    onShare: handleShare,
-    onPrimaryAction: handlePrimaryAction,
-    primaryActionLabel: primaryActionLabel.value,
-    primaryActionColor: primaryActionColor.value,
-    primaryActionDisabled: primaryActionDisabled.value
+    // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
+    onArchive: null,
+    onShare: null,
+    onPrimaryAction: null,
+    primaryActionLabel: '',
+    primaryActionColor: '',
+    primaryActionDisabled: false
   }
 })
 
@@ -626,43 +754,6 @@ async function _handleSubmit() {
   }
 }
 
-function handlePrimaryAction() {
-  if (isPublished.value) {
-    if (publicContentUrl.value) {
-      router.push(publicContentUrl.value)
-      return
-    }
-    toast.add({
-      title: 'Missing slug',
-      description: 'Cannot open published page without a slug.',
-      color: 'warning'
-    })
-    return
-  }
-
-  toast.add({
-    title: 'Publish action pending',
-    description: 'Publishing workflow is not wired yet. Add flow when ready.',
-    color: 'neutral'
-  })
-}
-
-function handleArchive() {
-  toast.add({
-    title: 'Archive coming soon',
-    description: 'Archiving workflow is not implemented yet.',
-    color: 'neutral'
-  })
-}
-
-function handleShare() {
-  toast.add({
-    title: 'Share workflow pending',
-    description: 'Sharing workflow is not implemented yet.',
-    color: 'neutral'
-  })
-}
-
 onBeforeUnmount(() => {
   workspaceHeaderState.value = null
 })
@@ -691,7 +782,7 @@ onBeforeUnmount(() => {
           :description="chatErrorMessage"
         />
 
-        <UContainer class="flex-1 flex flex-col gap-4 sm:gap-6">
+        <UContainer class="flex-1 flex flex-col gap-4">
           <UChatMessages
             :messages="displayMessages"
             :status="uiStatus"
@@ -805,23 +896,20 @@ onBeforeUnmount(() => {
           </UChatMessages>
 
           <div class="space-y-2">
-            <UChatPrompt
+            <PromptComposer
               v-model="prompt"
               placeholder="Describe the change you want..."
-              variant="soft"
               :disabled="
                 chatIsBusy
                   || chatStatus === 'submitted'
                   || chatStatus === 'streaming'
                   || !selectedSectionId
               "
-              :autofocus="false"
-              class="sticky bottom-0"
+              :status="uiStatus"
+              context-label="Current section"
+              :context-value="selectedSection?.title || 'None'"
               @submit="_handleSubmit"
             />
-            <p class="text-xs text-muted-500">
-              Current section: <span class="font-medium">{{ selectedSection?.title || 'None' }}</span>
-            </p>
           </div>
         </UContainer>
       </div>
@@ -877,7 +965,7 @@ onBeforeUnmount(() => {
                 {{ frontmatter?.description || '—' }}
               </p>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Content type
@@ -895,7 +983,7 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Primary keyword
@@ -960,7 +1048,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <div class="space-y-4 text-sm">
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Plan title
@@ -1005,7 +1093,7 @@ onBeforeUnmount(() => {
                 </UBadge>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Primary keyword
@@ -1033,7 +1121,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <div class="space-y-4 text-sm">
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Engine
@@ -1071,7 +1159,7 @@ onBeforeUnmount(() => {
                 </UBadge>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Source type
@@ -1089,7 +1177,7 @@ onBeforeUnmount(() => {
                 </p>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3">
               <div>
                 <p class="text-xs uppercase tracking-wide text-muted-500">
                   Source status

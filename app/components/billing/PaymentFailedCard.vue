@@ -46,7 +46,7 @@ async function openBillingPortal() {
         Your last payment failed. To keep your Pro subscription active and retain your team members,
         please update your payment method. Once updated, we'll automatically retry the payment.
       </p>
-      <div class="flex flex-col sm:flex-row gap-3">
+      <div class="flex flex-col gap-3">
         <UButton
           color="red"
           icon="i-lucide-credit-card"

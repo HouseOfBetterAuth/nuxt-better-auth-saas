@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 const { user, client, fetchSession } = useAuth()
@@ -457,7 +457,7 @@ watch(() => user.value?.name, (newName) => {
         v-if="hasPassword"
         class="space-y-4"
       >
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 gap-4">
           <UFormField label="Current Password">
             <UInput
               v-model="currentPassword"

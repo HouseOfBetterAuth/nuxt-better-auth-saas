@@ -29,9 +29,43 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(schema.content.updatedAt))
     .limit(100)
 
-  const workspace = contentId
-    ? await getContentWorkspacePayload(db, organizationId, contentId)
-    : null
+  let workspace = null
+  if (contentId) {
+    try {
+      workspace = await getContentWorkspacePayload(db, organizationId, contentId)
+    } catch (error: any) {
+      // If content not found in active org, try to find it in user's other organizations
+      if (error?.statusCode === 404) {
+        const userOrgs = await db
+          .select({ organizationId: schema.member.organizationId })
+          .from(schema.member)
+          .where(eq(schema.member.userId, user.id))
+
+        for (const org of userOrgs) {
+          try {
+            workspace = await getContentWorkspacePayload(db, org.organizationId, contentId)
+            if (workspace) {
+              console.log('[workspace.get] Found content in different organization', {
+                contentId,
+                foundInOrg: org.organizationId,
+                activeOrg: organizationId
+              })
+              break
+            }
+          } catch {
+            // Continue searching
+          }
+        }
+      } else {
+        console.error('[workspace.get] Failed to load workspace', {
+          contentId,
+          organizationId,
+          userId: user.id,
+          error: error?.message || error
+        })
+      }
+    }
+  }
 
   const anonymousUsage = user.isAnonymous
     ? await getAnonymousDraftUsage(db, organizationId)

@@ -3,7 +3,7 @@ import { GITHUB_INTEGRATION_SCOPES } from '#shared/constants/githubScopes'
 import { GOOGLE_INTEGRATION_SCOPES } from '#shared/constants/googleScopes'
 
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 const currentRoute = useRoute()
@@ -453,7 +453,7 @@ if (import.meta.client) {
         title="You need admin or owner access to manage integrations."
       />
 
-      <div class="grid gap-4 lg:grid-cols-2">
+      <div class="grid gap-4">
         <UCard>
           <template #header>
             <div class="flex items-center gap-3">

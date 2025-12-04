@@ -241,7 +241,7 @@ function onBarChartRendered() {
 <template>
   <NuxtLayout name="admin">
     <div class="space-y-8">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-4">
         <UCard
           v-for="stat in stats"
           :key="stat.name"
@@ -275,7 +275,7 @@ function onBarChartRendered() {
       </div>
 
       <!-- Charts -->
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4">
         <UCard class="relative">
           <div
             v-if="areaChartLoading"

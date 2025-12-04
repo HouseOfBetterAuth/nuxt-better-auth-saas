@@ -109,7 +109,7 @@ function copyId() {
     </p>
 
     <form
-      class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"
+      class="grid grid-cols-1 gap-6 mb-6"
       @submit.prevent="updateTeam"
     >
       <UFormField label="Organization name (shows on invoices)">
@@ -147,7 +147,7 @@ function copyId() {
         </UInput>
       </UFormField>
 
-      <div class="md:col-span-2">
+      <div>
         <UButton
           v-if="canEdit"
           type="submit"

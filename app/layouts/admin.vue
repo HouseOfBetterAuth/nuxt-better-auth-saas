@@ -47,7 +47,7 @@ const clickSignOut = () => {
 <template>
   <div>
     <aside
-      class="fixed top-0 left-0 transition-all duration-300 hidden sm:block"
+      class="fixed top-0 left-0 transition-all duration-300 hidden"
       :class="[isCollapsed ? 'w-15' : 'w-64']"
     >
       <div class="h-screen flex flex-col px-3 py-4 bg-neutral-100 dark:bg-neutral-800">
@@ -138,14 +138,14 @@ const clickSignOut = () => {
         </div>
       </div>
     </aside>
+    <!-- Main content: No margin offset needed since sidebar is always hidden (drawer-only pattern) -->
     <div
       class="p-2 h-screen bg-white dark:bg-neutral-900 transition-all duration-300 overflow-hidden flex flex-col"
-      :class="[isCollapsed ? 'sm:ml-15' : 'sm:ml-64']"
     >
       <FlexThreeColumn class="mb-2 flex-none">
         <template #left>
+          <!-- Drawer button always visible - sidebar is always hidden, so drawer is the only navigation method -->
           <UDrawer
-            class="sm:hidden"
             direction="left"
             as="aside"
             :handle="false"
@@ -157,12 +157,38 @@ const clickSignOut = () => {
               variant="ghost"
             />
             <template #content>
-              <div class="w-[60vw] p-4">
+              <div class="w-[60vw] h-full flex flex-col p-4">
+                <!-- Logo and App Name -->
+                <div class="flex items-center gap-2 mb-4">
+                  <Logo class="h-6 w-6" />
+                  <span class="text-xl font-semibold whitespace-nowrap dark:text-white">
+                    {{ t('global.appNameShort') }}
+                  </span>
+                </div>
+                <!-- Search -->
+                <div class="mb-4">
+                  <SearchPalette
+                    :collapsed="false"
+                    :t="t"
+                  />
+                </div>
                 <UNavigationMenu
                   orientation="vertical"
                   :items="menus"
-                  class="data-[orientation=vertical]:w-full"
+                  class="data-[orientation=vertical]:w-full flex-1"
                 />
+                <!-- User Profile Section -->
+                <div class="mt-auto pt-4 border-t border-neutral-200 dark:border-neutral-700">
+                  <UButton
+                    icon="i-lucide-log-out"
+                    color="neutral"
+                    variant="ghost"
+                    class="w-full justify-start"
+                    @click="clickSignOut"
+                  >
+                    {{ t('global.auth.signOut') }}
+                  </UButton>
+                </div>
               </div>
             </template>
           </UDrawer>

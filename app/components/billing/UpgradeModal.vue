@@ -179,7 +179,7 @@ async function handleUpgrade() {
 
         <div class="space-y-2">
           <label class="text-sm font-medium">Select billing cycle:</label>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 gap-4">
             <div
               v-for="plan in [PLANS.PRO_MONTHLY, PLANS.PRO_YEARLY]"
               :key="plan.interval"

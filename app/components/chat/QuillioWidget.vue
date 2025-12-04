@@ -5,6 +5,16 @@ import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { ANONYMOUS_DRAFT_LIMIT } from '#shared/constants/limits'
 import { useClipboard } from '@vueuse/core'
 
+import PromptComposer from './PromptComposer.vue'
+
+const props = withDefaults(defineProps<{
+  initialDraftId?: string | null
+  routeSync?: boolean
+}>(), {
+  initialDraftId: null,
+  routeSync: true
+})
+
 const router = useRouter()
 const route = useRoute()
 const { loggedIn, useActiveOrganization, refreshActiveOrg } = useAuth()
@@ -17,7 +27,9 @@ const {
   sendMessage,
   isBusy,
   sessionId,
-  createContentFromConversation
+  sessionContentId,
+  createContentFromConversation,
+  resetSession
 } = useChatSession()
 
 const prompt = ref('')
@@ -47,7 +59,7 @@ const {
   data: workspaceDraftsPayload,
   pending: draftsPending,
   refresh: refreshDrafts
-} = await useFetch<WorkspaceResponse>('/api/chat/workspace', {
+} = await useFetch<WorkspaceResponse>('/api/chat/drafts-list', {
   default: () => ({
     contents: []
   })
@@ -68,6 +80,30 @@ const hasReachedAnonLimit = computed(() => !loggedIn.value && remainingAnonDraft
 const contentEntries = computed(() => {
   const list = Array.isArray(workspaceDraftsPayload.value?.contents) ? workspaceDraftsPayload.value?.contents : []
   return list.map((entry: any) => {
+    // Support new lightweight format with _computed fields
+    if (entry._computed) {
+      let updatedAt: Date | null = null
+      if (entry.content.updatedAt) {
+        const parsedDate = new Date(entry.content.updatedAt)
+        updatedAt = Number.isFinite(parsedDate.getTime()) ? parsedDate : null
+      }
+
+      return {
+        id: entry.content.id,
+        title: entry.content.title || 'Untitled draft',
+        slug: entry.content.slug,
+        status: entry.content.status,
+        updatedAt,
+        contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
+        sectionsCount: entry._computed.sectionsCount || 0,
+        wordCount: entry._computed.wordCount || 0,
+        sourceType: entry.sourceContent?.sourceType ?? null,
+        additions: entry._computed.additions,
+        deletions: entry._computed.deletions
+      }
+    }
+
+    // Fallback for old format (backwards compatibility)
     const sections = Array.isArray(entry.currentVersion?.sections) ? entry.currentVersion.sections : []
     const wordCount = sections.reduce((sum: number, section: Record<string, any>) => {
       const rawValue = typeof section.wordCount === 'string' ? Number.parseInt(section.wordCount, 10) : Number(section.wordCount)
@@ -107,6 +143,13 @@ const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceA
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
+
+const autoDraftTriggered = ref(false)
+const draftAutoFailCount = ref(0)
+const lastAutoDraftAttempt = ref<number | null>(null)
+const lastAttemptedMessageCount = ref(0)
+const MAX_AUTO_DRAFT_RETRIES = 3
+const AUTO_DRAFT_COOLDOWN_MS = 5000 // 5 seconds
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
@@ -217,12 +260,11 @@ const loadWorkspaceDetail = async (contentId: string) => {
   workspaceLoading.value = true
   workspaceDetail.value = null
   try {
-    const response = await $fetch<{ drafts?: any[], workspace?: any | null }>('/api/chat/workspace', {
+    // Only fetch workspace detail, not the full contents list
+    // The list is already loaded via the lightweight drafts-list endpoint
+    const response = await $fetch<{ workspace?: any | null }>('/api/chat/workspace', {
       query: { contentId }
     })
-    if (Array.isArray(response?.contents)) {
-      workspaceDraftsPayload.value = { contents: response.contents }
-    }
     workspaceDetail.value = response?.workspace ?? null
   } catch (error) {
     console.error('Unable to load workspace', error)
@@ -246,6 +288,20 @@ const resetWorkspaceState = () => {
   workspaceLoading.value = false
 }
 
+const routeDraftId = computed(() => normalizeDraftId(route.query.draft))
+
+const syncWorkspace = async (draftId: string | null) => {
+  if (!draftId) {
+    resetWorkspaceState()
+    return
+  }
+  if (activeWorkspaceId.value === draftId && workspaceDetail.value) {
+    return
+  }
+  activeWorkspaceId.value = draftId
+  await loadWorkspaceDetail(draftId)
+}
+
 const updateDraftRoute = async (draftId: string | null) => {
   const nextQuery = { ...route.query }
   if (draftId) {
@@ -260,29 +316,54 @@ const updateDraftRoute = async (draftId: string | null) => {
   }
 }
 
+const activateWorkspace = async (draftId: string | null) => {
+  if (props.routeSync) {
+    await updateDraftRoute(draftId)
+  } else {
+    await syncWorkspace(draftId)
+  }
+}
+
 const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
-  await updateDraftRoute(entry.id)
+  await activateWorkspace(entry.id)
+}
+
+const resetConversation = () => {
+  prompt.value = ''
+  linkedSources.value = []
+  createDraftError.value = null
+  autoDraftTriggered.value = false
+  draftAutoFailCount.value = 0
+  lastAutoDraftAttempt.value = null
+  lastAttemptedMessageCount.value = 0
+  resetSession()
 }
 
 const closeWorkspace = async () => {
-  resetWorkspaceState()
-  await updateDraftRoute(null)
+  await activateWorkspace(null)
+  resetConversation()
 }
 
 const handleCreateDraft = async () => {
   createDraftError.value = null
   if (!canStartDraft.value) {
-    return
+    return false
   }
 
   if (!loggedIn.value && hasReachedAnonLimit.value) {
     const redirectUrl = `/signup?redirect=${encodeURIComponent('/')}`
     router.push(redirectUrl)
-    return
+    return false
   }
 
   if (!activeOrgState.value?.data?.slug) {
     await refreshActiveOrg()
+  }
+
+  if (sessionContentId.value) {
+    await refreshDrafts()
+    await activateWorkspace(sessionContentId.value)
+    return true
   }
 
   createDraftLoading.value = true
@@ -296,9 +377,14 @@ const handleCreateDraft = async () => {
     })
 
     if (response?.content?.id) {
-      await updateDraftRoute(response.content.id)
       await refreshDrafts()
+      await activateWorkspace(response.content.id)
+      // Reset failure counter on success
+      draftAutoFailCount.value = 0
+      lastAttemptedMessageCount.value = 0
+      return true
     }
+    return false
   } catch (error: any) {
     const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Unable to create a draft from this conversation.'
     createDraftError.value = errorMsg
@@ -310,23 +396,64 @@ const handleCreateDraft = async () => {
       parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
       createdAt: new Date()
     })
+    return false
   } finally {
     createDraftLoading.value = false
   }
 }
 
-watch(() => route.query.draft, async (value) => {
-  const draftId = normalizeDraftId(value)
-  if (!draftId) {
-    resetWorkspaceState()
-    return
+watch(
+  () => ({
+    active: isWorkspaceActive.value,
+    canStart: canStartDraft.value,
+    count: messages.value.length,
+    loading: createDraftLoading.value
+  }),
+  async ({ active, canStart, count, loading }) => {
+    // Don't attempt if workspace is active, loading, already triggered, can't start, no messages, or limit reached
+    if (active || loading || autoDraftTriggered.value || !canStart || count === 0 || hasReachedAnonLimit.value)
+      return
+
+    // Prevent infinite retries: check failure counter and cooldown
+    if (draftAutoFailCount.value >= MAX_AUTO_DRAFT_RETRIES) {
+      return
+    }
+
+    // Check cooldown period
+    const now = Date.now()
+    if (lastAutoDraftAttempt.value !== null && (now - lastAutoDraftAttempt.value) < AUTO_DRAFT_COOLDOWN_MS) {
+      return
+    }
+
+    // Don't retry for the same message count (prevents loop when error message is added)
+    if (lastAttemptedMessageCount.value === count) {
+      return
+    }
+
+    autoDraftTriggered.value = true
+    lastAutoDraftAttempt.value = now
+    lastAttemptedMessageCount.value = count
+
+    const success = await handleCreateDraft()
+    if (!success) {
+      draftAutoFailCount.value++
+      autoDraftTriggered.value = false
+      // Keep lastAttemptedMessageCount to prevent immediate retry when error message is added
+    } else {
+      // Success: reset failure counter and message count tracking
+      draftAutoFailCount.value = 0
+      lastAttemptedMessageCount.value = 0
+    }
   }
-  if (activeWorkspaceId.value === draftId && workspaceDetail.value) {
-    return
-  }
-  activeWorkspaceId.value = draftId
-  await loadWorkspaceDetail(draftId)
-}, { immediate: true })
+)
+
+if (props.routeSync) {
+  watch(routeDraftId, async (draftId) => {
+    await syncWorkspace(draftId ?? null)
+  }, { immediate: true })
+} else {
+  await syncWorkspace(props.initialDraftId ?? routeDraftId.value ?? null)
+}
 
 const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value) {
@@ -347,6 +474,20 @@ function handleCopy(message: ChatMessage) {
   })
 }
 
+// Populate drafts list cache for header reuse
+const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+
+watch(workspaceDraftsPayload, (payload) => {
+  if (!payload?.contents)
+    return
+  const cache = draftsListCache.value
+  payload.contents.forEach((entry: any) => {
+    if (entry.content?.id) {
+      cache.set(entry.content.id, entry)
+    }
+  })
+}, { immediate: true, deep: true })
+
 if (import.meta.client) {
   watch(loggedIn, async () => {
     await refreshDrafts()
@@ -355,17 +496,17 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full py-6 sm:py-8 lg:py-12 space-y-6 sm:space-y-8">
-    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="w-full py-6 space-y-6">
+    <div class="max-w-3xl mx-auto px-4">
       <div
         v-if="!isWorkspaceActive"
-        class="space-y-4 sm:space-y-6"
+        class="space-y-4"
       >
-        <h1 class="text-xl sm:text-2xl lg:text-3xl font-semibold text-center">
+        <h1 class="text-2xl font-semibold text-center">
           What should we write next?
         </h1>
       </div>
-      <div class="space-y-6 sm:space-y-8">
+      <div class="space-y-6">
         <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
         <UAlert
           v-if="errorMessage && !messages.length"
@@ -405,18 +546,18 @@ if (import.meta.client) {
         <template v-else>
           <div
             v-if="messages.length"
-            class="space-y-4 sm:space-y-6 w-full"
+            class="space-y-4 w-full"
           >
             <div class="w-full">
               <div
                 v-if="isStreaming"
-                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4 sm:mb-6"
+                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
               >
                 <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
                 <span>Quillio is thinking...</span>
               </div>
 
-              <div class="min-h-[250px] sm:min-h-[300px]">
+              <div class="min-h-[250px]">
                 <UChatMessages
                   :messages="messages"
                   :status="uiStatus"
@@ -465,7 +606,7 @@ if (import.meta.client) {
             </div>
           </div>
 
-          <div class="w-full space-y-4 sm:space-y-6">
+          <div class="w-full space-y-4">
             <!-- Show linked sources if any -->
             <div
               v-if="linkedSources.length"
@@ -493,23 +634,22 @@ if (import.meta.client) {
 
             <!-- Add more information -->
             <!-- Main chat input -->
-            <div class="flex flex-col gap-3 sm:gap-4 sm:flex-row w-full">
-              <UChatPrompt
+            <div class="flex flex-col gap-3 w-full">
+              <PromptComposer
                 v-model="prompt"
                 placeholder="Paste a transcript or describe what you need..."
-                variant="soft"
                 :disabled="isBusy || promptSubmitting"
-                class="flex-1 w-full"
+                :status="promptSubmitting ? 'submitted' : uiStatus"
+                :context-label="isWorkspaceActive ? 'Active draft' : undefined"
+                :context-value="activeWorkspaceEntry?.title || null"
                 @submit="handlePromptSubmit"
-              >
-                <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" />
-              </UChatPrompt>
+              />
 
               <USelectMenu
                 v-model="selectedContentType"
                 :items="CONTENT_TYPE_OPTIONS"
                 value-key="value"
-                class="w-full sm:w-[160px]"
+                class="w-full"
                 size="md"
               />
             </div>

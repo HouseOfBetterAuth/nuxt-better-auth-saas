@@ -73,21 +73,6 @@ const plans = [
 
 <template>
   <NuxtLayout name="default">
-    <template #nav-center>
-      <SiteNavigation
-        mode="desktop"
-        class="hidden sm:flex"
-      />
-    </template>
-    <template #nav-right>
-      <div class="flex items-center gap-2">
-        <UserNavigation />
-        <SiteNavigation
-          mode="mobile"
-          class="flex sm:hidden"
-        />
-      </div>
-    </template>
     <UContainer class="space-y-6 pt-8 pb-6">
       <!-- Header -->
       <div class="text-center space-y-2">
@@ -112,7 +97,7 @@ const plans = [
         </div>
       </div>
       <!-- Pricing cards -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div class="grid grid-cols-1 gap-8">
         <div
           v-for="plan in plans"
           :key="plan.name"

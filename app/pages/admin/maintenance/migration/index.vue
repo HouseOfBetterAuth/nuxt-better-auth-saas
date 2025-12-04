@@ -104,7 +104,7 @@ const getCurrentOperation = () => {
             </div>
           </template>
 
-          <div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
+          <div class="grid gap-4">
             <UCard
               v-for="operation in operations"
               :key="operation.id"
@@ -212,7 +212,7 @@ const getCurrentOperation = () => {
               </div>
             </template>
 
-            <div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-3">
+            <div class="grid gap-4">
               <div class="text-center">
                 <div class="text-2xl font-bold">
                   {{ result.summary.totalOrganizations }}
