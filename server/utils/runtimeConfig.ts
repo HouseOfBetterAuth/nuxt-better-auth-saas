@@ -1,6 +1,7 @@
 import type { NitroRuntimeConfig } from 'nitropack/types'
 import type { FileManagerConfig, StorageProviderType } from '../services/file/types'
 import { config } from 'dotenv'
+import { getAppUrl } from '../../shared/utils/app-url'
 
 declare module '@nuxt/schema' {
   interface RuntimeConfig {
@@ -68,7 +69,7 @@ export const generateRuntimeConfig = () => ({
     }
   } satisfies FileManagerConfig,
   public: {
-    baseURL: process.env.NUXT_APP_URL,
+    baseURL: getAppUrl(),
     appName: process.env.NUXT_APP_NAME,
     appEnv: process.env.NODE_ENV,
     appRepo: process.env.NUXT_APP_REPO,

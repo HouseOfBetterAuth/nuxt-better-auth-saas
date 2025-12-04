@@ -149,7 +149,7 @@ export function useAuth() {
     useActiveOrganization, // Use our singleton wrapper
     subscription: client.subscription,
     subscriptions,
-    loggedIn: computed(() => !!session.value),
+    loggedIn: computed(() => Boolean(user.value && !user.value.isAnonymous)),
     activeStripeSubscription: computed(() => {
       const activeOrgState = useActiveOrgState()
       const subs = (activeOrgState.value?.data as any)?.subscriptions || []

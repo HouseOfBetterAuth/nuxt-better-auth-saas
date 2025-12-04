@@ -2,6 +2,7 @@
 import type { NuxtPage } from 'nuxt/schema'
 import { resolve } from 'node:path'
 import { generateRuntimeConfig } from './server/utils/runtimeConfig'
+import { getAppUrl } from './shared/utils/app-url'
 
 console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`)
 
@@ -20,7 +21,7 @@ export default defineNuxtConfig({
   ],
   i18n: {
     vueI18n: '~/i18n/i18n.config.ts',
-    baseUrl: process.env.NUXT_APP_URL,
+    baseUrl: getAppUrl(),
     locales: [
       { code: 'en', language: 'en-US', name: 'English' },
       { code: 'zh-CN', language: 'zh-CN', name: '简体中文' },

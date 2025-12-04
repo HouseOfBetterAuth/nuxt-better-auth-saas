@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
+import { useClipboard } from '@vueuse/core'
 import { computed, ref } from 'vue'
-import ChatMessagesList from './ChatMessagesList.vue'
 
-type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error' | 'idle'
+type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
 const props = withDefaults(defineProps<{
   messages: ChatMessage[]
@@ -25,16 +25,14 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
   'submit': [value: string]
   'action': [value: ChatActionSuggestion]
+  'regenerate': [message: ChatMessage]
 }>()
 
 const prompt = ref('')
+const { copy } = useClipboard()
+const toast = useToast()
 
-const promptStatus = computed(() => {
-  if (props.status === 'idle') {
-    return 'ready'
-  }
-  return props.status
-})
+const uiStatus = computed(() => props.status)
 
 function handleSubmit(value: string) {
   const trimmed = value.trim()
@@ -48,6 +46,37 @@ function handleSubmit(value: string) {
 function handleAction(action: ChatActionSuggestion) {
   emit('action', action)
 }
+
+function handleCopy(message: ChatMessage) {
+  const text = message.parts[0]?.text || ''
+  if (!text) {
+    toast.add({
+      title: 'Nothing to copy',
+      description: 'This message has no text content.',
+      color: 'error'
+    })
+    return
+  }
+  try {
+    copy(text)
+    toast.add({
+      title: 'Copied to clipboard',
+      description: 'Message copied successfully.',
+      color: 'primary'
+    })
+  } catch (error) {
+    console.error('Failed to copy message', error)
+    toast.add({
+      title: 'Copy failed',
+      description: 'Could not copy to clipboard.',
+      color: 'error'
+    })
+  }
+}
+
+function handleRegenerate(message: ChatMessage) {
+  emit('regenerate', message)
+}
 </script>
 
 <template>
@@ -58,18 +87,55 @@ function handleAction(action: ChatActionSuggestion) {
     @update:open="emit('update:open', $event)"
   >
     <template #content>
-      <UChatPalette class="flex h-full flex-col">
-        <div class="flex-1 overflow-y-auto px-2 py-4">
-          <ChatMessagesList
-            :messages="messages"
-            :status="status"
-            class="h-full"
-          />
-        </div>
+      <UChatPalette>
+        <UChatMessages
+          :messages="messages"
+          :status="uiStatus"
+          should-auto-scroll
+          :assistant="{
+            actions: [
+              {
+                label: 'Copy',
+                icon: 'i-lucide-copy',
+                onClick: (e, message) => handleCopy(message as ChatMessage)
+              },
+              {
+                label: 'Regenerate',
+                icon: 'i-lucide-rotate-ccw',
+                onClick: (e, message) => handleRegenerate(message as ChatMessage)
+              }
+            ]
+          }"
+          :user="{
+            actions: [
+              {
+                label: 'Copy',
+                icon: 'i-lucide-copy',
+                onClick: (e, message) => handleCopy(message as ChatMessage)
+              },
+              {
+                label: 'Send again',
+                icon: 'i-lucide-send',
+                onClick: (e, message) => {
+                  const text = (message as ChatMessage).parts[0]?.text || ''
+                  if (text) {
+                    emit('submit', text)
+                  }
+                }
+              }
+            ]
+          }"
+        >
+          <template #content="{ message }">
+            <div class="whitespace-pre-line">
+              {{ message.parts[0]?.text }}
+            </div>
+          </template>
+        </UChatMessages>
 
         <div
           v-if="actions.length"
-          class="border-t border-border px-4 py-3"
+          class="px-4 py-3"
         >
           <div class="mb-2 text-sm font-medium">
             Suggested actions
@@ -94,9 +160,13 @@ function handleAction(action: ChatActionSuggestion) {
             v-model="prompt"
             :placeholder="placeholder"
             :disabled="disabled"
+            variant="subtle"
             @submit="handleSubmit(prompt)"
           >
-            <UChatPromptSubmit :status="promptStatus" />
+            <UChatPromptSubmit
+              :status="uiStatus"
+              color="neutral"
+            />
           </UChatPrompt>
         </template>
       </UChatPalette>
