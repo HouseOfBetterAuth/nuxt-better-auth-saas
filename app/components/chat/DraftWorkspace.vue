@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import type { WorkspaceHeaderState } from '~/app/components/chat/workspaceHeader'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
 
@@ -35,6 +36,13 @@ interface ContentVersion {
       engine?: string
       generatedAt?: string
       stages?: string[]
+    }
+    source?: {
+      id?: string
+      type?: string
+      externalId?: string
+      originalUrl?: string
+      [key: string]: any
     }
   }
   sections?: ContentVersionSection[]
@@ -103,15 +111,6 @@ interface ChatSubmissionResponse {
   assistantMessage?: string | null
 }
 
-interface ChatLayoutHeroState {
-  title: string
-  contentType?: string | null
-  updatedAtLabel?: string | null
-  status?: ContentStatus
-  additions?: number
-  deletions?: number
-}
-
 const props = withDefaults(defineProps<{
   contentId: string
   organizationSlug?: string | null
@@ -129,7 +128,7 @@ const emit = defineEmits<{
 
 const currentRoute = useRoute()
 const router = useRouter()
-const slug = computed(() => {
+const _slug = computed(() => {
   if (props.organizationSlug)
     return props.organizationSlug
   const param = currentRoute.params.slug
@@ -152,7 +151,7 @@ const backRoute = computed(() => {
   if (props.backTo !== undefined) {
     return props.backTo
   }
-  return slug.value ? `/${slug.value}/chat` : null
+  return '/'
 })
 
 function handleBackNavigation() {
@@ -169,7 +168,7 @@ const toast = useToast()
 const conversationMessages = ref<ChatMessage[]>([])
 const chatStatus = ref<ChatStatus>('ready')
 const chatErrorMessage = ref<string | null>(null)
-const layoutHero = useState<ChatLayoutHeroState | null>('chat/layoutHero', () => null)
+const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 
 const content = ref<ContentResponse | null>(props.initialPayload ?? null)
 const pending = ref(!content.value)
@@ -235,7 +234,6 @@ watch(() => contentId.value, async (next, prev) => {
 const contentRecord = computed(() => content.value?.content ?? null)
 const currentVersion = computed(() => content.value?.currentVersion ?? null)
 const sourceDetails = computed<SourceContent | null>(() => content.value?.sourceContent ?? null)
-const chatLogs = computed(() => content.value?.chatLogs ?? [])
 
 function createMessageId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -281,6 +279,19 @@ const hasGeneratedContent = computed(() => !!generatedContent.value)
 const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
+const generatorDetails = computed(() => currentVersion.value?.assets?.generator || null)
+const generatorStages = computed(() => normalizeStringList(generatorDetails.value?.stages))
+const sourceAsset = computed(() => currentVersion.value?.assets?.source || null)
+const frontmatterTags = computed(() => normalizeStringList(frontmatter.value?.tags))
+const schemaTypes = computed(() => normalizeStringList(frontmatter.value?.schemaTypes))
+
+const _seoPlan = computed(() => {
+  const snapshot = seoSnapshot.value
+  const plan = snapshot && typeof snapshot === 'object' ? snapshot.plan : null
+  return plan && typeof plan === 'object' ? plan : null
+})
+
+const seoKeywords = computed(() => normalizeStringList(_seoPlan.value?.keywords))
 
 const sections = computed(() => {
   const sectionsData = currentVersion.value?.sections
@@ -311,6 +322,33 @@ const sections = computed(() => {
     }
   }).sort((a, b) => a.index - b.index)
 })
+
+const sectionsMessage = computed<ChatMessage | null>(() => {
+  if (!sections.value.length) {
+    return null
+  }
+  const timestamp = toDate(contentRecord.value?.updatedAt || new Date()) || new Date()
+  return {
+    id: 'sections-overview',
+    role: 'assistant',
+    content: 'Sections overview',
+    createdAt: timestamp,
+    payload: {
+      type: 'sections_overview',
+      sections: sections.value.map(section => ({
+        id: section.id,
+        title: section.title,
+        summary: section.summary,
+        level: section.level,
+        wordCount: section.wordCount,
+        type: section.type,
+        anchor: section.anchor,
+        body: section.body
+      }))
+    }
+  }
+})
+const displayMessages = computed(() => sectionsMessage.value ? [...conversationMessages.value, sectionsMessage.value] : conversationMessages.value)
 
 // Date formatting utilities (must be declared before computed properties)
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -347,12 +385,6 @@ const _sourceLink = computed(() => {
   return null
 })
 
-const _seoPlan = computed(() => {
-  const snapshot = seoSnapshot.value
-  const plan = snapshot && typeof snapshot === 'object' ? snapshot.plan : null
-  return plan && typeof plan === 'object' ? plan : null
-})
-
 const publicContentUrl = computed(() => {
   if (!frontmatter.value?.slug) {
     return null
@@ -362,6 +394,7 @@ const publicContentUrl = computed(() => {
 
 const primaryActionLabel = computed(() => (isPublished.value ? 'View' : 'Publish'))
 const primaryActionColor = computed(() => (isPublished.value ? 'primary' : 'success'))
+const primaryActionDisabled = computed(() => !isPublished.value && pending.value)
 const diffStats = computed(() => {
   const versionStats = currentVersion.value?.diffStats
   const fmStats = frontmatter.value?.diffStats as { additions?: number, deletions?: number } | undefined
@@ -373,7 +406,7 @@ const diffStats = computed(() => {
   }
 })
 
-const heroPayload = computed<ChatLayoutHeroState | null>(() => {
+const headerPayload = computed<WorkspaceHeaderState | null>(() => {
   if (!contentRecord.value) {
     return null
   }
@@ -381,24 +414,31 @@ const heroPayload = computed<ChatLayoutHeroState | null>(() => {
     title: contentDisplayTitle.value,
     contentType: frontmatter.value?.contentType || 'content',
     updatedAtLabel: contentUpdatedAtLabel.value,
-    status: contentStatus.value,
+    versionId: currentVersion.value?.id || null,
     additions: diffStats.value.additions,
-    deletions: diffStats.value.deletions
+    deletions: diffStats.value.deletions,
+    showBackButton: showBackButton.value,
+    onBack: showBackButton.value ? handleBackNavigation : null,
+    onArchive: handleArchive,
+    onShare: handleShare,
+    onPrimaryAction: handlePrimaryAction,
+    primaryActionLabel: primaryActionLabel.value,
+    primaryActionColor: primaryActionColor.value,
+    primaryActionDisabled: primaryActionDisabled.value
   }
 })
 
-watch(heroPayload, (value) => {
-  layoutHero.value = value
+watch(headerPayload, (value) => {
+  workspaceHeaderState.value = value
 }, { immediate: true })
 
-type ViewTabValue = 'sections' | 'diff' | 'logs'
+type ViewTabValue = 'diff' | 'metadata'
 const viewTabs: { label: string, value: ViewTabValue }[] = [
-  { label: 'Sections', value: 'sections' },
   { label: 'Raw MDX', value: 'diff' },
-  { label: 'Activity', value: 'logs' }
+  { label: 'Metadata', value: 'metadata' }
 ]
 
-const activeViewTab = ref<ViewTabValue>('sections')
+const activeViewTab = ref<ViewTabValue>('diff')
 
 function slugify(value: string) {
   return value
@@ -407,14 +447,13 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
-function sectionPreview(body: string, limit = 320) {
-  if (!body) {
-    return ''
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
   }
-  if (body.length <= limit) {
-    return body
-  }
-  return `${body.slice(0, limit)}…`
+  return value
+    .map(item => typeof item === 'string' ? item.trim() : '')
+    .filter((item): item is string => Boolean(item && item.length))
 }
 
 const selectedSectionId = ref<string | null>(null)
@@ -458,13 +497,6 @@ const _formatTranscriptText = (text: string) => {
   return deduped.join('\n\n')
 }
 
-const sectionSelectOptions = computed(() => sections.value.map(section => ({
-  label: section.title,
-  value: section.id,
-  description: `${section.wordCount} words`,
-  icon: 'i-lucide-align-left'
-})))
-
 watch(sections, (list) => {
   if (!list.length) {
     selectedSectionId.value = null
@@ -476,16 +508,24 @@ watch(sections, (list) => {
   }
 }, { immediate: true })
 
-function focusSection(sectionId: string) {
+function setActiveSection(sectionId: string | null) {
+  if (!sectionId) {
+    return
+  }
   selectedSectionId.value = sectionId
+}
 
-  // Scroll to the section element
-  nextTick(() => {
-    const element = document.getElementById(`section-${sectionId}`)
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  })
+function insertSectionReference(sectionId: string) {
+  const section = sections.value.find(section => section.id === sectionId)
+  if (!section) {
+    return
+  }
+  setActiveSection(sectionId)
+  const token = `@${section.anchor}`
+  if (prompt.value.includes(token)) {
+    return
+  }
+  prompt.value = prompt.value ? `${prompt.value.trimEnd()} ${token} ` : `${token} `
 }
 
 async function _handleSubmit() {
@@ -587,65 +627,12 @@ function handleShare() {
 }
 
 onBeforeUnmount(() => {
-  layoutHero.value = null
+  workspaceHeaderState.value = null
 })
 </script>
 
 <template>
   <UContainer class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-muted-200/60 bg-muted/10 px-4 py-3">
-      <div class="flex items-center gap-3 min-w-0">
-        <UButton
-          v-if="showBackButton"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-          class="shrink-0"
-          @click="handleBackNavigation"
-        />
-        <div class="min-w-0">
-          <p class="text-sm text-muted-500">
-            {{ frontmatter?.contentType || 'content' }} • {{ contentUpdatedAtLabel }}
-          </p>
-          <p class="text-lg font-semibold truncate">
-            {{ contentDisplayTitle }}
-          </p>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <UBadge
-          size="sm"
-          class="capitalize"
-        >
-          {{ contentStatus }}
-        </UBadge>
-        <UButton
-          icon="i-lucide-archive"
-          variant="ghost"
-          size="sm"
-          @click="handleArchive"
-        >
-          Archive
-        </UButton>
-        <UButton
-          icon="i-lucide-share-2"
-          variant="ghost"
-          size="sm"
-          @click="handleShare"
-        >
-          Share
-        </UButton>
-        <UButton
-          :color="primaryActionColor"
-          size="sm"
-          :disabled="!isPublished && pending"
-          @click="handlePrimaryAction"
-        >
-          {{ primaryActionLabel }}
-        </UButton>
-      </div>
-    </div>
-
     <UAlert
       v-if="chatErrorMessage"
       color="error"
@@ -654,226 +641,374 @@ onBeforeUnmount(() => {
       :description="chatErrorMessage"
     />
 
-    <div class="grid gap-6 lg:grid-cols-[280px,1fr]">
-      <aside class="space-y-4">
-        <UCard>
+    <UCard class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold">
+            Workspace chat
+          </p>
+          <p class="text-xs text-muted-500">
+            Give instructions and reference sections with @anchors.
+          </p>
+        </div>
+
+        <div
+          v-if="_sourceLink"
+          class="text-right text-xs"
+        >
+          <NuxtLink
+            :href="_sourceLink"
+            target="_blank"
+            class="text-primary-500 hover:underline"
+          >
+            View source
+          </NuxtLink>
+        </div>
+        <div
+          v-if="selectedSection"
+          class="flex items-center gap-2 text-xs text-muted-500"
+        >
+          <span>Editing</span>
+          <UBadge
+            size="xs"
+            color="neutral"
+          >
+            {{ selectedSection.title }}
+          </UBadge>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <ChatMessagesList
+          :messages="displayMessages"
+          :selected-section-id="selectedSectionId"
+          :status="chatStatus"
+          @reference-section="insertSectionReference"
+          @select-section="setActiveSection"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <UChatPrompt
+          v-model="prompt"
+          placeholder="Describe the change you want..."
+          variant="subtle"
+          :disabled="
+            loading
+              || chatStatus === 'submitted'
+              || chatStatus === 'streaming'
+              || !selectedSectionId
+          "
+          :autofocus="false"
+          @submit="_handleSubmit"
+        />
+        <p class="text-xs text-muted-500">
+          Current section: <span class="font-medium">{{ selectedSection?.title || 'None' }}</span>
+        </p>
+      </div>
+    </UCard>
+
+    <section class="space-y-4">
+      <UTabs
+        v-model="activeViewTab"
+        :items="viewTabs"
+        size="sm"
+        :content="false"
+        class="w-full"
+      />
+
+      <div
+        v-if="activeViewTab === 'diff'"
+        class="space-y-4"
+      >
+        <UCard v-if="hasGeneratedContent">
           <template #header>
-            <div class="text-sm font-semibold">
-              Edit section
+            <div class="flex items-center justify-between">
+              <p class="text-lg font-semibold">
+                Draft body (MDX)
+              </p>
+              <UBadge
+                v-if="currentVersion?.version"
+                size="sm"
+                variant="soft"
+              >
+                v{{ currentVersion.version }}
+              </UBadge>
             </div>
           </template>
-          <div class="space-y-3">
-            <USelectMenu
-              v-model="selectedSectionId"
-              :items="sectionSelectOptions"
-              value-key="value"
-              placeholder="Select a section…"
-            />
-            <div
-              v-if="selectedSection"
-              class="space-y-2"
-            >
-              <div class="flex items-center justify-between text-xs text-muted-500">
-                <span>{{ selectedSection.wordCount }} words</span>
-                <UBadge
-                  size="xs"
-                  color="neutral"
-                  class="capitalize"
-                >
-                  {{ selectedSection.type }}
-                </UBadge>
+          <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">
+{{ generatedContent }}
+            </pre>
+        </UCard>
+        <UAlert
+          v-else
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-info"
+          description="No diff output yet."
+        />
+      </div>
+
+      <div
+        v-else
+        class="space-y-4"
+      >
+        <UCard v-if="frontmatter">
+          <template #header>
+            <div class="text-lg font-semibold">
+              Frontmatter details
+            </div>
+          </template>
+          <div class="space-y-4 text-sm">
+            <div>
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Description
+              </p>
+              <p class="text-muted-700 dark:text-muted-200 whitespace-pre-line">
+                {{ frontmatter?.description || '—' }}
+              </p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Content type
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ frontmatter?.contentType || '—' }}
+                </p>
               </div>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-arrow-down"
-                block
-                @click="focusSection(selectedSection.id)"
-              >
-                Jump to section
-              </UButton>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Target locale
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ frontmatter?.targetLocale || '—' }}
+                </p>
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Primary keyword
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ frontmatter?.primaryKeyword || '—' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Source content ID
+                </p>
+                <p class="font-mono text-xs text-muted-700 dark:text-muted-200 break-all">
+                  {{ frontmatter?.sourceContentId || sourceDetails?.id || sourceAsset?.id || '—' }}
+                </p>
+              </div>
             </div>
             <div
-              v-if="_sourceLink"
-              class="pt-2 border-t border-muted-200/60"
+              v-if="frontmatterTags.length"
+              class="space-y-2"
             >
-              <NuxtLink
-                :href="_sourceLink"
-                target="_blank"
-                class="text-xs text-primary-500 hover:underline"
-              >
-                View source
-              </NuxtLink>
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Tags
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge
+                  v-for="tag in frontmatterTags"
+                  :key="tag"
+                  size="xs"
+                  color="neutral"
+                >
+                  {{ tag }}
+                </UBadge>
+              </div>
+            </div>
+            <div
+              v-if="schemaTypes.length"
+              class="space-y-2"
+            >
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Schema types
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge
+                  v-for="schema in schemaTypes"
+                  :key="schema"
+                  size="xs"
+                  color="primary"
+                  variant="subtle"
+                >
+                  {{ schema }}
+                </UBadge>
+              </div>
             </div>
           </div>
         </UCard>
-      </aside>
 
-      <section class="space-y-4">
-        <UTabs
-          v-model="activeViewTab"
-          :items="viewTabs"
-          size="sm"
-          :content="false"
-          class="w-full"
-        />
-
-        <div
-          v-if="activeViewTab === 'sections'"
-          class="space-y-4"
-        >
-          <UCard
-            v-if="sections.length"
-            class="divide-y divide-muted-200/60"
-          >
-            <div
-              v-for="section in sections"
-              :id="`section-${section.id}`"
-              :key="section.id"
-              class="space-y-2 py-4"
-            >
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p class="font-semibold">
-                    {{ section.title }}
-                  </p>
-                  <p class="text-xs uppercase tracking-wide text-muted-500">
-                    H{{ section.level }} • {{ section.wordCount }} words
-                  </p>
-                </div>
-                <UBadge
-                  color="neutral"
-                  size="xs"
-                  class="capitalize"
-                >
-                  {{ section.type }}
-                </UBadge>
+        <UCard v-if="seoSnapshot">
+          <template #header>
+            <div class="text-lg font-semibold">
+              SEO snapshot
+            </div>
+          </template>
+          <div class="space-y-4 text-sm">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Plan title
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ _seoPlan?.title || '—' }}
+                </p>
               </div>
-              <p
-                v-if="section.summary"
-                class="text-sm text-muted-500"
-              >
-                {{ section.summary }}
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Slug suggestion
+                </p>
+                <p class="font-mono text-xs text-muted-700 dark:text-muted-200 break-all">
+                  {{ _seoPlan?.slugSuggestion || frontmatter?.slug || '—' }}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Description
               </p>
-              <p class="text-sm text-muted-600 whitespace-pre-line">
-                {{ sectionPreview(section.body) }}
+              <p class="text-muted-700 dark:text-muted-200 whitespace-pre-line">
+                {{ _seoPlan?.description || seoSnapshot?.description || '—' }}
               </p>
             </div>
-          </UCard>
-          <UAlert
-            v-else
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-info"
-            description="Sections will appear once the draft is generated."
-          />
-        </div>
-
-        <div
-          v-else-if="activeViewTab === 'diff'"
-          class="space-y-4"
-        >
-          <UCard v-if="hasGeneratedContent">
-            <template #header>
-              <div class="flex items-center justify-between">
-                <p class="text-lg font-semibold">
-                  Draft body (MDX)
-                </p>
+            <div
+              v-if="seoKeywords.length"
+              class="space-y-2"
+            >
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Keywords
+              </p>
+              <div class="flex flex-wrap gap-1.5">
                 <UBadge
-                  v-if="currentVersion?.version"
-                  size="sm"
-                  variant="soft"
+                  v-for="keyword in seoKeywords"
+                  :key="keyword"
+                  size="xs"
+                  color="success"
+                  variant="subtle"
                 >
-                  v{{ currentVersion.version }}
+                  {{ keyword }}
                 </UBadge>
               </div>
-            </template>
-            <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">
-{{ generatedContent }}
-            </pre>
-          </UCard>
-          <UAlert
-            v-else
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-info"
-            description="No diff output yet."
-          />
-        </div>
-
-        <div
-          v-else
-          id="logs"
-          class="space-y-4"
-        >
-          <div
-            v-if="!chatLogs.length"
-            class="rounded-xl border border-dashed border-muted-200/70 bg-muted/30 p-4 text-sm text-muted-500 text-center"
-          >
-            No chat activity recorded yet.
-          </div>
-          <UCard
-            v-else
-            :ui="{ body: 'p-0' }"
-          >
-            <ul class="divide-y divide-muted-200/60">
-              <li
-                v-for="log in chatLogs"
-                :key="log.id"
-                class="p-4 space-y-1"
-              >
-                <div class="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-500">
-                  <span>{{ log.type.replace(/_/g, ' ') }}</span>
-                  <span class="normal-case">
-                    {{ formatDate(log.createdAt) }}
-                  </span>
-                </div>
-                <p class="text-sm text-muted-700 dark:text-muted-200">
-                  {{ log.message }}
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Primary keyword
                 </p>
-              </li>
-            </ul>
-          </UCard>
-        </div>
-      </section>
-    </div>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ seoSnapshot?.primaryKeyword || frontmatter?.primaryKeyword || '—' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Schema types
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ (seoSnapshot?.schemaTypes || schemaTypes).join(', ') || '—' }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </UCard>
 
-    <UCard class="space-y-3">
-      <div class="flex items-center justify-between">
-        <p class="text-sm font-semibold">
-          Edit section
-        </p>
-        <UBadge
-          v-if="selectedSection"
-          size="xs"
+        <UCard v-if="generatorDetails || generatorStages.length || sourceDetails">
+          <template #header>
+            <div class="text-lg font-semibold">
+              Pipeline & source
+            </div>
+          </template>
+          <div class="space-y-4 text-sm">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Engine
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ generatorDetails?.engine || '—' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Generated at
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ generatorDetails?.generatedAt ? formatDate(generatorDetails.generatedAt) : '—' }}
+                </p>
+              </div>
+            </div>
+            <div
+              v-if="generatorStages.length"
+              class="space-y-2"
+            >
+              <p class="text-xs uppercase tracking-wide text-muted-500">
+                Pipeline stages
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                <UBadge
+                  v-for="stage in generatorStages"
+                  :key="stage"
+                  size="xs"
+                  color="info"
+                  variant="subtle"
+                  class="capitalize"
+                >
+                  {{ stage }}
+                </UBadge>
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Source type
+                </p>
+                <p class="text-muted-700 dark:text-muted-200 capitalize">
+                  {{ sourceDetails?.sourceType || sourceAsset?.type || '—' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  External ID
+                </p>
+                <p class="font-mono text-xs text-muted-700 dark:text-muted-200 break-all">
+                  {{ sourceDetails?.externalId || sourceAsset?.externalId || '—' }}
+                </p>
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Source status
+                </p>
+                <p class="text-muted-700 dark:text-muted-200 capitalize">
+                  {{ sourceDetails?.ingestStatus || '—' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wide text-muted-500">
+                  Source created
+                </p>
+                <p class="text-muted-700 dark:text-muted-200">
+                  {{ sourceDetails?.createdAt ? formatDate(sourceDetails.createdAt) : '—' }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </UCard>
+
+        <UAlert
+          v-if="!frontmatter && !seoSnapshot && !generatorDetails"
           color="neutral"
-        >
-          {{ selectedSection.title }}
-        </UBadge>
-      </div>
-      <UChatPrompt
-        v-model="prompt"
-        placeholder="Describe the change you want..."
-        variant="subtle"
-        :disabled="
-          loading
-            || chatStatus === 'submitted'
-            || chatStatus === 'streaming'
-            || !selectedSectionId
-        "
-        :autofocus="false"
-        @submit="_handleSubmit"
-      />
-      <div
-        v-if="conversationMessages.length > 0"
-        class="max-h-[300px] overflow-y-auto pr-1 border-t border-muted-200/60 pt-3 mt-3"
-      >
-        <ChatMessagesList
-          :messages="conversationMessages"
-          :status="chatStatus"
+          variant="soft"
+          icon="i-lucide-info"
+          description="Metadata will appear once a draft version has been generated."
         />
       </div>
-    </UCard>
+    </section>
   </UContainer>
 </template>

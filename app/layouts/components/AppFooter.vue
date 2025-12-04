@@ -4,8 +4,8 @@ const runtimeConfig = useRuntimeConfig()
 </script>
 
 <template>
-  <footer class="w-full h-26 sm:h-16 border-t border-neutral-200 dark:border-neutral-800 py-4 z-1">
-    <div class="container mx-auto px-4">
+  <footer class="w-full min-h-24 sm:h-16 border-t border-neutral-200 dark:border-neutral-800 py-4 z-1">
+    <UContainer>
       <div class="flex flex-col md:flex-row justify-between items-center gap-4">
         <div class="flex items-center space-x-2">
           <UIcon name="i-lucide-code" />
@@ -35,6 +35,6 @@ const runtimeConfig = useRuntimeConfig()
           />
         </div>
       </div>
-    </div>
+    </UContainer>
   </footer>
 </template>

@@ -707,12 +707,13 @@ if (import.meta.client) {
 
       <div
         v-else-if="pending"
-        class="space-y-2"
+        class="space-y-3"
       >
-        <div class="h-16 rounded-lg bg-muted animate-pulse" />
-        <div class="h-16 rounded-lg bg-muted animate-pulse" />
-        <div class="h-16 rounded-lg bg-muted animate-pulse" />
-        <div class="h-16 rounded-lg bg-muted animate-pulse" />
+        <USkeleton
+          v-for="index in 4"
+          :key="index"
+          class="h-16 rounded-lg border border-muted-200/70"
+        />
       </div>
     </UContainer>
   </div>

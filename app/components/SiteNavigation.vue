@@ -3,15 +3,7 @@ const { mode } = defineProps<{
   mode: 'desktop' | 'mobile'
 }>()
 
-const { t } = useI18n()
-const localePath = useLocalePath()
-
-const navigation = [
-  { label: t('global.nav.features'), to: localePath('/#features') },
-  { label: t('global.nav.pricing'), to: localePath('/pricing') },
-  { label: t('global.nav.docs'), to: 'https://getquillio.com', external: true },
-  { label: t('global.nav.dashboard'), to: localePath('/dashboard') }
-]
+const navigation = []
 </script>
 
 <template>

@@ -9,7 +9,7 @@ useHead(() => ({
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col items-center relative">
+  <div class="min-h-screen flex flex-col relative">
     <AppNavbar>
       <template #center>
         <slot name="nav-center" />
@@ -18,7 +18,7 @@ useHead(() => ({
         <slot name="nav-right" />
       </template>
     </AppNavbar>
-    <div class="flex flex-1 pt-16 w-full sm:w-auto">
+    <div class="flex-1 pt-16 w-full">
       <slot />
     </div>
     <AppFooter />

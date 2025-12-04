@@ -5,6 +5,7 @@ import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { useLocalStorage } from '@vueuse/core'
 
 const router = useRouter()
+const route = useRoute()
 const { loggedIn, signInAnonymous, useActiveOrganization, refreshActiveOrg } = useAuth()
 const activeOrgState = useActiveOrganization()
 
@@ -64,6 +65,11 @@ const contentEntries = computed(() => {
       updatedAt = Number.isFinite(parsedDate.getTime()) ? parsedDate : null
     }
 
+    const versionStats = entry.currentVersion?.diffStats
+    const fmStats = entry.currentVersion?.frontmatter?.diffStats as { additions?: number, deletions?: number } | undefined
+    const additions = Number(versionStats?.additions ?? fmStats?.additions ?? 0)
+    const deletions = Number(versionStats?.deletions ?? fmStats?.deletions ?? 0)
+
     return {
       id: entry.content.id,
       title: entry.content.title || 'Untitled draft',
@@ -73,7 +79,9 @@ const contentEntries = computed(() => {
       contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
       sectionsCount: sections.length,
       wordCount: Number.isFinite(wordCount) ? wordCount : 0,
-      sourceType: entry.sourceContent?.sourceType ?? null
+      sourceType: entry.sourceContent?.sourceType ?? null,
+      additions: Number.isFinite(additions) ? additions : undefined,
+      deletions: Number.isFinite(deletions) ? deletions : undefined
     }
   })
 })
@@ -172,15 +180,41 @@ const loadWorkspaceDetail = async (contentId: string) => {
   }
 }
 
-const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
-  activeWorkspaceId.value = entry.id
-  await loadWorkspaceDetail(entry.id)
+const normalizeDraftId = (value: unknown): string | null => {
+  if (Array.isArray(value)) {
+    const first = value[0]
+    return typeof first === 'string' ? first : null
+  }
+  return typeof value === 'string' ? value : null
 }
 
-const closeWorkspace = () => {
+const resetWorkspaceState = () => {
   activeWorkspaceId.value = null
   workspaceDetail.value = null
   workspaceLoading.value = false
+}
+
+const updateDraftRoute = async (draftId: string | null) => {
+  const nextQuery = { ...route.query }
+  if (draftId) {
+    nextQuery.draft = draftId
+  } else {
+    delete nextQuery.draft
+  }
+  try {
+    await router.replace({ query: nextQuery })
+  } catch (error) {
+    console.warn('Failed to update draft route', error)
+  }
+}
+
+const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
+  await updateDraftRoute(entry.id)
+}
+
+const closeWorkspace = async () => {
+  resetWorkspaceState()
+  await updateDraftRoute(null)
 }
 
 const handleCreateDraft = async () => {
@@ -190,7 +224,7 @@ const handleCreateDraft = async () => {
   }
 
   if (!loggedIn.value && hasReachedAnonLimit.value) {
-    const redirectUrl = `/signup?redirect=${encodeURIComponent('/chat')}`
+    const redirectUrl = `/signup?redirect=${encodeURIComponent('/')}`
     router.push(redirectUrl)
     return
   }
@@ -214,8 +248,7 @@ const handleCreateDraft = async () => {
     }
 
     if (response?.content?.id) {
-      activeWorkspaceId.value = response.content.id
-      await loadWorkspaceDetail(response.content.id)
+      await updateDraftRoute(response.content.id)
       await refreshDrafts()
     }
   } catch (error: any) {
@@ -233,6 +266,19 @@ const handleCreateDraft = async () => {
     createDraftLoading.value = false
   }
 }
+
+watch(() => route.query.draft, async (value) => {
+  const draftId = normalizeDraftId(value)
+  if (!draftId) {
+    resetWorkspaceState()
+    return
+  }
+  if (activeWorkspaceId.value === draftId && workspaceDetail.value) {
+    return
+  }
+  activeWorkspaceId.value = draftId
+  await loadWorkspaceDetail(draftId)
+}, { immediate: true })
 
 const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value) {
@@ -258,304 +304,226 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <UContainer class="py-4 sm:py-8 space-y-6 sm:space-y-8 max-w-4xl mx-auto px-4 sm:px-6">
-    <div
-      v-if="!isWorkspaceActive"
-      class="space-y-4"
-    >
-      <h1 class="text-2xl sm:text-3xl font-semibold text-center">
-        What should we write next?
-      </h1>
-
-      <!-- Empty state: Context-first flow with clear action buttons -->
+  <div class="w-full py-4 sm:py-8 space-y-6 sm:space-y-8">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6">
       <div
-        v-if="!messages.length"
-        class="space-y-4 w-full"
+        v-if="!isWorkspaceActive"
+        class="space-y-4"
       >
-        <div class="flex flex-wrap items-center justify-center gap-3 w-full">
-          <UButton
-            size="lg"
-            variant="soft"
-            color="primary"
-            icon="i-lucide-file-text"
-            :disabled="toolSubmitLoading !== null"
-            @click="quickActionsState.transcript = !quickActionsState.transcript"
-          >
-            Paste transcript
-          </UButton>
-          <UButton
-            size="lg"
-            variant="outline"
-            @click="focusChatInput"
-          >
-            Type your request
-          </UButton>
-        </div>
+        <h1 class="text-2xl sm:text-3xl font-semibold text-center">
+          What should we write next?
+        </h1>
 
-        <!-- Tools appear when buttons are clicked -->
-        <div class="w-full space-y-3">
-          <ToolTranscript
-            v-model:open="quickActionsState.transcript"
-            :loading="toolSubmitLoading === 'transcript'"
-            @submit="handleTranscriptTool"
-          />
-        </div>
-      </div>
-    </div>
-    <div class="space-y-6">
-      <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
-      <UAlert
-        v-if="errorMessage && !messages.length"
-        color="error"
-        variant="soft"
-        icon="i-lucide-alert-triangle"
-        :description="errorMessage"
-        class="w-full max-w-2xl mx-auto"
-      />
-
-      <div
-        v-if="isWorkspaceActive && activeWorkspaceEntry"
-        class="space-y-4 w-full"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-muted-200/70 bg-muted/20 px-4 py-3 w-full">
-          <div>
-            <p class="text-sm font-semibold">
-              {{ activeWorkspaceEntry?.title || 'Draft' }}
-            </p>
-          </div>
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-x"
-            @click="closeWorkspace"
-          >
-            Back to chat
-          </UButton>
-        </div>
-
+        <!-- Empty state: Context-first flow with clear action buttons -->
         <div
-          v-if="isWorkspaceLoading"
-          class="flex items-center gap-3 rounded-2xl border border-muted-200/70 bg-muted/20 px-4 py-3 text-sm text-muted-500"
-        >
-          <UIcon
-            name="i-lucide-loader"
-            class="h-4 w-4 animate-spin"
-          />
-          Loading draft…
-        </div>
-
-        <ChatDraftWorkspace
-          v-if="workspaceDetail?.content?.id"
-          :content-id="workspaceDetail.content.id"
-          :organization-slug="workspaceDetail.content.slug || activeOrgState?.value?.data?.slug || null"
-          :initial-payload="workspaceDetail"
-          :show-back-button="true"
-          @close="closeWorkspace"
-        />
-      </div>
-
-      <template v-else>
-        <div
-          v-if="messages.length"
+          v-if="!messages.length"
           class="space-y-4 w-full"
         >
-          <div class="w-full max-w-3xl mx-auto">
-            <div
-              v-if="isStreaming"
-              class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
-            >
-              <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
-              <span>Quillio is thinking...</span>
-            </div>
-
-            <div class="min-h-[200px]">
-              <ChatMessagesList
-                :messages="messages"
-                @regenerate="handleRegenerate"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div class="w-full max-w-2xl mx-auto space-y-4">
-          <!-- Show linked sources if any -->
-          <div
-            v-if="linkedSources.length"
-            class="flex flex-wrap gap-2"
-          >
-            <UBadge
-              v-for="source in linkedSources"
-              :key="source.id"
-              size="sm"
-              color="primary"
-              class="flex items-center gap-1"
-            >
-              <UIcon
-                name="i-lucide-file-text"
-              />
-              Transcript
-              <UButton
-                variant="link"
-                size="xs"
-                icon="i-lucide-x"
-                @click.stop="removeLinkedSource(source.id)"
-              />
-            </UBadge>
-          </div>
-
-          <!-- Add more information -->
-          <div
-            v-if="messages.length"
-            class="flex flex-wrap items-center gap-2"
-          >
+          <div class="flex flex-wrap items-center justify-center gap-3 w-full">
             <UButton
-              size="sm"
+              size="lg"
               variant="soft"
               color="primary"
               icon="i-lucide-file-text"
+              :disabled="toolSubmitLoading !== null"
               @click="quickActionsState.transcript = !quickActionsState.transcript"
             >
               Paste transcript
             </UButton>
+            <UButton
+              size="lg"
+              variant="outline"
+              @click="focusChatInput"
+            >
+              Type your request
+            </UButton>
           </div>
 
-          <!-- Tools appear here when clicked (only when messages exist) -->
-          <div
-            v-if="messages.length"
-            class="w-full space-y-3"
-          >
+          <!-- Tools appear when buttons are clicked -->
+          <div class="w-full space-y-3">
             <ToolTranscript
               v-model:open="quickActionsState.transcript"
               :loading="toolSubmitLoading === 'transcript'"
               @submit="handleTranscriptTool"
             />
           </div>
+        </div>
+      </div>
+      <div class="space-y-6">
+        <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
+        <UAlert
+          v-if="errorMessage && !messages.length"
+          color="error"
+          variant="soft"
+          icon="i-lucide-alert-triangle"
+          :description="errorMessage"
+          class="w-full max-w-2xl mx-auto"
+        />
 
-          <!-- Main chat input -->
-          <div class="flex flex-col gap-3 sm:flex-row w-full">
-            <UChatPrompt
-              v-model="prompt"
-              placeholder="Describe what you need..."
-              variant="subtle"
-              :disabled="isBusy || promptSubmitting"
-              class="flex-1 w-full"
-              @submit="handlePromptSubmit"
-            >
-              <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : status" />
-            </UChatPrompt>
+        <div
+          v-if="isWorkspaceActive && activeWorkspaceEntry"
+          class="space-y-4 w-full"
+        >
+          <USkeleton
+            v-if="isWorkspaceLoading"
+            class="rounded-2xl border border-muted-200/70 p-4"
+          >
+            <div class="h-4 rounded bg-muted/70" />
+            <div class="mt-2 space-y-2">
+              <div class="h-3 rounded bg-muted/60" />
+              <div class="h-3 rounded bg-muted/50" />
+            </div>
+          </USkeleton>
 
-            <USelectMenu
-              v-model="selectedContentType"
-              :items="CONTENT_TYPE_OPTIONS"
-              value-key="value"
-              class="w-full sm:w-[160px]"
-              size="md"
-            />
-          </div>
+          <ChatDraftWorkspace
+            v-if="workspaceDetail?.content?.id"
+            :content-id="workspaceDetail.content.id"
+            :organization-slug="workspaceDetail.content.slug || activeOrgState?.value?.data?.slug || null"
+            :initial-payload="workspaceDetail"
+            :show-back-button="true"
+            :back-to="null"
+            @close="closeWorkspace"
+          />
+        </div>
 
-          <!-- Draft creation - only show when there are messages -->
+        <template v-else>
           <div
             v-if="messages.length"
-            class="space-y-2"
+            class="space-y-4 w-full"
           >
-            <UButton
-              block
-              color="primary"
-              :loading="createDraftLoading"
-              :disabled="!canStartDraft"
-              @click="handleCreateDraft"
-            >
-              {{ createDraftCta }}
-            </UButton>
-            <p
-              v-if="!loggedIn && remainingAnonDrafts < ANON_DRAFT_LIMIT"
-              class="text-xs text-muted-500 text-center"
-            >
-              {{ remainingAnonDrafts > 0 ? `${remainingAnonDrafts} draft${remainingAnonDrafts === 1 ? '' : 's'} left` : 'Sign up to save more' }}
-            </p>
+            <div class="w-full max-w-3xl mx-auto">
+              <div
+                v-if="isStreaming"
+                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
+              >
+                <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
+                <span>Quillio is thinking...</span>
+              </div>
 
-            <UAlert
-              v-if="createDraftError"
-              color="error"
-              variant="soft"
-              icon="i-lucide-alert-triangle"
-              :description="createDraftError"
-            />
-          </div>
-        </div>
-      </template>
-    </div>
-    <section class="space-y-3 w-full">
-      <div class="flex items-center justify-between w-full">
-        <p class="text-sm font-semibold">
-          Your drafts
-        </p>
-        <UButton
-          size="xs"
-          color="primary"
-          variant="ghost"
-          @click="router.push('/content')"
-        >
-          View all
-        </UButton>
-      </div>
-
-      <div
-        v-if="draftsPending"
-        class="space-y-2"
-      >
-        <div class="h-12 rounded-md bg-muted animate-pulse" />
-        <div class="h-12 rounded-md bg-muted animate-pulse" />
-        <div class="h-12 rounded-md bg-muted animate-pulse" />
-      </div>
-      <div
-        v-else-if="hasContent"
-        class="rounded-2xl border border-muted-200/60 divide-y divide-muted-200/60"
-      >
-        <article
-          v-for="entry in contentEntries"
-          :key="entry.id"
-          class="p-4 sm:p-5 space-y-3"
-        >
-          <div class="flex flex-wrap justify-between gap-4">
-            <div>
-              <p class="font-medium leading-tight">
-                {{ entry.title }}
-              </p>
-              <p class="text-xs text-muted-500">
-                Updated {{ entry.updatedAt ? entry.updatedAt.toLocaleDateString() : '—' }}
-              </p>
+              <div class="min-h-[200px]">
+                <ChatMessagesList
+                  :messages="messages"
+                  @regenerate="handleRegenerate"
+                />
+              </div>
             </div>
-            <UButton
-              size="xs"
-              color="primary"
-              variant="soft"
-              @click="openWorkspace(entry)"
-            >
-              Open draft
-            </UButton>
           </div>
-          <div class="flex flex-wrap gap-4 text-xs text-muted-500">
-            <span>{{ entry.sectionsCount }} sections</span>
-            <span v-if="entry.wordCount">
-              {{ entry.wordCount }} words
-            </span>
-            <span
-              v-if="entry.sourceType"
-              class="capitalize"
+
+          <div class="w-full max-w-2xl mx-auto space-y-4">
+            <!-- Show linked sources if any -->
+            <div
+              v-if="linkedSources.length"
+              class="flex flex-wrap gap-2"
             >
-              From: {{ entry.sourceType.replace('_', ' ') }}
-            </span>
+              <UBadge
+                v-for="source in linkedSources"
+                :key="source.id"
+                size="sm"
+                color="primary"
+                class="flex items-center gap-1"
+              >
+                <UIcon
+                  name="i-lucide-file-text"
+                />
+                Transcript
+                <UButton
+                  variant="link"
+                  size="xs"
+                  icon="i-lucide-x"
+                  @click.stop="removeLinkedSource(source.id)"
+                />
+              </UBadge>
+            </div>
+
+            <!-- Add more information -->
+            <div
+              v-if="messages.length"
+              class="flex flex-wrap items-center gap-2"
+            >
+              <UButton
+                size="sm"
+                variant="soft"
+                color="primary"
+                icon="i-lucide-file-text"
+                @click="quickActionsState.transcript = !quickActionsState.transcript"
+              >
+                Paste transcript
+              </UButton>
+            </div>
+
+            <!-- Tools appear here when clicked (only when messages exist) -->
+            <div
+              v-if="messages.length"
+              class="w-full space-y-3"
+            >
+              <ToolTranscript
+                v-model:open="quickActionsState.transcript"
+                :loading="toolSubmitLoading === 'transcript'"
+                @submit="handleTranscriptTool"
+              />
+            </div>
+
+            <!-- Main chat input -->
+            <div class="flex flex-col gap-3 sm:flex-row w-full">
+              <UChatPrompt
+                v-model="prompt"
+                placeholder="Describe what you need..."
+                variant="subtle"
+                :disabled="isBusy || promptSubmitting"
+                class="flex-1 w-full"
+                @submit="handlePromptSubmit"
+              >
+                <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : status" />
+              </UChatPrompt>
+
+              <USelectMenu
+                v-model="selectedContentType"
+                :items="CONTENT_TYPE_OPTIONS"
+                value-key="value"
+                class="w-full sm:w-[160px]"
+                size="md"
+              />
+            </div>
+
+            <!-- Draft creation - only show when there are messages -->
+            <div
+              v-if="messages.length"
+              class="space-y-2"
+            >
+              <UButton
+                block
+                color="primary"
+                :loading="createDraftLoading"
+                :disabled="!canStartDraft"
+                @click="handleCreateDraft"
+              >
+                {{ createDraftCta }}
+              </UButton>
+              <p
+                v-if="!loggedIn && remainingAnonDrafts < ANON_DRAFT_LIMIT"
+                class="text-xs text-muted-500 text-center"
+              >
+                {{ remainingAnonDrafts > 0 ? `${remainingAnonDrafts} draft${remainingAnonDrafts === 1 ? '' : 's'} left` : 'Sign up to save more' }}
+              </p>
+
+              <UAlert
+                v-if="createDraftError"
+                color="error"
+                variant="soft"
+                icon="i-lucide-alert-triangle"
+                :description="createDraftError"
+              />
+            </div>
           </div>
-        </article>
+        </template>
       </div>
-      <div
-        v-else
-        class="rounded-2xl border border-dashed border-muted-200/70 p-5 text-center text-sm text-muted-500"
-      >
-        No drafts yet
-      </div>
-    </section>
-  </UContainer>
+      <ChatDraftsList
+        v-if="!isWorkspaceActive"
+        :drafts-pending="draftsPending"
+        :has-content="hasContent"
+        :content-entries="contentEntries"
+        @open-workspace="openWorkspace"
+      />
+    </div>
+  </div>
 </template>

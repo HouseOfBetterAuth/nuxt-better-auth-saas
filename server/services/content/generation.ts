@@ -840,12 +840,15 @@ const combineSectionsIntoMarkdown = (params: {
   }
 }
 
-const createContentGenerationMetadata = (sourceContent?: typeof schema.sourceContent.$inferSelect | null) => {
+const createContentGenerationMetadata = (
+  sourceContent: typeof schema.sourceContent.$inferSelect | null,
+  stages: string[]
+) => {
   return {
     generator: {
       engine: 'codex-pipeline',
       generatedAt: new Date().toISOString(),
-      stages: ['plan', 'frontmatter', 'sections']
+      stages
     },
     source: sourceContent
       ? {
@@ -1108,6 +1111,14 @@ export const generateContentDraftFromSource = async (
 
   const chunks = await ensureChunksExistForSourceContent(db, sourceContent, sourceContent.sourceText)
 
+  // Track pipeline stages as they complete
+  const pipelineStages: string[] = []
+
+  // Chunking stage (if chunks were created/verified)
+  if (chunks && chunks.length > 0) {
+    pipelineStages.push('chunking')
+  }
+
   let contentType: typeof CONTENT_TYPES[number]
   if (overrides?.contentType) {
     contentType = validateEnum(overrides.contentType, CONTENT_TYPES, 'contentType')
@@ -1126,6 +1137,7 @@ export const generateContentDraftFromSource = async (
     chunks,
     sourceTitle: sourceContent?.title ?? existingContent?.title ?? null
   })
+  pipelineStages.push('plan')
 
   const frontmatter = createFrontmatterFromContentPlan({
     plan,
@@ -1133,6 +1145,7 @@ export const generateContentDraftFromSource = async (
     existingContent,
     sourceContent
   })
+  pipelineStages.push('frontmatter')
 
   if (input.onPlanReady) {
     await input.onPlanReady({ plan, frontmatter })
@@ -1147,11 +1160,13 @@ export const generateContentDraftFromSource = async (
     organizationId,
     sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null
   })
+  pipelineStages.push('sections')
 
   const assembled = combineSectionsIntoMarkdown({
     frontmatter,
     sections
   })
+  pipelineStages.push('assembly')
 
   const resolvedSourceContentId = frontmatter.sourceContentId ?? sourceContent?.id ?? null
   const selectedStatus = frontmatter.status
@@ -1159,7 +1174,10 @@ export const generateContentDraftFromSource = async (
   const primaryKeyword = frontmatter.primaryKeyword ?? null
   const targetLocale = frontmatter.targetLocale ?? null
 
-  const assets = createContentGenerationMetadata(sourceContent)
+  // SEO snapshot is created, so SEO stage is complete
+  pipelineStages.push('seo')
+
+  const assets = createContentGenerationMetadata(sourceContent, pipelineStages)
   const seoSnapshot = {
     plan: plan.seo,
     primaryKeyword,
