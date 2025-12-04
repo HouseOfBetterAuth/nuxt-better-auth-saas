@@ -2,7 +2,7 @@
 import { useClipboard } from '@vueuse/core'
 
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 const route = useRoute()
@@ -15,7 +15,6 @@ const { organization, useActiveOrganization, fetchSession, user } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 const { copy } = useClipboard()
-const { showOnboarding } = useOnboarding()
 
 interface ActiveOrgMember {
   userId?: string | null
@@ -75,7 +74,6 @@ async function leaveTeam() {
       window.location.href = `/${nextOrg.slug}/dashboard`
     } else {
       await fetchSession()
-      await showOnboarding()
       await navigateTo('/')
     }
   } catch (e: any) {
@@ -193,7 +191,6 @@ async function deleteTeam() {
     } else {
       // No teams left
       await fetchSession()
-      await showOnboarding()
       await navigateTo('/')
     }
   } catch (e: any) {

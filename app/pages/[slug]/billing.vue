@@ -2,7 +2,7 @@
 import { PLANS } from '~~/shared/utils/plans'
 
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 const { useActiveOrganization, subscription: stripeSubscription, client, refreshActiveOrg } = useAuth()

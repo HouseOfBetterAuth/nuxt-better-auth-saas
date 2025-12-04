@@ -73,12 +73,6 @@ const plans = [
 
 <template>
   <NuxtLayout name="default">
-    <template #nav-center>
-      <!-- Empty slot - portrait-only uses mobile navigation only -->
-    </template>
-    <template #nav-right>
-      <UserNavigation />
-    </template>
     <UContainer class="space-y-6 pt-8 pb-6">
       <!-- Header -->
       <div class="text-center space-y-2">

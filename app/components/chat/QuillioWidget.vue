@@ -58,7 +58,7 @@ const {
   data: workspaceDraftsPayload,
   pending: draftsPending,
   refresh: refreshDrafts
-} = await useFetch<WorkspaceResponse>('/api/chat/workspace', {
+} = await useFetch<WorkspaceResponse>('/api/chat/drafts-list', {
   default: () => ({
     contents: []
   })
@@ -79,6 +79,30 @@ const hasReachedAnonLimit = computed(() => !loggedIn.value && remainingAnonDraft
 const contentEntries = computed(() => {
   const list = Array.isArray(workspaceDraftsPayload.value?.contents) ? workspaceDraftsPayload.value?.contents : []
   return list.map((entry: any) => {
+    // Support new lightweight format with _computed fields
+    if (entry._computed) {
+      let updatedAt: Date | null = null
+      if (entry.content.updatedAt) {
+        const parsedDate = new Date(entry.content.updatedAt)
+        updatedAt = Number.isFinite(parsedDate.getTime()) ? parsedDate : null
+      }
+
+      return {
+        id: entry.content.id,
+        title: entry.content.title || 'Untitled draft',
+        slug: entry.content.slug,
+        status: entry.content.status,
+        updatedAt,
+        contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
+        sectionsCount: entry._computed.sectionsCount || 0,
+        wordCount: entry._computed.wordCount || 0,
+        sourceType: entry.sourceContent?.sourceType ?? null,
+        additions: entry._computed.additions,
+        deletions: entry._computed.deletions
+      }
+    }
+
+    // Fallback for old format (backwards compatibility)
     const sections = Array.isArray(entry.currentVersion?.sections) ? entry.currentVersion.sections : []
     const wordCount = sections.reduce((sum: number, section: Record<string, any>) => {
       const rawValue = typeof section.wordCount === 'string' ? Number.parseInt(section.wordCount, 10) : Number(section.wordCount)
@@ -120,6 +144,11 @@ const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.va
 const uiStatus = computed(() => status.value)
 
 const autoDraftTriggered = ref(false)
+const draftAutoFailCount = ref(0)
+const lastAutoDraftAttempt = ref<number | null>(null)
+const lastAttemptedMessageCount = ref(0)
+const MAX_AUTO_DRAFT_RETRIES = 3
+const AUTO_DRAFT_COOLDOWN_MS = 5000 // 5 seconds
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
@@ -230,12 +259,11 @@ const loadWorkspaceDetail = async (contentId: string) => {
   workspaceLoading.value = true
   workspaceDetail.value = null
   try {
-    const response = await $fetch<{ drafts?: any[], workspace?: any | null }>('/api/chat/workspace', {
+    // Only fetch workspace detail, not the full contents list
+    // The list is already loaded via the lightweight drafts-list endpoint
+    const response = await $fetch<{ workspace?: any | null }>('/api/chat/workspace', {
       query: { contentId }
     })
-    if (Array.isArray(response?.contents)) {
-      workspaceDraftsPayload.value = { contents: response.contents }
-    }
     workspaceDetail.value = response?.workspace ?? null
   } catch (error) {
     console.error('Unable to load workspace', error)
@@ -304,6 +332,9 @@ const resetConversation = () => {
   linkedSources.value = []
   createDraftError.value = null
   autoDraftTriggered.value = false
+  draftAutoFailCount.value = 0
+  lastAutoDraftAttempt.value = null
+  lastAttemptedMessageCount.value = 0
   resetSession()
 }
 
@@ -341,6 +372,9 @@ const handleCreateDraft = async () => {
     if (response?.content?.id) {
       await refreshDrafts()
       await activateWorkspace(response.content.id)
+      // Reset failure counter on success
+      draftAutoFailCount.value = 0
+      lastAttemptedMessageCount.value = 0
       return true
     }
     return false
@@ -369,12 +403,39 @@ watch(
     loading: createDraftLoading.value
   }),
   async ({ active, canStart, count, loading }) => {
+    // Don't attempt if workspace is active, loading, already triggered, can't start, no messages, or limit reached
     if (active || loading || autoDraftTriggered.value || !canStart || count === 0 || hasReachedAnonLimit.value)
       return
+
+    // Prevent infinite retries: check failure counter and cooldown
+    if (draftAutoFailCount.value >= MAX_AUTO_DRAFT_RETRIES) {
+      return
+    }
+
+    // Check cooldown period
+    const now = Date.now()
+    if (lastAutoDraftAttempt.value !== null && (now - lastAutoDraftAttempt.value) < AUTO_DRAFT_COOLDOWN_MS) {
+      return
+    }
+
+    // Don't retry for the same message count (prevents loop when error message is added)
+    if (lastAttemptedMessageCount.value === count) {
+      return
+    }
+
     autoDraftTriggered.value = true
+    lastAutoDraftAttempt.value = now
+    lastAttemptedMessageCount.value = count
+
     const success = await handleCreateDraft()
     if (!success) {
+      draftAutoFailCount.value++
       autoDraftTriggered.value = false
+      // Keep lastAttemptedMessageCount to prevent immediate retry when error message is added
+    } else {
+      // Success: reset failure counter and message count tracking
+      draftAutoFailCount.value = 0
+      lastAttemptedMessageCount.value = 0
     }
   }
 )
@@ -405,6 +466,19 @@ function handleCopy(message: ChatMessage) {
     color: 'primary'
   })
 }
+
+// Populate drafts list cache for header reuse
+const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+
+watch(workspaceDraftsPayload, (payload) => {
+  if (!payload?.contents) return
+  const cache = draftsListCache.value
+  payload.contents.forEach((entry: any) => {
+    if (entry.content?.id) {
+      cache.set(entry.content.id, entry)
+    }
+  })
+}, { immediate: true, deep: true })
 
 if (import.meta.client) {
   watch(loggedIn, async () => {

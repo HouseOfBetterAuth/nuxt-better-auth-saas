@@ -176,7 +176,16 @@ const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 
 const content = ref<ContentResponse | null>(props.initialPayload ?? null)
+const headerData = ref<{
+  title: string
+  contentType: string | null
+  updatedAtLabel: string
+  versionId: string | null
+  additions: number
+  deletions: number
+} | null>(null)
 const pending = ref(!content.value)
+const headerPending = ref(!content.value)
 const error = ref<any>(null)
 const readyEmitted = ref(false)
 
@@ -184,6 +193,66 @@ const emitReady = () => {
   if (!readyEmitted.value) {
     emit('ready')
     readyEmitted.value = true
+  }
+}
+
+async function loadHeaderData() {
+  if (!contentId.value) {
+    headerData.value = null
+    return
+  }
+
+  // Check cache first (from drafts list)
+  const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+  const cached = draftsListCache.value.get(contentId.value)
+
+  if (cached) {
+    // Use cached data immediately - no API call needed!
+    const updatedAt = cached.content?.updatedAt
+    const updatedAtLabel = updatedAt
+      ? new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        }).format(new Date(updatedAt))
+      : '—'
+
+    const contentType = cached.currentVersion?.frontmatter?.contentType || cached.content?.contentType || null
+    const title = cached.content?.title || 'Untitled draft'
+    const seoTitle = cached.currentVersion?.frontmatter?.seoTitle
+    const frontmatterTitle = cached.currentVersion?.frontmatter?.title
+    const displayTitle = seoTitle || frontmatterTitle || title
+
+    headerData.value = {
+      title: displayTitle,
+      contentType,
+      updatedAtLabel,
+      versionId: cached.content?.currentVersionId || null,
+      additions: cached._computed?.additions || 0,
+      deletions: cached._computed?.deletions || 0
+    }
+    headerPending.value = false
+    return // Skip API call!
+  }
+
+  // Only fetch if not in cache
+  headerPending.value = true
+  try {
+    const header = await $fetch<{
+      title: string
+      contentType: string | null
+      updatedAtLabel: string
+      versionId: string | null
+      additions: number
+      deletions: number
+    }>('/api/chat/workspace-header', {
+      query: { contentId: contentId.value }
+    })
+    headerData.value = header
+  } catch (err: any) {
+    // Header load failure is non-critical, continue with full load
+    console.warn('Failed to load header data', err)
+  } finally {
+    headerPending.value = false
   }
 }
 
@@ -209,9 +278,14 @@ async function loadWorkspacePayload() {
 
 if (content.value) {
   pending.value = false
+  headerPending.value = false
   emitReady()
 } else {
-  await loadWorkspacePayload()
+  // Load header first (lightweight), then full workspace
+  await Promise.all([
+    loadHeaderData(),
+    loadWorkspacePayload()
+  ])
 }
 
 watch(() => props.initialPayload, (value) => {
@@ -230,10 +304,15 @@ watch(() => contentId.value, async (next, prev) => {
   if (props.initialPayload && props.initialPayload.content.id === next) {
     content.value = props.initialPayload
     pending.value = false
+    headerPending.value = false
     emitReady()
     return
   }
-  await loadWorkspacePayload()
+  // Load header first (lightweight), then full workspace
+  await Promise.all([
+    loadHeaderData(),
+    loadWorkspacePayload()
+  ])
 })
 
 const contentRecord = computed(() => content.value?.content ?? null)
@@ -256,6 +335,23 @@ watch(content, (value) => {
   if (!value?.content?.id) {
     return
   }
+
+  // Update cache with full workspace data when it loads
+  const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+  draftsListCache.value.set(value.content.id, {
+    content: value.content,
+    currentVersion: value.currentVersion,
+    sourceContent: value.sourceContent,
+    _computed: {
+      wordCount: value.currentVersion?.sections?.reduce((sum: number, section: any) => {
+        const wc = typeof section.wordCount === 'number' ? section.wordCount : 0
+        return sum + wc
+      }, 0) || 0,
+      sectionsCount: Array.isArray(value.currentVersion?.sections) ? value.currentVersion.sections.length : 0,
+      additions: value.currentVersion?.diffStats?.additions || value.currentVersion?.frontmatter?.diffStats?.additions || 0,
+      deletions: value.currentVersion?.diffStats?.deletions || value.currentVersion?.frontmatter?.diffStats?.deletions || 0
+    }
+  })
 
   hydrateSession({
     sessionId: value.chatSession?.id ?? sessionId.value,
@@ -389,6 +485,28 @@ const diffStats = computed(() => {
 })
 
 const headerPayload = computed<WorkspaceHeaderState | null>(() => {
+  // Use lightweight header data if available (faster), fallback to full content
+  if (headerData.value) {
+    return {
+      title: headerData.value.title,
+      contentType: headerData.value.contentType || 'content',
+      updatedAtLabel: headerData.value.updatedAtLabel,
+      versionId: headerData.value.versionId,
+      additions: headerData.value.additions,
+      deletions: headerData.value.deletions,
+      showBackButton: showBackButton.value,
+      onBack: showBackButton.value ? handleBackNavigation : null,
+      // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
+      onArchive: null,
+      onShare: null,
+      onPrimaryAction: null,
+      primaryActionLabel: '',
+      primaryActionColor: '',
+      primaryActionDisabled: false
+    }
+  }
+
+  // Fallback to full content when available
   if (!contentRecord.value) {
     return null
   }

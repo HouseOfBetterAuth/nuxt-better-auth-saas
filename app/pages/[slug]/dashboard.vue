@@ -3,7 +3,7 @@ const { user } = useAuth()
 const router = useRouter()
 
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 onMounted(() => {

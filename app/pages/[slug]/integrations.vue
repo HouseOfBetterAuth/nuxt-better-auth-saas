@@ -3,7 +3,7 @@ import { GITHUB_INTEGRATION_SCOPES } from '#shared/constants/githubScopes'
 import { GOOGLE_INTEGRATION_SCOPES } from '#shared/constants/googleScopes'
 
 definePageMeta({
-  layout: 'dashboard'
+  layout: 'default'
 })
 
 const currentRoute = useRoute()

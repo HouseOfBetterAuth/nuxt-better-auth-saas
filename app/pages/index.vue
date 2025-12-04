@@ -30,21 +30,6 @@ useSeoMeta({
 
 <template>
   <NuxtLayout :name="layoutName">
-    <template
-      v-if="!isWorkspaceLayout"
-      #nav-center
-    >
-      <!-- Empty slot - portrait-only uses mobile navigation only -->
-    </template>
-    <template
-      v-if="!isWorkspaceLayout"
-      #nav-right
-    >
-      <UserNavigation />
-    </template>
-    <div :class="isWorkspaceLayout ? '' : 'pt-14'">
-      <!-- Chat Section -->
-      <ChatQuillioWidget />
-    </div>
+    <ChatQuillioWidget />
   </NuxtLayout>
 </template>
