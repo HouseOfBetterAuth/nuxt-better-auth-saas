@@ -22,6 +22,7 @@ export const content = pgTable('content', {
   primaryKeyword: text('primary_keyword'),
   targetLocale: text('target_locale'),
   contentType: contentTypeEnum('content_type').default('blog_post').notNull(),
+  ingestMethod: text('ingest_method'),
   currentVersionId: uuid('current_version_id'), // maintained via transactional logic to avoid circular FK issues
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')

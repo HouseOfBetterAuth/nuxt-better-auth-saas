@@ -46,6 +46,101 @@ function stripVttToPlainText(vtt: string) {
     .trim()
 }
 
+async function fetchInnertubeClientConfig(videoId: string) {
+  const watchPage = await $fetch<string>(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=en`, {
+    responseType: 'text'
+  })
+
+  const apiKey = watchPage.match(/"INNERTUBE_API_KEY":"([^"]+)"/)?.[1]
+  const clientVersion = watchPage.match(/"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/)?.[1]
+
+  if (!apiKey || !clientVersion) {
+    throw new Error('Unable to extract YouTube client configuration for transcript fetch.')
+  }
+
+  return { apiKey, clientVersion }
+}
+
+function selectPreferredCaptionTrack(tracks: any[]) {
+  const englishNonAsr = tracks.find(track => track?.languageCode?.startsWith('en') && track?.kind !== 'asr')
+  if (englishNonAsr)
+    return englishNonAsr
+
+  const nonAsr = tracks.find(track => track?.kind !== 'asr')
+  if (nonAsr)
+    return nonAsr
+
+  return tracks[0]
+}
+
+function parseJson3Transcript(json: any) {
+  const events = Array.isArray(json?.events) ? json.events : []
+  const segments = events
+    .flatMap((event: any) => Array.isArray(event?.segs) ? event.segs : [])
+    .map((segment: any) => typeof segment?.utf8 === 'string' ? segment.utf8 : '')
+    .filter(Boolean)
+
+  return segments.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+async function downloadInnertubeTranscript(track: any) {
+  const trackUrl = new URL(track.baseUrl)
+  trackUrl.searchParams.set('fmt', 'json3')
+
+  try {
+    const json = await $fetch<any>(trackUrl.toString())
+    const text = parseJson3Transcript(json)
+    if (text) {
+      return { text, format: 'json3' as const }
+    }
+  } catch (error) {
+    console.warn('Failed to parse JSON3 transcript, falling back to VTT', error)
+  }
+
+  trackUrl.searchParams.set('fmt', 'vtt')
+  const vtt = await $fetch<string>(trackUrl.toString(), { responseType: 'text' })
+  const text = stripVttToPlainText(vtt)
+  if (!text) {
+    throw new Error('Transcript download returned empty content.')
+  }
+  return { text, format: 'vtt' as const }
+}
+
+async function fetchTranscriptViaInnertube(videoId: string) {
+  const { apiKey, clientVersion } = await fetchInnertubeClientConfig(videoId)
+
+  const playerResponse = await $fetch<any>(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}`, {
+    method: 'POST',
+    body: {
+      context: {
+        client: {
+          hl: 'en',
+          gl: 'US',
+          clientName: 'WEB',
+          clientVersion
+        }
+      },
+      videoId
+    }
+  })
+
+  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks
+  if (!Array.isArray(tracks) || !tracks.length) {
+    throw new Error('No transcripts available via YouTube web client.')
+  }
+
+  const track = selectPreferredCaptionTrack(tracks)
+
+  const { text, format } = await downloadInnertubeTranscript(track)
+
+  return {
+    text,
+    track,
+    format,
+    clientVersion
+  }
+}
+
 function getBaseMetadata(metadata: any) {
   return metadata && typeof metadata === 'object' ? { ...metadata } : {}
 }
@@ -267,95 +362,127 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
     return source
   }
 
-  const account = await findYouTubeAccount(db, organizationId, userId)
-
-  if (!account) {
-    const baseMetadata = getBaseMetadata(source.metadata)
-    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
-    await db
-      .update(schema.sourceContent)
-      .set({
-        ingestStatus: 'failed',
-        metadata: {
-          ...baseMetadata,
-          youtube: {
-            ...existingYoutubeMetadata,
-            lastError: 'No connected YouTube integration available.'
-          }
-        },
-        updatedAt: new Date()
-      })
-      .where(eq(schema.sourceContent.id, sourceContentId))
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'No YouTube integration available for this organization.'
-    })
-  }
+  const baseMetadata = getBaseMetadata(source.metadata)
+  const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
+  let transcriptText: string | null = null
+  let youtubeMetadata = { ...existingYoutubeMetadata }
+  let lastInnertubeError: string | undefined
+  let ingestMethod: string | null = typeof (baseMetadata as any)?.ingestMethod === 'string'
+    ? (baseMetadata as any).ingestMethod
+    : null
 
   try {
-    const accessToken = await ensureAccessToken(db, account)
-    const caption = await fetchCaptionMetadata(accessToken, videoId)
-    const vttContent = await downloadCaption(accessToken, caption.id)
-    const text = stripVttToPlainText(vttContent)
+    const innertubeResult = await fetchTranscriptViaInnertube(videoId)
+    transcriptText = innertubeResult.text
+    ingestMethod = 'youtube_innertube'
+    youtubeMetadata = {
+      ...youtubeMetadata,
+      transcriptMethod: 'innertube',
+      language: innertubeResult.track?.languageCode ?? innertubeResult.track?.languageName,
+      trackKind: innertubeResult.track?.kind,
+      transcriptFormat: innertubeResult.format,
+      clientVersion: innertubeResult.clientVersion,
+      lastIngestedAt: new Date().toISOString()
+    }
+  } catch (error) {
+    lastInnertubeError = (error as Error).message
+    console.warn('Innertube transcript fetch failed, falling back to YouTube API', error)
+  }
 
-    const baseMetadata = getBaseMetadata(source.metadata)
-    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
-    const metadata = {
-      ...baseMetadata,
-      youtube: {
-        ...existingYoutubeMetadata,
-        captionId: caption.id,
-        language: caption?.snippet?.language,
-        lastIngestedAt: new Date().toISOString()
-      }
+  if (!transcriptText) {
+    const account = await findYouTubeAccount(db, organizationId, userId)
+
+    if (!account) {
+      await db
+        .update(schema.sourceContent)
+        .set({
+          ingestStatus: 'failed',
+          metadata: {
+            ...baseMetadata,
+            ingestMethod,
+            youtube: {
+              ...youtubeMetadata,
+              lastError: 'No connected YouTube integration available.',
+              lastInnertubeError
+            }
+          },
+          updatedAt: new Date()
+        })
+        .where(eq(schema.sourceContent.id, sourceContentId))
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'No YouTube integration available for this organization.'
+      })
     }
 
-    const [processing] = await db
-      .update(schema.sourceContent)
-      .set({
-        sourceText: text,
-        ingestStatus: 'processing',
-        metadata,
-        updatedAt: new Date()
-      })
-      .where(eq(schema.sourceContent.id, sourceContentId))
-      .returning()
+    try {
+      const accessToken = await ensureAccessToken(db, account)
+      const caption = await fetchCaptionMetadata(accessToken, videoId)
+      const vttContent = await downloadCaption(accessToken, caption.id)
+      transcriptText = stripVttToPlainText(vttContent)
+      ingestMethod = 'youtube_api'
+      youtubeMetadata = {
+        ...youtubeMetadata,
+        transcriptMethod: 'youtube_api',
+        captionId: caption.id,
+        language: caption?.snippet?.language,
+        lastIngestedAt: new Date().toISOString(),
+        lastInnertubeError
+      }
+    } catch (error) {
+      const errorMessage = (error as FetchError)?.data?.error?.message || (error as Error).message || 'Unknown ingest error'
+      await db
+        .update(schema.sourceContent)
+        .set({
+          ingestStatus: 'failed',
+          metadata: {
+            ...baseMetadata,
+            ingestMethod,
+            youtube: {
+              ...youtubeMetadata,
+              lastError: errorMessage,
+              lastInnertubeError,
+              lastIngestedAt: new Date().toISOString()
+            }
+          },
+          updatedAt: new Date()
+        })
+        .where(eq(schema.sourceContent.id, sourceContentId))
 
-    await createChunksFromSourceContentText({
-      db,
-      sourceContent: processing
-    })
-
-    const [updated] = await db
-      .update(schema.sourceContent)
-      .set({
-        ingestStatus: 'ingested',
-        updatedAt: new Date()
-      })
-      .where(eq(schema.sourceContent.id, sourceContentId))
-      .returning()
-
-    return updated
-  } catch (error) {
-    const baseMetadata = getBaseMetadata(source.metadata)
-    const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
-    const errorMessage = (error as FetchError)?.data?.error?.message || (error as Error).message || 'Unknown ingest error'
-    await db
-      .update(schema.sourceContent)
-      .set({
-        ingestStatus: 'failed',
-        metadata: {
-          ...baseMetadata,
-          youtube: {
-            ...existingYoutubeMetadata,
-            lastError: errorMessage,
-            lastIngestedAt: new Date().toISOString()
-          }
-        },
-        updatedAt: new Date()
-      })
-      .where(eq(schema.sourceContent.id, sourceContentId))
-
-    throw error
+      throw error
+    }
   }
+
+  const metadata = {
+    ...baseMetadata,
+    ingestMethod,
+    youtube: youtubeMetadata
+  }
+
+  const [processing] = await db
+    .update(schema.sourceContent)
+    .set({
+      sourceText: transcriptText,
+      ingestStatus: 'processing',
+      metadata,
+      updatedAt: new Date()
+    })
+    .where(eq(schema.sourceContent.id, sourceContentId))
+    .returning()
+
+  await createChunksFromSourceContentText({
+    db,
+    sourceContent: processing
+  })
+
+  const [updated] = await db
+    .update(schema.sourceContent)
+    .set({
+      ingestStatus: 'ingested',
+      updatedAt: new Date()
+    })
+    .where(eq(schema.sourceContent.id, sourceContentId))
+    .returning()
+
+  return updated
 }
