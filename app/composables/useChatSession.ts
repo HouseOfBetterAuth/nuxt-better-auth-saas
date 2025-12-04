@@ -230,7 +230,7 @@ export function useChatSession() {
     if (workspace?.content?.id) {
       hydrateSession({
         sessionId: workspace.chatSession?.id ?? null,
-        sessionContentId: workspace.chatSession?.sourceContentId ?? workspace.content.id,
+        sessionContentId: workspace.chatSession?.contentId ?? workspace.content.id,
         messages: workspace.chatMessages,
         logs: workspace.chatLogs
       })
