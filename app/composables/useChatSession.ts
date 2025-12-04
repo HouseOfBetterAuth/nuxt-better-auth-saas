@@ -335,6 +335,19 @@ export function useChatSession() {
     return response
   }
 
+  function resetSession() {
+    messages.value = []
+    status.value = 'ready'
+    actions.value = []
+    sources.value = []
+    generation.value = null
+    errorMessage.value = null
+    activeSourceId.value = null
+    sessionId.value = null
+    sessionContentId.value = null
+    logs.value = []
+  }
+
   return {
     messages,
     status,
@@ -352,6 +365,7 @@ export function useChatSession() {
     createContentFromConversation,
     logs,
     hydrateSession,
-    loadSessionForContent
+    loadSessionForContent,
+    resetSession
   }
 }

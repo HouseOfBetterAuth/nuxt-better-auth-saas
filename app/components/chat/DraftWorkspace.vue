@@ -3,6 +3,7 @@ import type { ChatMessage } from '#shared/utils/types'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import PromptComposer from './PromptComposer.vue'
 
 type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
 
@@ -265,8 +266,6 @@ watch(content, (value) => {
 }, { immediate: true })
 
 const title = computed(() => contentRecord.value?.title || 'Untitled draft')
-const contentStatus = computed<ContentStatus>(() => (contentRecord.value?.status as ContentStatus) || 'draft')
-const isPublished = computed(() => contentStatus.value === 'published')
 const generatedContent = computed(() => currentVersion.value?.bodyMdx || currentVersion.value?.bodyHtml || null)
 const hasGeneratedContent = computed(() => !!generatedContent.value)
 const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
@@ -378,16 +377,6 @@ const _sourceLink = computed(() => {
   return null
 })
 
-const publicContentUrl = computed(() => {
-  if (!frontmatter.value?.slug) {
-    return null
-  }
-  return `/${frontmatter.value.slug}`
-})
-
-const primaryActionLabel = computed(() => (isPublished.value ? 'View' : 'Publish'))
-const primaryActionColor = computed(() => (isPublished.value ? 'primary' : 'success'))
-const primaryActionDisabled = computed(() => !isPublished.value && pending.value)
 const diffStats = computed(() => {
   const versionStats = currentVersion.value?.diffStats
   const fmStats = frontmatter.value?.diffStats as { additions?: number, deletions?: number } | undefined
@@ -412,12 +401,13 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
     deletions: diffStats.value.deletions,
     showBackButton: showBackButton.value,
     onBack: showBackButton.value ? handleBackNavigation : null,
-    onArchive: handleArchive,
-    onShare: handleShare,
-    onPrimaryAction: handlePrimaryAction,
-    primaryActionLabel: primaryActionLabel.value,
-    primaryActionColor: primaryActionColor.value,
-    primaryActionDisabled: primaryActionDisabled.value
+    // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
+    onArchive: null,
+    onShare: null,
+    onPrimaryAction: null,
+    primaryActionLabel: '',
+    primaryActionColor: '',
+    primaryActionDisabled: false
   }
 })
 
@@ -626,43 +616,6 @@ async function _handleSubmit() {
   }
 }
 
-function handlePrimaryAction() {
-  if (isPublished.value) {
-    if (publicContentUrl.value) {
-      router.push(publicContentUrl.value)
-      return
-    }
-    toast.add({
-      title: 'Missing slug',
-      description: 'Cannot open published page without a slug.',
-      color: 'warning'
-    })
-    return
-  }
-
-  toast.add({
-    title: 'Publish action pending',
-    description: 'Publishing workflow is not wired yet. Add flow when ready.',
-    color: 'neutral'
-  })
-}
-
-function handleArchive() {
-  toast.add({
-    title: 'Archive coming soon',
-    description: 'Archiving workflow is not implemented yet.',
-    color: 'neutral'
-  })
-}
-
-function handleShare() {
-  toast.add({
-    title: 'Share workflow pending',
-    description: 'Sharing workflow is not implemented yet.',
-    color: 'neutral'
-  })
-}
-
 onBeforeUnmount(() => {
   workspaceHeaderState.value = null
 })
@@ -805,23 +758,20 @@ onBeforeUnmount(() => {
           </UChatMessages>
 
           <div class="space-y-2">
-            <UChatPrompt
+            <PromptComposer
               v-model="prompt"
               placeholder="Describe the change you want..."
-              variant="soft"
               :disabled="
                 chatIsBusy
                   || chatStatus === 'submitted'
                   || chatStatus === 'streaming'
                   || !selectedSectionId
               "
-              :autofocus="false"
-              class="sticky bottom-0"
+              :status="uiStatus"
+              context-label="Current section"
+              :context-value="selectedSection?.title || 'None'"
               @submit="_handleSubmit"
             />
-            <p class="text-xs text-muted-500">
-              Current section: <span class="font-medium">{{ selectedSection?.title || 'None' }}</span>
-            </p>
           </div>
         </UContainer>
       </div>

@@ -5,6 +5,16 @@ import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { ANONYMOUS_DRAFT_LIMIT } from '#shared/constants/limits'
 import { useClipboard } from '@vueuse/core'
 
+import PromptComposer from './PromptComposer.vue'
+
+const props = withDefaults(defineProps<{
+  initialDraftId?: string | null
+  routeSync?: boolean
+}>(), {
+  initialDraftId: null,
+  routeSync: true
+})
+
 const router = useRouter()
 const route = useRoute()
 const { loggedIn, useActiveOrganization, refreshActiveOrg } = useAuth()
@@ -17,7 +27,8 @@ const {
   sendMessage,
   isBusy,
   sessionId,
-  createContentFromConversation
+  createContentFromConversation,
+  resetSession
 } = useChatSession()
 
 const prompt = ref('')
@@ -107,6 +118,8 @@ const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceA
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
+
+const autoDraftTriggered = ref(false)
 
 const createDraftCta = computed(() => {
   if (!loggedIn.value && hasReachedAnonLimit.value) {
@@ -246,6 +259,20 @@ const resetWorkspaceState = () => {
   workspaceLoading.value = false
 }
 
+const routeDraftId = computed(() => normalizeDraftId(route.query.draft))
+
+const syncWorkspace = async (draftId: string | null) => {
+  if (!draftId) {
+    resetWorkspaceState()
+    return
+  }
+  if (activeWorkspaceId.value === draftId && workspaceDetail.value) {
+    return
+  }
+  activeWorkspaceId.value = draftId
+  await loadWorkspaceDetail(draftId)
+}
+
 const updateDraftRoute = async (draftId: string | null) => {
   const nextQuery = { ...route.query }
   if (draftId) {
@@ -260,25 +287,41 @@ const updateDraftRoute = async (draftId: string | null) => {
   }
 }
 
+const activateWorkspace = async (draftId: string | null) => {
+  if (props.routeSync) {
+    await updateDraftRoute(draftId)
+  } else {
+    await syncWorkspace(draftId)
+  }
+}
+
 const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
-  await updateDraftRoute(entry.id)
+  await activateWorkspace(entry.id)
+}
+
+const resetConversation = () => {
+  prompt.value = ''
+  linkedSources.value = []
+  createDraftError.value = null
+  autoDraftTriggered.value = false
+  resetSession()
 }
 
 const closeWorkspace = async () => {
-  resetWorkspaceState()
-  await updateDraftRoute(null)
+  await activateWorkspace(null)
+  resetConversation()
 }
 
 const handleCreateDraft = async () => {
   createDraftError.value = null
   if (!canStartDraft.value) {
-    return
+    return false
   }
 
   if (!loggedIn.value && hasReachedAnonLimit.value) {
     const redirectUrl = `/signup?redirect=${encodeURIComponent('/')}`
     router.push(redirectUrl)
-    return
+    return false
   }
 
   if (!activeOrgState.value?.data?.slug) {
@@ -296,9 +339,11 @@ const handleCreateDraft = async () => {
     })
 
     if (response?.content?.id) {
-      await updateDraftRoute(response.content.id)
       await refreshDrafts()
+      await activateWorkspace(response.content.id)
+      return true
     }
+    return false
   } catch (error: any) {
     const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Unable to create a draft from this conversation.'
     createDraftError.value = errorMsg
@@ -310,23 +355,37 @@ const handleCreateDraft = async () => {
       parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
       createdAt: new Date()
     })
+    return false
   } finally {
     createDraftLoading.value = false
   }
 }
 
-watch(() => route.query.draft, async (value) => {
-  const draftId = normalizeDraftId(value)
-  if (!draftId) {
-    resetWorkspaceState()
-    return
+watch(
+  () => ({
+    active: isWorkspaceActive.value,
+    canStart: canStartDraft.value,
+    count: messages.value.length,
+    loading: createDraftLoading.value
+  }),
+  async ({ active, canStart, count, loading }) => {
+    if (active || loading || autoDraftTriggered.value || !canStart || count === 0 || hasReachedAnonLimit.value)
+      return
+    autoDraftTriggered.value = true
+    const success = await handleCreateDraft()
+    if (!success) {
+      autoDraftTriggered.value = false
+    }
   }
-  if (activeWorkspaceId.value === draftId && workspaceDetail.value) {
-    return
-  }
-  activeWorkspaceId.value = draftId
-  await loadWorkspaceDetail(draftId)
-}, { immediate: true })
+)
+
+if (props.routeSync) {
+  watch(routeDraftId, async (draftId) => {
+    await syncWorkspace(draftId ?? null)
+  }, { immediate: true })
+} else {
+  await syncWorkspace(props.initialDraftId ?? routeDraftId.value ?? null)
+}
 
 const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value) {
@@ -494,16 +553,15 @@ if (import.meta.client) {
             <!-- Add more information -->
             <!-- Main chat input -->
             <div class="flex flex-col gap-3 w-full">
-              <UChatPrompt
+              <PromptComposer
                 v-model="prompt"
                 placeholder="Paste a transcript or describe what you need..."
-                variant="soft"
                 :disabled="isBusy || promptSubmitting"
-                class="flex-1 w-full"
+                :status="promptSubmitting ? 'submitted' : uiStatus"
+                :context-label="isWorkspaceActive ? 'Active draft' : undefined"
+                :context-value="activeWorkspaceEntry?.title || null"
                 @submit="handlePromptSubmit"
-              >
-                <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" />
-              </UChatPrompt>
+              />
 
               <USelectMenu
                 v-model="selectedContentType"

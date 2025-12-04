@@ -32,15 +32,15 @@ useSeoMeta({
   <NuxtLayout :name="layoutName">
     <template
       v-if="!isWorkspaceLayout"
+      #nav-center
+    >
+      <!-- Empty slot - portrait-only uses mobile navigation only -->
+    </template>
+    <template
+      v-if="!isWorkspaceLayout"
       #nav-right
     >
-      <div class="flex items-center gap-2">
-        <UserNavigation />
-        <SiteNavigation
-          mode="mobile"
-          class="flex"
-        />
-      </div>
+      <UserNavigation />
     </template>
     <div :class="isWorkspaceLayout ? '' : 'pt-14'">
       <!-- Chat Section -->

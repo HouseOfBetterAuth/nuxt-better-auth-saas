@@ -560,11 +560,13 @@ async function createTeam() {
         </div>
       </div>
     </aside>
+    <!-- Main content: No margin offset needed since sidebar is always hidden (drawer-only pattern) -->
     <div
       class="p-2 h-screen-safe bg-white dark:bg-neutral-900 transition-all duration-300 overflow-hidden flex flex-col"
     >
       <FlexThreeColumn class="mb-2 flex-none">
         <template #left>
+          <!-- Drawer button always visible - sidebar is always hidden, so drawer is the only navigation method -->
           <UDrawer
             direction="left"
             as="aside"
@@ -578,8 +580,20 @@ async function createTeam() {
             />
             <template #content>
               <div class="w-[70vw] h-full flex flex-col p-4">
-                <div class="mb-4">
+                <!-- Logo and App Name -->
+                <div class="flex items-center gap-2 mb-4">
+                  <Logo class="h-9 w-7" />
+                  <span class="text-xl font-semibold whitespace-nowrap dark:text-white">
+                    {{ t('global.appNameShort') }}
+                  </span>
+                </div>
+                <!-- Organization Switcher and Search -->
+                <div class="flex flex-col gap-2 mb-4">
                   <OrganizationSwitcher />
+                  <SearchPalette
+                    :collapsed="false"
+                    :t="t"
+                  />
                 </div>
                 <UNavigationMenu
                   orientation="vertical"
