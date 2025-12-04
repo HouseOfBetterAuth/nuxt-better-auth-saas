@@ -1,5 +1,14 @@
 <script lang="ts" setup>
+import OnboardingModal from '~/components/OnboardingModal.vue'
 import AppNavbar from './components/AppNavbar.vue'
+
+const { needsOnboarding, showOnboarding } = useOnboarding()
+
+watch(() => needsOnboarding.value, (needs) => {
+  if (needs) {
+    showOnboarding()
+  }
+}, { immediate: true })
 
 const i18nHead = useLocaleHead()
 useHead(() => ({
@@ -20,5 +29,6 @@ useHead(() => ({
     <div class="flex-1 pt-14 w-full">
       <slot />
     </div>
+    <OnboardingModal />
   </div>
 </template>

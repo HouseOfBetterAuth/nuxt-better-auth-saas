@@ -3,7 +3,7 @@
 <script setup lang="ts">
 definePageMeta({
   auth: false,
-  layout: false
+  layout: 'default'
 })
 const { t } = useI18n()
 const { loggedIn, subscription, payment } = useAuth()

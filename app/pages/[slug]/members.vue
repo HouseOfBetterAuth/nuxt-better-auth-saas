@@ -14,6 +14,7 @@ const { organization, useActiveOrganization, session, user, fetchSession, refres
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 const { copy } = useClipboard()
+const { showOnboarding } = useOnboarding()
 
 const loading = ref(false)
 
@@ -49,7 +50,8 @@ onMounted(async () => {
       await organization.setActive({ organizationId: data[0].id })
       await fetchSession()
     } else {
-      navigateTo('/onboarding')
+      showOnboarding()
+      await navigateTo('/')
     }
   }
 })

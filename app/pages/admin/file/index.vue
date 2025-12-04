@@ -5,7 +5,7 @@ import { UBadge, UIcon } from '#components'
 import FileUploadModal from './components/FileUploadModal.vue'
 
 definePageMeta({
-  layout: false
+  layout: 'admin'
 })
 
 type FileWithUser = FileRecord & {
@@ -220,18 +220,20 @@ const fetchData: FetchDataFn<FileWithUser> = async ({ page, limit, sort, filter 
         {{ t('fileManager.upload') }}
       </UButton>
     </template>
-    <AdminTable
-      ref="table"
-      :filters="filters"
-      :columns="columns"
-      :fetch-data="fetchData"
-      can-select
-      row-id="id"
-    />
-    <FileUploadModal
-      v-model:open="isUploadModalOpen"
-      :t="t"
-      @uploaded="refresh"
-    />
+    <div>
+      <AdminTable
+        ref="table"
+        :filters="filters"
+        :columns="columns"
+        :fetch-data="fetchData"
+        can-select
+        row-id="id"
+      />
+      <FileUploadModal
+        v-model:open="isUploadModalOpen"
+        :t="t"
+        @uploaded="refresh"
+      />
+    </div>
   </NuxtLayout>
 </template>

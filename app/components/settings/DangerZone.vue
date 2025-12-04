@@ -7,6 +7,7 @@
 const { organization, useActiveOrganization, fetchSession, user } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
+const { showOnboarding } = useOnboarding()
 
 const leaveLoading = ref(false)
 const deleteLoading = ref(false)
@@ -54,7 +55,9 @@ async function leaveTeam() {
       await fetchSession()
       window.location.href = `/${orgs[0].slug}/dashboard`
     } else {
-      window.location.href = '/onboarding'
+      await fetchSession()
+      showOnboarding()
+      await navigateTo('/')
     }
   } catch (e: any) {
     toast.add({ title: 'Error leaving team', description: e.message, color: 'error' })
@@ -96,7 +99,9 @@ async function deleteTeam() {
       await fetchSession()
       window.location.href = `/${orgs[0].slug}/dashboard`
     } else {
-      window.location.href = '/onboarding'
+      await fetchSession()
+      showOnboarding()
+      await navigateTo('/')
     }
   } catch (e: any) {
     toast.add({

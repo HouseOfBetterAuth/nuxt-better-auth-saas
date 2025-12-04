@@ -355,25 +355,17 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full py-4 sm:py-8 space-y-6 sm:space-y-8">
-    <div class="max-w-4xl mx-auto px-4 sm:px-6">
+  <div class="w-full py-6 sm:py-8 lg:py-12 space-y-6 sm:space-y-8">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
       <div
         v-if="!isWorkspaceActive"
-        class="space-y-4"
+        class="space-y-4 sm:space-y-6"
       >
-        <h1 class="text-2xl sm:text-3xl font-semibold text-center">
+        <h1 class="text-xl sm:text-2xl lg:text-3xl font-semibold text-center">
           What should we write next?
         </h1>
-
-        <!-- Empty state helper -->
-        <div
-          v-if="!messages.length"
-          class="text-sm text-muted-500 text-center"
-        >
-          Paste a YouTube transcript directly into the chat input below or describe what you need.
-        </div>
       </div>
-      <div class="space-y-6">
+      <div class="space-y-6 sm:space-y-8">
         <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
         <UAlert
           v-if="errorMessage && !messages.length"
@@ -381,7 +373,7 @@ if (import.meta.client) {
           variant="soft"
           icon="i-lucide-alert-triangle"
           :description="errorMessage"
-          class="w-full max-w-2xl mx-auto"
+          class="w-full"
         />
 
         <div
@@ -413,18 +405,18 @@ if (import.meta.client) {
         <template v-else>
           <div
             v-if="messages.length"
-            class="space-y-4 w-full"
+            class="space-y-4 sm:space-y-6 w-full"
           >
-            <div class="w-full max-w-3xl mx-auto">
+            <div class="w-full">
               <div
                 v-if="isStreaming"
-                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
+                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4 sm:mb-6"
               >
                 <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
                 <span>Quillio is thinking...</span>
               </div>
 
-              <div class="min-h-[200px]">
+              <div class="min-h-[250px] sm:min-h-[300px]">
                 <UChatMessages
                   :messages="messages"
                   :status="uiStatus"
@@ -473,7 +465,7 @@ if (import.meta.client) {
             </div>
           </div>
 
-          <div class="w-full max-w-2xl mx-auto space-y-4">
+          <div class="w-full space-y-4 sm:space-y-6">
             <!-- Show linked sources if any -->
             <div
               v-if="linkedSources.length"
@@ -501,7 +493,7 @@ if (import.meta.client) {
 
             <!-- Add more information -->
             <!-- Main chat input -->
-            <div class="flex flex-col gap-3 sm:flex-row w-full">
+            <div class="flex flex-col gap-3 sm:gap-4 sm:flex-row w-full">
               <UChatPrompt
                 v-model="prompt"
                 placeholder="Paste a transcript or describe what you need..."

@@ -15,6 +15,7 @@ const { organization, useActiveOrganization, fetchSession, user } = useAuth()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 const { copy } = useClipboard()
+const { showOnboarding } = useOnboarding()
 
 interface ActiveOrgMember {
   userId?: string | null
@@ -73,7 +74,9 @@ async function leaveTeam() {
       await fetchSession()
       window.location.href = `/${nextOrg.slug}/dashboard`
     } else {
-      window.location.href = '/onboarding'
+      await fetchSession()
+      showOnboarding()
+      await navigateTo('/')
     }
   } catch (e: any) {
     toast.add({ title: 'Error leaving team', description: e.message, color: 'error' })
@@ -189,7 +192,9 @@ async function deleteTeam() {
       window.location.href = `/${nextOrg.slug}/dashboard`
     } else {
       // No teams left
-      window.location.href = '/onboarding'
+      await fetchSession()
+      showOnboarding()
+      await navigateTo('/')
     }
   } catch (e: any) {
     toast.add({
