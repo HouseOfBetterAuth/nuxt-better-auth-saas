@@ -808,7 +808,7 @@ onBeforeUnmount(() => {
             <UChatPrompt
               v-model="prompt"
               placeholder="Describe the change you want..."
-              variant="subtle"
+              variant="soft"
               :disabled="
                 chatIsBusy
                   || chatStatus === 'submitted'
