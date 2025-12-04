@@ -160,7 +160,7 @@ function handleRegenerate(message: ChatMessage) {
             v-model="prompt"
             :placeholder="placeholder"
             :disabled="disabled"
-            variant="subtle"
+            variant="soft"
             @submit="handleSubmit(prompt)"
           >
             <UChatPromptSubmit

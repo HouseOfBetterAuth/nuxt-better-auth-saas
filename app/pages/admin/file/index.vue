@@ -5,7 +5,7 @@ import { UBadge, UIcon } from '#components'
 import FileUploadModal from './components/FileUploadModal.vue'
 
 definePageMeta({
-  layout: 'admin'
+  layout: false
 })
 
 type FileWithUser = FileRecord & {

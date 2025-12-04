@@ -497,7 +497,7 @@ if (import.meta.client) {
               <UChatPrompt
                 v-model="prompt"
                 placeholder="Paste a transcript or describe what you need..."
-                variant="subtle"
+                variant="soft"
                 :disabled="isBusy || promptSubmitting"
                 class="flex-1 w-full"
                 @submit="handlePromptSubmit"
