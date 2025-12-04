@@ -51,12 +51,29 @@ function handleAction(action: ChatActionSuggestion) {
 
 function handleCopy(message: ChatMessage) {
   const text = message.parts[0]?.text || ''
-  copy(text)
-  toast.add({
-    title: 'Copied to clipboard',
-    description: 'Message copied successfully.',
-    color: 'primary'
-  })
+  if (!text) {
+    toast.add({
+      title: 'Nothing to copy',
+      description: 'This message has no text content.',
+      color: 'error'
+    })
+    return
+  }
+  try {
+    copy(text)
+    toast.add({
+      title: 'Copied to clipboard',
+      description: 'Message copied successfully.',
+      color: 'primary'
+    })
+  } catch (error) {
+    console.error('Failed to copy message', error)
+    toast.add({
+      title: 'Copy failed',
+      description: 'Could not copy to clipboard.',
+      color: 'error'
+    })
+  }
 }
 
 function handleRegenerate(message: ChatMessage) {

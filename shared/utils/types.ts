@@ -5,10 +5,12 @@ export type FileRecord = typeof file.$inferSelect
 
 export type ChatRole = 'user' | 'assistant'
 
+export type NonEmptyArray<T> = [T, ...T[]]
+
 export interface ChatMessage {
   id: string
   role: ChatRole
-  parts: Array<{ type: 'text', text: string }>
+  parts: NonEmptyArray<{ type: 'text', text: string }>
   createdAt: Date
   payload?: Record<string, any> | null
 }

@@ -437,13 +437,14 @@ watch(headerPayload, (value) => {
   workspaceHeaderState.value = value
 }, { immediate: true })
 
-type ViewTabValue = 'diff' | 'metadata'
+type ViewTabValue = 'summary' | 'diff' | 'metadata'
 const viewTabs: { label: string, value: ViewTabValue }[] = [
+  { label: 'Summary', value: 'summary' },
   { label: 'Raw MDX', value: 'diff' },
   { label: 'Metadata', value: 'metadata' }
 ]
 
-const activeViewTab = ref<ViewTabValue>('diff')
+const activeViewTab = ref<ViewTabValue>('summary')
 
 function slugify(value: string) {
   return value
@@ -657,190 +658,6 @@ onBeforeUnmount(() => {
 
 <template>
   <UContainer class="space-y-6">
-    <UAlert
-      v-if="chatErrorMessage"
-      color="error"
-      variant="soft"
-      icon="i-lucide-alert-triangle"
-      :description="chatErrorMessage"
-    />
-
-    <UContainer class="flex-1 flex flex-col gap-4 sm:gap-6">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-semibold">
-            Workspace chat
-          </p>
-          <p class="text-xs text-muted-500">
-            Give instructions and reference sections with @anchors.
-          </p>
-        </div>
-
-        <div
-          v-if="_sourceLink"
-          class="text-right text-xs"
-        >
-          <NuxtLink
-            :href="_sourceLink"
-            target="_blank"
-            class="text-primary-500 hover:underline"
-          >
-            View source
-          </NuxtLink>
-        </div>
-        <div
-          v-if="selectedSection"
-          class="flex items-center gap-2 text-xs text-muted-500"
-        >
-          <span>Editing</span>
-          <UBadge
-            size="xs"
-            color="neutral"
-          >
-            {{ selectedSection.title }}
-          </UBadge>
-        </div>
-      </div>
-
-      <UChatMessages
-        :messages="displayMessages"
-        :status="uiStatus"
-        should-auto-scroll
-        :assistant="{
-          actions: [
-            {
-              label: 'Copy',
-              icon: 'i-lucide-copy',
-              onClick: (e, message) => handleCopy(message as ChatMessage)
-            },
-            {
-              label: 'Regenerate',
-              icon: 'i-lucide-rotate-ccw',
-              onClick: (e, message) => handleRegenerate(message as ChatMessage)
-            }
-          ]
-        }"
-        :user="{
-          actions: [
-            {
-              label: 'Copy',
-              icon: 'i-lucide-copy',
-              onClick: (e, message) => handleCopy(message as ChatMessage)
-            },
-            {
-              label: 'Send again',
-              icon: 'i-lucide-send',
-              onClick: (e, message) => {
-                const text = (message as ChatMessage).parts[0]?.text || ''
-                if (text) {
-                  prompt.value = text
-                  _handleSubmit()
-                }
-              }
-            }
-          ]
-        }"
-      >
-        <template #content="{ message }">
-          <div
-            v-if="message.payload?.type === 'sections_overview' && Array.isArray(message.payload.sections)"
-            class="space-y-3"
-          >
-            <p class="text-sm font-semibold">
-              Sections overview
-            </p>
-            <UAccordion
-              :items="message.payload.sections.map(section => ({ value: section.id, section }))"
-              type="single"
-              collapsible
-              :ui="{ root: 'space-y-2' }"
-            >
-              <template #default="{ item }">
-                <div
-                  class="flex items-center justify-between gap-3 py-2"
-                  :class="{ 'text-primary-600': selectedSectionId === item.section.id }"
-                >
-                  <div class="min-w-0">
-                    <p class="font-medium truncate">
-                      {{ item.section.title }}
-                    </p>
-                    <p class="text-xs text-muted-500">
-                      H{{ item.section.level }} • {{ item.section.wordCount }} words
-                    </p>
-                  </div>
-                  <UBadge
-                    size="xs"
-                    :color="selectedSectionId === item.section.id ? 'primary' : 'neutral'"
-                    class="capitalize"
-                  >
-                    {{ selectedSectionId === item.section.id ? 'Active' : item.section.type }}
-                  </UBadge>
-                </div>
-              </template>
-              <template #content="{ item }">
-                <div class="space-y-2 text-sm">
-                  <p
-                    v-if="item.section.summary"
-                    class="text-muted-500"
-                  >
-                    {{ item.section.summary }}
-                  </p>
-                  <p class="whitespace-pre-line">
-                    {{ item.section.body?.slice(0, 280) }}{{ item.section.body?.length > 280 ? '…' : '' }}
-                  </p>
-                  <div class="flex flex-wrap items-center gap-2 pt-1">
-                    <UBadge
-                      size="xs"
-                      color="primary"
-                      variant="subtle"
-                      class="cursor-pointer"
-                      @click.stop="insertSectionReference(item.section.id)"
-                    >
-                      @{{ item.section.anchor }}
-                    </UBadge>
-                    <UButton
-                      size="xs"
-                      variant="ghost"
-                      icon="i-lucide-target"
-                      @click.stop="setActiveSection(item.section.id)"
-                    >
-                      Set active
-                    </UButton>
-                  </div>
-                </div>
-              </template>
-            </UAccordion>
-          </div>
-          <div
-            v-else
-            class="whitespace-pre-line"
-          >
-            {{ message.parts[0]?.text }}
-          </div>
-        </template>
-      </UChatMessages>
-
-      <div class="space-y-2">
-        <UChatPrompt
-          v-model="prompt"
-          placeholder="Describe the change you want..."
-          variant="subtle"
-          :disabled="
-            loading
-              || chatStatus === 'submitted'
-              || chatStatus === 'streaming'
-              || !selectedSectionId
-          "
-          :autofocus="false"
-          class="sticky bottom-0"
-          @submit="_handleSubmit"
-        />
-        <p class="text-xs text-muted-500">
-          Current section: <span class="font-medium">{{ selectedSection?.title || 'None' }}</span>
-        </p>
-      </div>
-    </UContainer>
-
     <section class="space-y-4">
       <UTabs
         v-model="activeViewTab"
@@ -851,7 +668,160 @@ onBeforeUnmount(() => {
       />
 
       <div
-        v-if="activeViewTab === 'diff'"
+        v-if="activeViewTab === 'summary'"
+        class="space-y-6"
+      >
+        <UAlert
+          v-if="chatErrorMessage"
+          color="error"
+          variant="soft"
+          icon="i-lucide-alert-triangle"
+          :description="chatErrorMessage"
+        />
+
+        <UContainer class="flex-1 flex flex-col gap-4 sm:gap-6">
+          <UChatMessages
+            :messages="displayMessages"
+            :status="uiStatus"
+            should-auto-scroll
+            :assistant="{
+              actions: [
+                {
+                  label: 'Copy',
+                  icon: 'i-lucide-copy',
+                  onClick: (e, message) => handleCopy(message as ChatMessage)
+                },
+                {
+                  label: 'Regenerate',
+                  icon: 'i-lucide-rotate-ccw',
+                  onClick: (e, message) => handleRegenerate(message as ChatMessage)
+                }
+              ]
+            }"
+            :user="{
+              actions: [
+                {
+                  label: 'Copy',
+                  icon: 'i-lucide-copy',
+                  onClick: (e, message) => handleCopy(message as ChatMessage)
+                },
+                {
+                  label: 'Send again',
+                  icon: 'i-lucide-send',
+                  onClick: (e, message) => {
+                    const text = (message as ChatMessage).parts[0]?.text || ''
+                    if (text) {
+                      prompt.value = text
+                      _handleSubmit()
+                    }
+                  }
+                }
+              ]
+            }"
+          >
+            <template #content="{ message }">
+              <div
+                v-if="message.payload?.type === 'sections_overview' && Array.isArray(message.payload.sections)"
+                class="space-y-3"
+              >
+                <p class="text-sm font-semibold">
+                  Sections overview
+                </p>
+                <UAccordion
+                  :items="message.payload.sections.map(section => ({ value: section.id, section }))"
+                  type="single"
+                  collapsible
+                  :ui="{ root: 'space-y-2' }"
+                >
+                  <template #default="{ item }">
+                    <div
+                      class="flex items-center justify-between gap-3 py-2"
+                      :class="{ 'text-primary-600': selectedSectionId === item.section.id }"
+                    >
+                      <div class="min-w-0">
+                        <p class="font-medium truncate">
+                          {{ item.section.title }}
+                        </p>
+                        <p class="text-xs text-muted-500">
+                          H{{ item.section.level }} • {{ item.section.wordCount }} words
+                        </p>
+                      </div>
+                      <UBadge
+                        size="xs"
+                        :color="selectedSectionId === item.section.id ? 'primary' : 'neutral'"
+                        class="capitalize"
+                      >
+                        {{ selectedSectionId === item.section.id ? 'Active' : item.section.type }}
+                      </UBadge>
+                    </div>
+                  </template>
+                  <template #content="{ item }">
+                    <div class="space-y-2 text-sm">
+                      <p
+                        v-if="item.section.summary"
+                        class="text-muted-500"
+                      >
+                        {{ item.section.summary }}
+                      </p>
+                      <p class="whitespace-pre-line">
+                        {{ item.section.body?.slice(0, 280) }}{{ item.section.body?.length > 280 ? '…' : '' }}
+                      </p>
+                      <div class="flex flex-wrap items-center gap-2 pt-1">
+                        <UBadge
+                          size="xs"
+                          color="primary"
+                          variant="subtle"
+                          class="cursor-pointer"
+                          @click.stop="insertSectionReference(item.section.id)"
+                        >
+                          @{{ item.section.anchor }}
+                        </UBadge>
+                        <UButton
+                          size="xs"
+                          variant="ghost"
+                          icon="i-lucide-target"
+                          @click.stop="setActiveSection(item.section.id)"
+                        >
+                          Set active
+                        </UButton>
+                      </div>
+                    </div>
+                  </template>
+                </UAccordion>
+              </div>
+              <div
+                v-else
+                class="whitespace-pre-line"
+              >
+                {{ message.parts[0]?.text }}
+              </div>
+            </template>
+          </UChatMessages>
+
+          <div class="space-y-2">
+            <UChatPrompt
+              v-model="prompt"
+              placeholder="Describe the change you want..."
+              variant="subtle"
+              :disabled="
+                loading
+                  || chatStatus === 'submitted'
+                  || chatStatus === 'streaming'
+                  || !selectedSectionId
+              "
+              :autofocus="false"
+              class="sticky bottom-0"
+              @submit="_handleSubmit"
+            />
+            <p class="text-xs text-muted-500">
+              Current section: <span class="font-medium">{{ selectedSection?.title || 'None' }}</span>
+            </p>
+          </div>
+        </UContainer>
+      </div>
+
+      <div
+        v-else-if="activeViewTab === 'diff'"
         class="space-y-4"
       >
         <UCard v-if="hasGeneratedContent">
