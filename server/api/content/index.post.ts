@@ -3,7 +3,13 @@ import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
-import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
+import {
+  CONTENT_STATUSES,
+  CONTENT_TYPES,
+  ensureUniqueContentSlug,
+  resolveIngestMethodFromSourceContent,
+  slugifyTitle
+} from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
 import { createInternalError, createNotFoundError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -32,20 +38,22 @@ export default defineEventHandler(async (event) => {
   const title = validateRequiredString(body.title, 'title')
 
   let sourceContentId: string | null = null
+  let sourceContent: typeof schema.sourceContent.$inferSelect | null = null
 
   const sourceContentIdInput = validateOptionalUUID(body.sourceContentId, 'sourceContentId')
   if (sourceContentIdInput) {
-    const [sourceContent] = await db
+    const [sourceContentRecord] = await db
       .select()
       .from(schema.sourceContent)
       .where(eq(schema.sourceContent.id, sourceContentIdInput))
       .limit(1)
 
-    if (!sourceContent || sourceContent.organizationId !== organizationId) {
+    if (!sourceContentRecord || sourceContentRecord.organizationId !== organizationId) {
       throw createNotFoundError('Source content', sourceContentIdInput)
     }
 
-    sourceContentId = sourceContent.id
+    sourceContent = sourceContentRecord
+    sourceContentId = sourceContentRecord.id
   }
 
   const baseSlug = body.slug
@@ -54,6 +62,8 @@ export default defineEventHandler(async (event) => {
 
   const status = validateEnum(body.status, CONTENT_STATUSES, 'status')
   const contentType = validateEnum(body.contentType, CONTENT_TYPES, 'contentType')
+
+  const ingestMethod = resolveIngestMethodFromSourceContent(sourceContent)
 
   const slug = await ensureUniqueContentSlug(db, organizationId, baseSlug)
 
@@ -64,6 +74,7 @@ export default defineEventHandler(async (event) => {
       organizationId,
       createdByUserId: user.id,
       sourceContentId,
+      ingestMethod,
       title,
       slug,
       status,

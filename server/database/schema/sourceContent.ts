@@ -3,7 +3,7 @@ import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } fro
 import { v7 as uuidv7 } from 'uuid'
 import { organization, user } from './auth'
 
-export const ingestStatusEnum = pgEnum('ingest_status', ['pending', 'ingested', 'failed'])
+export const ingestStatusEnum = pgEnum('ingest_status', ['pending', 'processing', 'ingested', 'failed'])
 
 export const sourceContent = pgTable('source_content', {
   id: uuid('id').primaryKey().$default(() => uuidv7()),

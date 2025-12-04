@@ -50,6 +50,7 @@ export interface GenerateContentDraftFromSourceResponse {
     id: string
     organizationId: string
     sourceContentId: string | null
+    ingestMethod: string | null
     slug: string
     title: string
     status: ContentStatus

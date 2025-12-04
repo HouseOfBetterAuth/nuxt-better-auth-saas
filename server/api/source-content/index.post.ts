@@ -17,7 +17,7 @@ import { validateEnum, validateOptionalString, validateRequestBody, validateRequ
  * @param title - Title of the source content
  * @param sourceText - Source text/transcript
  * @param metadata - Additional metadata
- * @param ingestStatus - Ingest status (pending, ingested, failed)
+ * @param ingestStatus - Ingest status (pending, processing, ingested, failed)
  * @returns Created or updated source content record
  */
 export default defineEventHandler(async (event) => {

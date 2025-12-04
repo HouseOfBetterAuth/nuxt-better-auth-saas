@@ -55,7 +55,7 @@ interface SourceContent {
   externalId?: string
   sourceText?: string
   sourceUrl?: string
-  ingestStatus?: 'pending' | 'ingested' | 'failed'
+  ingestStatus?: 'pending' | 'processing' | 'ingested' | 'failed'
   metadata?: {
     duration?: number
     [key: string]: any

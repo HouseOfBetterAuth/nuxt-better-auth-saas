@@ -5,7 +5,7 @@ import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 import { validateEnum } from '~~/server/utils/validation'
 
-export const INGEST_STATUSES = ['pending', 'ingested', 'failed'] as const
+export const INGEST_STATUSES = ['pending', 'processing', 'ingested', 'failed'] as const
 
 export interface SourceContentUpsertInput {
   organizationId: string

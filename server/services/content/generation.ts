@@ -13,7 +13,13 @@ import {
   upsertVectors
 } from '~~/server/services/vectorize'
 import { callChatCompletions } from '~~/server/utils/aiGateway'
-import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
+import {
+  CONTENT_STATUSES,
+  CONTENT_TYPES,
+  ensureUniqueContentSlug,
+  resolveIngestMethodFromSourceContent,
+  slugifyTitle
+} from '~~/server/utils/content'
 
 interface GenerateContentOverrides {
   title?: string | null
@@ -1110,6 +1116,7 @@ export const generateContentDraftFromSource = async (
   }
 
   const chunks = await ensureChunksExistForSourceContent(db, sourceContent, sourceContent.sourceText)
+  const resolvedIngestMethod = resolveIngestMethodFromSourceContent(sourceContent)
 
   // Track pipeline stages as they complete
   const pipelineStages: string[] = []
@@ -1208,6 +1215,7 @@ export const generateContentDraftFromSource = async (
           organizationId,
           createdByUserId: userId,
           sourceContentId: resolvedSourceContentId,
+          ingestMethod: resolvedIngestMethod,
           title: frontmatter.title,
           slug: slugCandidate,
           status: selectedStatus,
@@ -1231,12 +1239,14 @@ export const generateContentDraftFromSource = async (
       slug = contentRecord.slug
 
       const shouldUpdateSource = resolvedSourceContentId !== contentRecord.sourceContentId
+      const shouldUpdateIngestMethod = resolvedIngestMethod !== contentRecord.ingestMethod
       const shouldUpdate =
         frontmatter.title !== contentRecord.title ||
         selectedStatus !== contentRecord.status ||
         primaryKeyword !== contentRecord.primaryKeyword ||
         targetLocale !== contentRecord.targetLocale ||
         shouldUpdateSource ||
+        shouldUpdateIngestMethod ||
         selectedContentType !== contentRecord.contentType
 
       if (shouldUpdate) {
@@ -1248,6 +1258,7 @@ export const generateContentDraftFromSource = async (
             primaryKeyword,
             targetLocale,
             sourceContentId: resolvedSourceContentId,
+            ingestMethod: resolvedIngestMethod ?? contentRecord.ingestMethod ?? null,
             contentType: selectedContentType,
             updatedAt: new Date()
           })

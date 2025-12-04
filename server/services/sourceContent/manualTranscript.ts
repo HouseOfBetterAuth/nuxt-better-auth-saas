@@ -62,7 +62,8 @@ export const createSourceContentFromTranscript = async ({
       sourceText: normalizedTranscript,
       metadata: {
         ...(metadata ?? {}),
-        origin: metadata?.origin ?? 'transcript'
+        origin: metadata?.origin ?? 'transcript',
+        ingestMethod: metadata?.ingestMethod ?? MANUAL_TRANSCRIPT_SOURCE_TYPE
       },
       ingestStatus: 'ingested'
     })

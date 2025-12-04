@@ -90,3 +90,34 @@ export const isContentSlugConstraintError = (error: any) => {
     UNIQUE_SLUG_CONSTRAINTS.includes(error.constraint)
   )
 }
+
+export const resolveIngestMethodFromSourceContent = (
+  sourceContent?: typeof schema.sourceContent.$inferSelect | null
+): string | null => {
+  if (!sourceContent) {
+    return null
+  }
+
+  const metadata = sourceContent.metadata as Record<string, any> | null
+  const ingestMethod = metadata?.ingestMethod
+  const youtubeMethod = metadata?.youtube?.transcriptMethod
+  const origin = metadata?.origin
+
+  if (typeof ingestMethod === 'string' && ingestMethod.trim()) {
+    return ingestMethod
+  }
+
+  if (typeof youtubeMethod === 'string' && youtubeMethod.trim()) {
+    return youtubeMethod
+  }
+
+  if (typeof origin === 'string' && origin.trim()) {
+    return origin
+  }
+
+  if (typeof sourceContent.sourceType === 'string' && sourceContent.sourceType.trim()) {
+    return sourceContent.sourceType
+  }
+
+  return null
+}
