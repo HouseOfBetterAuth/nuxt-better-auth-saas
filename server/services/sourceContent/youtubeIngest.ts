@@ -188,12 +188,14 @@ async function fetchTranscriptViaWorker(event: H3Event, videoId: string) {
   const headers: Record<string, string> = {}
   const requestHeaders = getRequestHeaders(event) || {}
 
-  if (typeof requestHeaders.cookie === 'string' && requestHeaders.cookie) {
-    headers.cookie = requestHeaders.cookie
-  }
-
-  if (typeof requestHeaders.authorization === 'string' && requestHeaders.authorization) {
-    headers.authorization = requestHeaders.authorization
+  // Forward authentication-related headers to ensure Better Auth can authenticate properly
+  // Better Auth needs cookie for session validation and may use other headers
+  const authHeaders = ['cookie', 'authorization', 'x-forwarded-for', 'user-agent']
+  for (const key of authHeaders) {
+    const value = requestHeaders[key]
+    if (value && typeof value === 'string') {
+      headers[key] = value
+    }
   }
 
   try {
