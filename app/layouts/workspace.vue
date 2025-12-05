@@ -60,7 +60,9 @@ useHead(() => ({
                     {{ workspaceHeader.contentId }}
                   </span>
                 </template>
-                <span>·</span>
+                <template v-if="workspaceHeader.contentType || workspaceHeader.contentId">
+                  <span>·</span>
+                </template>
                 <span class="text-emerald-500 dark:text-emerald-400">
                   +{{ workspaceHeader.additions ?? 0 }}
                 </span>
