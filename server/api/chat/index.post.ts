@@ -93,7 +93,7 @@ function formatScalar(value: any): string {
     return String(value)
   }
   if (typeof value === 'string') {
-    return `"${value.replace(/"/g, '\\"')}"`
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
   }
   return JSON.stringify(value)
 }

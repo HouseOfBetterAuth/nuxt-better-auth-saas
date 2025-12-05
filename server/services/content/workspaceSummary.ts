@@ -56,7 +56,7 @@ function extractSections(version?: typeof schema.contentVersion.$inferSelect | n
     .map((section, index): SectionLike => {
       if (section && typeof section === 'object') {
         return {
-          title: 'title' in section ? String(section.title) : `Section ${index + 1}`,
+          title: 'title' in section && section.title ? String(section.title) : `Section ${index + 1}`,
           summary: 'summary' in section && typeof section.summary === 'string' ? section.summary : null,
           type: 'type' in section && typeof section.type === 'string' ? section.type : null
         }
@@ -67,6 +67,13 @@ function extractSections(version?: typeof schema.contentVersion.$inferSelect | n
         type: null
       }
     })
+
+interface AssetsWithSource {
+  source?: {
+    type?: string | null
+    originalUrl?: string | null
+  }
+}
 }
 
 export function buildWorkspaceSummary(payload: WorkspaceSummaryInput) {
@@ -134,11 +141,12 @@ export function buildWorkspaceSummary(payload: WorkspaceSummaryInput) {
   }
 
   const sourceMetadata = payload.sourceContent?.metadata as Record<string, any> | undefined
+  const assets = payload.currentVersion?.assets as AssetsWithSource | undefined
   const sourceType =
     normalizeString(payload.sourceContent?.sourceType)
-    || normalizeString((payload.currentVersion?.assets as any)?.source?.type)
+    || normalizeString(assets?.source?.type)
   const sourceUrl =
-    normalizeString((payload.currentVersion?.assets as any)?.source?.originalUrl)
+    normalizeString(assets?.source?.originalUrl)
     || normalizeString(sourceMetadata?.originalUrl)
 
   if (sourceType) {
@@ -150,9 +158,9 @@ export function buildWorkspaceSummary(payload: WorkspaceSummaryInput) {
     summaryParts.push(`The draft was generated from ${sourceType}${sourceDetails ? ` "${sourceDetails}"` : ''}${linkHint}.`)
   }
 
-  const updatesAt = payload.currentVersion?.createdAt || payload.content.updatedAt
-  if (updatesAt) {
-    const asDate = updatesAt instanceof Date ? updatesAt : new Date(updatesAt)
+  const updatedAt = payload.currentVersion?.createdAt || payload.content.updatedAt
+  if (updatedAt) {
+    const asDate = updatedAt instanceof Date ? updatedAt : new Date(updatedAt)
     if (!Number.isNaN(asDate.getTime())) {
       summaryParts.push(`Last updated ${asDate.toLocaleDateString()} ${asDate.toLocaleTimeString()}.`)
     }

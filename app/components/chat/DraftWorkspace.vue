@@ -636,7 +636,7 @@ function formatScalar(value: any): string {
     return String(value)
   }
   if (typeof value === 'string') {
-    const escaped = value.replace(/"/g, '\\"')
+    const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     return `"${escaped}"`
   }
   return JSON.stringify(value)

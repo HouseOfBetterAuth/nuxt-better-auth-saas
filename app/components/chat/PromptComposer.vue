@@ -42,6 +42,7 @@ const mentionActive = ref(false)
 const mentionQuery = ref('')
 const mentionTriggerIndex = ref<number | null>(null)
 const mentionHighlightedIndex = ref(0)
+const mentionListRef = ref<HTMLElement | null>(null)
 
 const mentionSections = computed(() => props.sections || [])
 const mentionResults = computed(() => {
@@ -57,6 +58,16 @@ const mentionResults = computed(() => {
   })
 })
 const mentionPanelVisible = computed(() => mentionActive.value)
+const isMentionQueryEmpty = computed(() => !mentionQuery.value.trim().length)
+
+function mentionOptionId(sectionId: string) {
+  return `mention-option-${sectionId}`
+}
+
+const activeMentionOptionId = computed(() => {
+  const section = mentionResults.value[mentionHighlightedIndex.value]
+  return section ? mentionOptionId(section.id) : undefined
+})
 
 const handleSubmit = (value: string) => {
   emit('submit', value)
@@ -147,13 +158,15 @@ function handleMentionKeydown(event: KeyboardEvent) {
   if (event.key === 'ArrowDown') {
     event.preventDefault()
     mentionHighlightedIndex.value = (mentionHighlightedIndex.value + 1) % mentionResults.value.length
+    scrollMentionIntoView()
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
     mentionHighlightedIndex.value =
       mentionHighlightedIndex.value === 0
         ? mentionResults.value.length - 1
         : mentionHighlightedIndex.value - 1
-  } else if (event.key === 'Enter' || event.key === 'Tab') {
+    scrollMentionIntoView()
+  } else if (event.key === 'Tab') {
     event.preventDefault()
     const section = mentionResults.value[mentionHighlightedIndex.value]
     if (section) {
@@ -163,6 +176,17 @@ function handleMentionKeydown(event: KeyboardEvent) {
     event.preventDefault()
     closeMention()
   }
+}
+
+function scrollMentionIntoView() {
+  nextTick(() => {
+    const container = mentionListRef.value
+    if (!container) {
+      return
+    }
+    const highlighted = container.querySelector('[data-highlighted="true"]') as HTMLElement | null
+    highlighted?.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 function handleMentionClick(section: MentionSection) {
@@ -213,13 +237,24 @@ useEventListener(textareaRef, 'blur', () => {
           Mention a section
         </p>
       </div>
-      <div class="max-h-64 overflow-y-auto p-1">
+      <div
+        ref="mentionListRef"
+        class="max-h-64 overflow-y-auto p-1"
+        role="listbox"
+        :aria-activedescendant="activeMentionOptionId"
+        aria-label="Mentionable sections"
+      >
         <button
           v-for="(section, index) in mentionResults"
           :key="section.id"
           type="button"
           class="w-full text-left px-3 py-2 rounded-md transition-colors"
           :class="mentionHighlightedIndex === index ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-100' : 'hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70'"
+          :id="mentionOptionId(section.id)"
+          role="option"
+          :aria-selected="mentionHighlightedIndex === index"
+          :data-highlighted="mentionHighlightedIndex === index"
+          tabindex="-1"
           @mousedown.prevent
           @click="handleMentionClick(section)"
         >
@@ -234,7 +269,12 @@ useEventListener(textareaRef, 'blur', () => {
           v-if="!mentionResults.length"
           class="px-3 py-4 text-sm text-muted-500"
         >
-          No sections match “{{ mentionQuery }}”.
+          <span v-if="!isMentionQueryEmpty">
+            No sections match “{{ mentionQuery }}”.
+          </span>
+          <span v-else>
+            Start typing to mention a section.
+          </span>
         </div>
       </div>
     </div>

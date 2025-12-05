@@ -16,29 +16,40 @@ export function useUserPreferences() {
 
   type LocaleCode = typeof locale.value
   const defaultLocale = locale.value
-  const isLocaleCode = (code: unknown): code is LocaleCode =>
-    typeof code === 'string' && code.length > 0
 
+  // First, compute available locale codes using a simple string filter
   const availableLocaleCodes = computed(() =>
     (locales.value ?? [])
       .map(entry => entry.code)
-      .filter(isLocaleCode)
+      .filter((code): code is LocaleCode => typeof code === 'string' && code.length > 0)
   )
+
+  // Stronger type guard that validates against actual available locale codes
+  const isLocaleCode = (code: unknown): code is LocaleCode =>
+    typeof code === 'string' && availableLocaleCodes.value.includes(code as LocaleCode)
 
   const detectLocale = (): LocaleCode => {
     const fallback = availableLocaleCodes.value[0] ?? defaultLocale
     if (!import.meta.client)
       return fallback
 
-    const browserLanguages = [...(navigator.languages || []), navigator.language].filter(Boolean).map(lang => lang.toLowerCase())
-    const match = browserLanguages.find(language => availableLocaleCodes.value.some((code) => {
+    const browserLanguages = [...(navigator.languages || []), navigator.language].filter(Boolean).map((lang: string) => lang.toLowerCase())
+    const match = browserLanguages.find((language: string) => availableLocaleCodes.value.some((code: LocaleCode) => {
       const normalizedCode = code.toLowerCase()
       return language === normalizedCode || language.startsWith(`${normalizedCode.split('-')[0]}`)
     }))
 
-    return match
-      ? availableLocaleCodes.value.find(code => match.startsWith(code.toLowerCase().split('-')[0])) || fallback
-      : fallback
+    if (!match)
+      return fallback
+
+    const foundCode = availableLocaleCodes.value.find((code: LocaleCode) => {
+      const parts = code.toLowerCase().split('-')
+      const codePrefix = parts[0]
+      if (!codePrefix)
+        return false
+      return match.startsWith(codePrefix)
+    })
+    return foundCode ?? fallback
   }
 
   watch(interfaceLanguage, async (value) => {
@@ -47,7 +58,8 @@ export function useUserPreferences() {
       return
 
     const fallback = availableLocaleCodes.value[0] ?? defaultLocale
-    const normalizedTarget = isLocaleCode(targetLocale) ? targetLocale : null
+    // Validate against available locale codes to ensure only valid locales are used
+    const normalizedTarget = availableLocaleCodes.value.includes(targetLocale as LocaleCode) ? targetLocale as LocaleCode : null
     const validLocale = normalizedTarget ?? fallback
     await setLocale(validLocale)
   }, { immediate: true })
