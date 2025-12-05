@@ -245,6 +245,26 @@ const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => e
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
 const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
+const THINKING_MESSAGE_ID = 'quillio-thinking-placeholder'
+const displayMessages = computed<ChatMessage[]>(() => {
+  const baseMessages = messages.value.slice()
+
+  if (isStreaming.value) {
+    if (!baseMessages.some(message => message.id === THINKING_MESSAGE_ID)) {
+      baseMessages.push({
+        id: THINKING_MESSAGE_ID,
+        role: 'assistant',
+        parts: [{ type: 'text' as const, text: 'Quillio is thinking...' }],
+        createdAt: new Date(),
+        payload: { placeholder: true }
+      })
+    }
+
+    return baseMessages
+  }
+
+  return baseMessages.filter(message => message.id !== THINKING_MESSAGE_ID)
+})
 const actionSuggestions = computed(() => actions.value || [])
 const actionInFlightId = ref<string | null>(null)
 
@@ -873,17 +893,9 @@ if (import.meta.client) {
             class="space-y-6 w-full"
           >
             <div class="w-full">
-              <div
-                v-if="isStreaming"
-                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-6"
-              >
-                <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
-                <span>Quillio is thinking...</span>
-              </div>
-
               <UChatMessages
                 class="py-4"
-                :messages="messages"
+                :messages="displayMessages"
                 :status="uiStatus"
                 should-auto-scroll
                 :assistant="{
