@@ -60,6 +60,7 @@ export async function getWorkspaceWithCache(
   const fetchPromise = getContentWorkspacePayload(db, organizationId, contentId, { includeChat })
     .then((payload) => {
       evictOldestIfNeeded()
+      workspaceCache.delete(key)
       workspaceCache.set(key, {
         payload,
         expiresAt: Date.now() + WORKSPACE_CACHE_TTL_MS
