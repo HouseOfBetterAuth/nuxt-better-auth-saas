@@ -55,7 +55,7 @@ const h1 = {
 const button = {
   display: 'inline-block',
   padding: '12px 32px',
-  backgroundColor: '#10b981',
+  backgroundColor: '#f59e0b',
   color: '#ffffff',
   textDecoration: 'none',
   fontWeight: '500',

@@ -1,0 +1,71 @@
+<script setup lang="ts">
+interface WhatsNewCard {
+  id: 'youtube' | 'transcript' | 'seo'
+  title: string
+  icon: string
+  command?: string
+  disabled?: boolean
+}
+
+const emit = defineEmits<{
+  (e: 'select', payload: { id: WhatsNewCard['id'], command?: string }): void
+}>()
+
+const cards: WhatsNewCard[] = [
+  {
+    id: 'youtube',
+    title: 'Blog from YouTube',
+    icon: 'i-simple-icons-youtube',
+    command: '@youtube '
+  },
+  {
+    id: 'transcript',
+    title: 'Blog from Transcript',
+    icon: 'i-lucide-file-text',
+    command: '@transcript '
+  },
+  {
+    id: 'seo',
+    title: 'Enable SEO Review',
+    icon: 'i-lucide-sparkles',
+    disabled: true
+  }
+]
+
+const handleSelect = (card: WhatsNewCard) => {
+  if (card.disabled) {
+    return
+  }
+  emit('select', { id: card.id, command: card.command })
+}
+</script>
+
+<template>
+  <div class="w-full space-y-3">
+    <div class="flex items-center justify-between">
+      <p class="text-sm font-semibold text-muted-200">
+        What's new from Quillio
+      </p>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-3">
+      <button
+        v-for="card in cards"
+        :key="card.id"
+        class="group flex items-center gap-3 rounded-[28px] border border-white/5 bg-white/5 px-5 py-4 text-left transition hover:border-primary-500/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-white/5 disabled:hover:bg-white/5"
+        type="button"
+        :disabled="card.disabled"
+        @click="handleSelect(card)"
+      >
+        <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/30">
+          <UIcon
+            :name="card.icon"
+            class="h-5 w-5 text-primary-400"
+          />
+        </div>
+        <span class="text-sm font-medium text-muted-100 whitespace-nowrap">
+          {{ card.title }}
+        </span>
+      </button>
+    </div>
+  </div>
+</template>

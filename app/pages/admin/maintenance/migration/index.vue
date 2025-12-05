@@ -223,7 +223,7 @@ const getCurrentOperation = () => {
               </div>
 
               <div class="text-center">
-                <div class="text-2xl font-bold text-green-600">
+                <div class="text-2xl font-bold text-amber-600">
                   {{ result.summary.stripeSuccessCount }}
                 </div>
                 <div class="text-sm text-neutral-500 dark:text-neutral-400">

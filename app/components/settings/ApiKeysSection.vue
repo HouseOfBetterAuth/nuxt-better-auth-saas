@@ -235,9 +235,9 @@ onMounted(() => {
         <div class="space-y-4">
           <div
             v-if="createdKey"
-            class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800"
+            class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800"
           >
-            <p class="text-sm text-green-800 dark:text-green-200 font-medium mb-2">
+            <p class="text-sm text-amber-800 dark:text-amber-200 font-medium mb-2">
               API Key Created! Copy it now, you won't see it again.
             </p>
             <div class="flex gap-2">

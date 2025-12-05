@@ -871,28 +871,28 @@ async function confirmPlanChange() {
             <div class="flex items-start gap-2 text-sm text-muted-foreground">
               <UIcon
                 name="i-lucide-check"
-                class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
               />
               <span>WordPress Plugin Access</span>
             </div>
             <div class="flex items-start gap-2 text-sm text-muted-foreground">
               <UIcon
                 name="i-lucide-check"
-                class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
               />
               <span>Basic Analytics (Total Searches)</span>
             </div>
             <div class="flex items-start gap-2 text-sm text-muted-foreground">
               <UIcon
                 name="i-lucide-check"
-                class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
               />
               <span>Email Lead Notifications</span>
             </div>
             <div class="flex items-start gap-2 text-sm text-muted-foreground">
               <UIcon
                 name="i-lucide-check"
-                class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
               />
               <span>Up to 3 Team Members</span>
             </div>
@@ -963,7 +963,7 @@ async function confirmPlanChange() {
               Yearly
               <span
                 v-if="billingInterval !== 'year'"
-                class="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                class="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
               >
                 Save
               </span>
@@ -990,7 +990,7 @@ async function confirmPlanChange() {
                 >
                   <UIcon
                     name="i-lucide-shield-check"
-                    class="w-4 h-4 text-green-500"
+                    class="w-4 h-4 text-amber-500"
                   />
                   <span class="text-xs text-muted-foreground">{{ activePlan.trialDays }}-day free trial included</span>
                 </div>

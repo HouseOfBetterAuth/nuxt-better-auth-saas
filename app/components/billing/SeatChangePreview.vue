@@ -132,7 +132,7 @@ const additionalSeatsCount = computed(() => {
               <span class="text-muted-foreground">
                 {{ currentSeats - targetSeats }} seat{{ (currentSeats - targetSeats) === 1 ? '' : 's' }} removed (prorated credit)
               </span>
-              <span class="font-medium text-green-600">-${{ (Math.abs(preview.amountDue) / 100).toFixed(2) }}</span>
+              <span class="font-medium text-amber-600">-${{ (Math.abs(preview.amountDue) / 100).toFixed(2) }}</span>
             </div>
           </template>
 
@@ -141,7 +141,7 @@ const additionalSeatsCount = computed(() => {
             <span class="font-medium text-sm">Total</span>
             <span
               class="font-bold text-sm"
-              :class="preview.amountDue > 0 ? 'text-primary' : 'text-green-600'"
+              :class="preview.amountDue > 0 ? 'text-primary' : 'text-amber-600'"
             >
               {{ preview.amountDue > 0 ? '' : '-' }}${{ (Math.abs(preview.amountDue) / 100).toFixed(2) }}
             </span>

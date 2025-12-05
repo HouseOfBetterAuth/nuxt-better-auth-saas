@@ -208,7 +208,7 @@ async function handleUpgrade() {
               <p class="text-xs text-muted-foreground mb-3">
                 <span
                   v-if="!hasUsedTrial"
-                  class="font-semibold text-green-600 dark:text-green-400"
+                  class="font-semibold text-amber-600 dark:text-amber-400"
                 >{{ plan.trialDays }}-day free trial<br></span>
                 Base Plan (${{ plan.priceNumber.toFixed(2) }}).<br>
                 Each additional member adds ${{ (plan.seatPriceNumber || 0).toFixed(2) }}/{{ plan.interval === 'year' ? 'yr' : 'mo' }}.
@@ -223,7 +223,7 @@ async function handleUpgrade() {
                   >
                     <UIcon
                       name="i-lucide-check"
-                      class="w-3 h-3 text-green-500"
+                      class="w-3 h-3 text-amber-500"
                     /> {{ feature }}
                   </li>
                 </ul>

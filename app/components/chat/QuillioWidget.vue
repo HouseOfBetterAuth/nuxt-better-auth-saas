@@ -37,6 +37,13 @@ const promptSubmitting = ref(false)
 const createDraftLoading = ref(false)
 const createDraftError = ref<string | null>(null)
 const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
+
+const selectedContentTypeOption = computed(() => {
+  if (!CONTENT_TYPE_OPTIONS.length) {
+    return null
+  }
+  return CONTENT_TYPE_OPTIONS.find(option => option.value === selectedContentType.value) ?? CONTENT_TYPE_OPTIONS[0]
+})
 const linkedSources = ref<Array<{ id: string, type: 'transcript', value: string }>>([])
 const { copy } = useClipboard()
 const toast = useToast()
@@ -143,6 +150,7 @@ const isWorkspaceLoading = computed(() => workspaceLoading.value && isWorkspaceA
 const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
+const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
 
 const autoDraftTriggered = ref(false)
 const draftAutoFailCount = ref(0)
@@ -158,9 +166,22 @@ const createDraftCta = computed(() => {
   return loggedIn.value ? 'Create draft' : `Save draft (${remainingAnonDrafts.value} left)`
 })
 
+const handleWhatsNewSelect = (payload: { id: 'youtube' | 'transcript' | 'seo', command?: string }) => {
+  if (!payload) {
+    return
+  }
+  if (payload.command) {
+    prompt.value = payload.command
+  }
+}
+
 const handlePromptSubmit = async (value?: string) => {
   const input = typeof value === 'string' ? value : prompt.value
-  const trimmed = input.trim()
+  let trimmed = input.trim()
+  if (!trimmed) {
+    return
+  }
+  trimmed = normalizePromptCommands(trimmed)
   if (!trimmed) {
     return
   }
@@ -197,6 +218,8 @@ function addLinkedSource(entry: { type: 'transcript', value: string }) {
 }
 
 const transcriptPrefixPattern = /^transcript attachment:\s*/i
+const transcriptCommandPattern = /^@transcript\s*/i
+const youtubeCommandPattern = /^@youtube(?:\s+|$)/i
 
 function shouldTreatAsTranscript(input: string) {
   const value = input.trim()
@@ -206,13 +229,35 @@ function shouldTreatAsTranscript(input: string) {
   if (transcriptPrefixPattern.test(value)) {
     return true
   }
+  if (transcriptCommandPattern.test(value)) {
+    return true
+  }
   const timestampMatches = value.match(/\b\d{2}:\d{2}:\d{2}\b/g)?.length ?? 0
   const hashHeadingMatches = value.split(/\n+/).filter(line => line.trim().startsWith('#')).length
   return value.length > 800 && (timestampMatches >= 3 || hashHeadingMatches >= 2)
 }
 
 function extractTranscriptBody(input: string) {
-  return input.replace(transcriptPrefixPattern, '').trim()
+  return input
+    .replace(transcriptPrefixPattern, '')
+    .replace(transcriptCommandPattern, '')
+    .trim()
+}
+
+function normalizePromptCommands(input: string): string | null {
+  if (youtubeCommandPattern.test(input)) {
+    const url = input.replace(/^@youtube\s*/i, '').trim()
+    if (!url) {
+      toast.add({
+        color: 'warning',
+        title: 'Add a YouTube link',
+        description: 'Use @youtube followed by a full video URL to start drafting.'
+      })
+      return null
+    }
+    return url
+  }
+  return input
 }
 
 async function submitTranscript(text: string) {
@@ -496,17 +541,17 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full py-6 space-y-6">
-    <div class="max-w-3xl mx-auto px-4">
+  <div class="w-full py-8 sm:py-12 space-y-8">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6">
       <div
         v-if="!isWorkspaceActive"
-        class="space-y-4"
+        class="space-y-6 mb-8"
       >
         <h1 class="text-2xl font-semibold text-center">
           What should we write next?
         </h1>
       </div>
-      <div class="space-y-6">
+      <div class="space-y-8">
         <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
         <UAlert
           v-if="errorMessage && !messages.length"
@@ -519,7 +564,7 @@ if (import.meta.client) {
 
         <div
           v-if="isWorkspaceActive && activeWorkspaceEntry"
-          class="space-y-4 w-full"
+          class="space-y-6 w-full"
         >
           <USkeleton
             v-if="isWorkspaceLoading"
@@ -546,18 +591,18 @@ if (import.meta.client) {
         <template v-else>
           <div
             v-if="messages.length"
-            class="space-y-4 w-full"
+            class="space-y-6 w-full"
           >
             <div class="w-full">
               <div
                 v-if="isStreaming"
-                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-4"
+                class="flex items-center justify-center gap-2 text-sm text-muted-500 mb-6"
               >
                 <span class="h-2 w-2 rounded-full bg-primary-500 animate-pulse" />
                 <span>Quillio is thinking...</span>
               </div>
 
-              <div class="min-h-[250px]">
+              <div class="min-h-[250px] py-4">
                 <UChatMessages
                   :messages="messages"
                   :status="uiStatus"
@@ -606,11 +651,11 @@ if (import.meta.client) {
             </div>
           </div>
 
-          <div class="w-full space-y-4">
+          <div class="w-full space-y-6 mt-8">
             <!-- Show linked sources if any -->
             <div
               v-if="linkedSources.length"
-              class="flex flex-wrap gap-2"
+              class="flex flex-wrap gap-2 mb-2"
             >
               <UBadge
                 v-for="source in linkedSources"
@@ -634,30 +679,61 @@ if (import.meta.client) {
 
             <!-- Add more information -->
             <!-- Main chat input -->
-            <div class="flex flex-col gap-3 w-full">
-              <PromptComposer
-                v-model="prompt"
-                placeholder="Paste a transcript or describe what you need..."
-                :disabled="isBusy || promptSubmitting"
-                :status="promptSubmitting ? 'submitted' : uiStatus"
-                :context-label="isWorkspaceActive ? 'Active draft' : undefined"
-                :context-value="activeWorkspaceEntry?.title || null"
-                @submit="handlePromptSubmit"
-              />
+            <div class="w-full flex justify-center">
+              <div class="w-full max-w-2xl">
+                <PromptComposer
+                  v-model="prompt"
+                  placeholder="Paste a transcript or describe what you need..."
+                  :disabled="isBusy || promptSubmitting"
+                  :status="promptSubmitting ? 'submitted' : uiStatus"
+                  :context-label="isWorkspaceActive ? 'Active draft' : undefined"
+                  :context-value="activeWorkspaceEntry?.title || null"
+                  @submit="handlePromptSubmit"
+                >
+                  <template #footer>
+                    <USelectMenu
+                      v-if="selectedContentTypeOption"
+                      v-model="selectedContentType"
+                      :items="CONTENT_TYPE_OPTIONS"
+                      value-key="value"
+                      variant="ghost"
+                      size="sm"
+                    >
+                      <template #label>
+                        <div class="flex items-center gap-2">
+                          <UIcon
+                            :name="selectedContentTypeOption.icon"
+                            class="w-4 h-4"
+                          />
+                          <span>{{ selectedContentTypeOption.label }}</span>
+                        </div>
+                      </template>
+                      <template #option="{ option }">
+                        <div class="flex items-center gap-2">
+                          <UIcon
+                            :name="option.icon"
+                            class="w-4 h-4"
+                          />
+                          <span>{{ option.label }}</span>
+                        </div>
+                      </template>
+                    </USelectMenu>
+                  </template>
+                </PromptComposer>
+              </div>
+            </div>
 
-              <USelectMenu
-                v-model="selectedContentType"
-                :items="CONTENT_TYPE_OPTIONS"
-                value-key="value"
-                class="w-full"
-                size="md"
-              />
+            <div
+              v-if="shouldShowWhatsNew"
+              class="w-full max-w-3xl mx-auto mt-8"
+            >
+              <ChatWhatsNewRow @select="handleWhatsNewSelect" />
             </div>
 
             <!-- Draft creation - only show when there are messages -->
             <div
               v-if="messages.length"
-              class="space-y-2"
+              class="space-y-3 mt-6"
             >
               <UButton
                 block
@@ -686,12 +762,16 @@ if (import.meta.client) {
           </div>
         </template>
       </div>
-      <ChatDraftsList
-        v-if="!isWorkspaceActive"
-        :drafts-pending="draftsPending"
-        :content-entries="contentEntries"
-        @open-workspace="openWorkspace"
-      />
+      <div
+        v-if="!isWorkspaceActive && contentEntries.length > 0"
+        class="mt-12"
+      >
+        <ChatDraftsList
+          :drafts-pending="draftsPending"
+          :content-entries="contentEntries"
+          @open-workspace="openWorkspace"
+        />
+      </div>
     </div>
   </div>
 </template>

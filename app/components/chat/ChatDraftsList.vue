@@ -24,15 +24,23 @@ const emit = defineEmits<{
 const activeTab = ref(0)
 
 const tabs = [
-  { label: 'Tasks' },
-  { label: 'Archived' }
+  { label: 'Tasks', value: 0 },
+  { label: 'Archived', value: 1 }
 ]
 
 const filteredEntries = computed(() => {
   if (activeTab.value === 1) {
-    return props.contentEntries.filter(entry => entry.status === 'archived')
+    // Show only archived items
+    return props.contentEntries.filter((entry) => {
+      const status = (entry.status || '').toLowerCase().trim()
+      return status === 'archived'
+    })
   }
-  return props.contentEntries.filter(entry => entry.status !== 'archived')
+  // Show non-archived items (Tasks tab)
+  return props.contentEntries.filter((entry) => {
+    const status = (entry.status || '').toLowerCase().trim()
+    return status !== 'archived'
+  })
 })
 
 const hasFilteredContent = computed(() => filteredEntries.value.length > 0)
@@ -85,7 +93,6 @@ const formatUpdatedAt = (date: Date | null) => {
             {{ entry.title }}
           </p>
           <UBadge
-            size="xs"
             color="neutral"
             variant="soft"
             class="capitalize"
@@ -117,7 +124,7 @@ const formatUpdatedAt = (date: Date | null) => {
       v-else
       class="rounded-2xl border border-dashed border-muted-200/70 p-5 text-center text-sm text-muted-500"
     >
-      No drafts yet
+      {{ activeTab === 1 ? 'No archived drafts' : 'No drafts yet' }}
     </div>
   </section>
 </template>

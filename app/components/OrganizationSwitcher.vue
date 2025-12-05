@@ -173,7 +173,7 @@ const dropdownItems = computed(() => {
     >
       <button class="flex items-center justify-between w-full px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors group outline-none cursor-pointer">
         <div class="flex items-center gap-2 min-w-0">
-          <div class="w-5 h-5 rounded bg-green-500 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
+          <div class="w-5 h-5 rounded bg-amber-500 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
             {{ activeOrgName.charAt(0).toUpperCase() }}
           </div>
           <span class="font-medium text-sm truncate">{{ activeOrgName }}</span>

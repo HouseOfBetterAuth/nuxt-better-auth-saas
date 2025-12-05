@@ -143,12 +143,12 @@ const removeUploadedFile = (index: number) => {
             <div
               v-for="(file, index) in uploadedFiles"
               :key="file.id"
-              class="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded"
+              class="flex items-center justify-between p-2 bg-amber-50 dark:bg-amber-900/20 rounded"
             >
               <div class="flex items-center space-x-2">
                 <UIcon
                   name="i-lucide-check-circle"
-                  class="w-4 h-4 text-green-500"
+                  class="w-4 h-4 text-amber-500"
                 />
                 <span class="text-sm truncate">{{ file.originalName }}</span>
                 <span class="text-xs text-neutral-500">({{ formatFileSize(file.size) }})</span>

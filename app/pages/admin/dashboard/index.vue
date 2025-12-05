@@ -257,7 +257,7 @@ function onBarChartRendered() {
               </div>
               <div
                 class="mt-2 flex items-center text-sm"
-                :class="stat.isIncrease ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                :class="stat.isIncrease ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'"
               >
                 <Icon
                   :name="stat.isIncrease ? 'lucide:trending-up' : 'lucide:trending-down'"

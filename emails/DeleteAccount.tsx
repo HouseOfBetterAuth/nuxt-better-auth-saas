@@ -20,7 +20,7 @@ const linkText = {
 }
 
 const link = {
-  color: '#10b981'
+  color: '#f59e0b'
 }
 
 interface DeleteAccountProps {

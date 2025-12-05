@@ -142,7 +142,7 @@ const plans = [
                   >
                     <UIcon
                       name="lucide:check"
-                      class="flex-shrink-0 mt-1 text-green-500"
+                      class="flex-shrink-0 mt-1 text-amber-500"
                     />
                     <span>{{ feature }}</span>
                   </li>

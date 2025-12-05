@@ -129,8 +129,8 @@ const currentIntervalLabel = computed(() => {
           v-if="creditAmount > 0"
           class="flex justify-between text-xs"
         >
-          <span class="text-green-600 dark:text-green-400">Credit for unused monthly time:</span>
-          <span class="text-green-600 dark:text-green-400">-${{ (creditAmount / 100).toFixed(2) }}</span>
+          <span class="text-amber-600 dark:text-amber-400">Credit for unused monthly time:</span>
+          <span class="text-amber-600 dark:text-amber-400">-${{ (creditAmount / 100).toFixed(2) }}</span>
         </div>
 
         <!-- Total Due -->
@@ -154,7 +154,7 @@ const currentIntervalLabel = computed(() => {
         v-if="creditAmount > 0"
         class="text-xs text-muted-foreground px-1"
       >
-        You're receiving a <strong class="text-green-600 dark:text-green-400">${{ (creditAmount / 100).toFixed(2) }}</strong> credit
+        You're receiving a <strong class="text-amber-600 dark:text-amber-400">${{ (creditAmount / 100).toFixed(2) }}</strong> credit
         for the unused time on your current monthly plan. Your yearly subscription starts today.
       </p>
 
