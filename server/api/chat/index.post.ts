@@ -564,6 +564,7 @@ export default defineEventHandler(async (event) => {
       userId: user.id,
       sourceContentId: resolvedSourceContentId,
       contentId: generateAction.contentId ?? null,
+      event,
       overrides: {
         title: generateAction.title ? validateRequiredString(generateAction.title, 'title') : null,
         slug: generateAction.slug ? validateRequiredString(generateAction.slug, 'slug') : null,

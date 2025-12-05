@@ -68,6 +68,7 @@ export default defineEventHandler(async (event) => {
     userId: user.id,
     sourceContentId: resolvedSourceContentId,
     contentId: validatedContentId,
+    event,
     overrides,
     systemPrompt: body.systemPrompt,
     temperature: body.temperature

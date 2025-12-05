@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   validateRequestBody(body)
 
-  await ensureEmailVerifiedDraftCapacity(db, organizationId, user)
+  await ensureEmailVerifiedDraftCapacity(db, organizationId, user, event)
 
   const title = validateRequiredString(body.title, 'title')
 
