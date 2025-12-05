@@ -1,3 +1,4 @@
+import type { ChatActionSuggestion } from '#shared/utils/types'
 import type { YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
@@ -338,6 +339,21 @@ export default defineEventHandler(async (event) => {
     sourceType: string
   }> = []
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
+  const actionSuggestions: ChatActionSuggestion[] = []
+  const suggestedSourceIds = new Set<string>()
+
+  const addDraftSuggestionForSource = (source: typeof schema.sourceContent.$inferSelect | null | undefined, label?: string) => {
+    if (!source || !source.id || source.ingestStatus !== 'ingested' || suggestedSourceIds.has(source.id)) {
+      return
+    }
+    actionSuggestions.push({
+      type: 'suggest_generate_from_source',
+      sourceContentId: source.id,
+      sourceType: source.sourceType ?? undefined,
+      label: label || (source.sourceType === 'youtube' ? 'Draft from this YouTube video' : 'Draft from this transcript')
+    })
+    suggestedSourceIds.add(source.id)
+  }
 
   for (const rawUrl of urls) {
     const classification = classifyUrl(rawUrl)
@@ -374,6 +390,7 @@ export default defineEventHandler(async (event) => {
           userId: user.id,
           videoId: classification.externalId
         })
+        addDraftSuggestionForSource(record)
       } catch (error: any) {
         const errorData = error?.data as YouTubeTranscriptErrorData | undefined
         if (errorData?.transcriptFailed) {
@@ -426,6 +443,7 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
+        addDraftSuggestionForSource(manualSource)
       }
     }
   } else if (message.trim().length > 500 && !urls.length) {
@@ -450,6 +468,7 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
+        addDraftSuggestionForSource(manualSource)
       }
     }
   }
@@ -484,6 +503,22 @@ export default defineEventHandler(async (event) => {
       statusCode: 500,
       statusMessage: 'Failed to create chat session'
     })
+  }
+
+  if (sessionSourceId && !suggestedSourceIds.has(sessionSourceId)) {
+    const existingSource = processedSources.find(item => item.source.id === sessionSourceId)?.source
+    if (existingSource) {
+      addDraftSuggestionForSource(existingSource)
+    } else {
+      const [sessionSource] = await db
+        .select()
+        .from(schema.sourceContent)
+        .where(eq(schema.sourceContent.id, sessionSourceId))
+        .limit(1)
+      if (sessionSource) {
+        addDraftSuggestionForSource(sessionSource)
+      }
+    }
   }
 
   for (const errorMessage of ingestionErrors) {
@@ -902,6 +937,7 @@ Keep it concise (2-3 sentences) and conversational.`
       message: log.message,
       payload: log.payload,
       createdAt: log.createdAt
-    }))
+    })),
+    actions: actionSuggestions
   }
 })

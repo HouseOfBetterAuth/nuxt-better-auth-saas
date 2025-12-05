@@ -97,6 +97,9 @@ function _classifyTranscriptFailure(message: string) {
   if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts')) {
     return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
   }
+  if (lowerMessage.includes('bot') || lowerMessage.includes('sign in to confirm')) {
+    return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking automated requests. Try linking your YouTube account for better access.', suggestAccountLink: true }
+  }
   if (lowerMessage.includes('block') || lowerMessage.includes('forbidden')) {
     return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
   }
