@@ -1021,7 +1021,7 @@ if (import.meta.client) {
             >
               <div class="space-y-2">
                 <p class="text-xs text-muted-500 text-center">
-                  Next steps suggested by Codex
+                  Next steps suggested by Quillio
                 </p>
                 <div class="flex flex-wrap items-center justify-center gap-2">
                   <UButton

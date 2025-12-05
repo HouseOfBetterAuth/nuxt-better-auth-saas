@@ -513,7 +513,10 @@ export default defineEventHandler(async (event) => {
       const [sessionSource] = await db
         .select()
         .from(schema.sourceContent)
-        .where(eq(schema.sourceContent.id, sessionSourceId))
+        .where(and(
+          eq(schema.sourceContent.id, sessionSourceId),
+          eq(schema.sourceContent.organizationId, organizationId)
+        ))
         .limit(1)
       if (sessionSource) {
         addDraftSuggestionForSource(sessionSource)
