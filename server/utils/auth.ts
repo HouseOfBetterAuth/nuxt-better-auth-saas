@@ -1044,8 +1044,11 @@ const getDeviceFingerprint = async (
 
       // Better Auth uses X-Forwarded-For by default, but can be configured
       // We follow the same pattern for consistency
+      // Handle both string and array formats (some proxies return arrays)
       if (!ipAddress) {
-        ipAddress = headers['x-forwarded-for']?.split(',')[0]?.trim()
+        const forwardedFor = headers['x-forwarded-for']
+        const forwardedForStr = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor
+        ipAddress = forwardedForStr?.split(',')[0]?.trim()
           || headers['x-real-ip']
           || headers['cf-connecting-ip']
           || ''
@@ -1089,9 +1092,14 @@ const ensureDeviceFingerprintInOrg = async (
     return
 
   try {
-    // Check if organization is anonymous and doesn't have device fingerprint yet
+    // Check if organization is anonymous
+    // Use atomic JSONB update to prevent race conditions
+    // Only update if deviceFingerprint not already set
     const [org] = await db
-      .select()
+      .select({
+        id: schema.organization.id,
+        slug: schema.organization.slug
+      })
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
       .limit(1)
@@ -1099,24 +1107,25 @@ const ensureDeviceFingerprintInOrg = async (
     if (!org || !org.slug.startsWith('anonymous-'))
       return
 
-    // Parse existing metadata or create new
-    let metadata: Record<string, any> = {}
-    if (org.metadata) {
-      try {
-        metadata = typeof org.metadata === 'string' ? JSON.parse(org.metadata) : org.metadata
-      } catch {
-        metadata = {}
-      }
-    }
-
-    // Only update if device fingerprint is not already set
-    if (!metadata.deviceFingerprint) {
-      metadata.deviceFingerprint = deviceFingerprint
-      await db
-        .update(schema.organization)
-        .set({ metadata: JSON.stringify(metadata) })
-        .where(eq(schema.organization.id, organizationId))
-    }
+    // Atomically update only if deviceFingerprint not already set
+    // Uses JSONB operations to avoid race condition and ensure type safety
+    // Uses parameterized query to prevent SQL injection
+    await db
+      .update(schema.organization)
+      .set({
+        metadata: sql`
+          CASE
+            WHEN ${schema.organization.metadata}::jsonb ? 'deviceFingerprint'
+            THEN ${schema.organization.metadata}
+            ELSE jsonb_set(
+              COALESCE(${schema.organization.metadata}::jsonb, '{}'::jsonb),
+              '{deviceFingerprint}',
+              ${JSON.stringify(deviceFingerprint)}::jsonb
+            )::text
+          END
+        `
+      })
+      .where(eq(schema.organization.id, organizationId))
   } catch (error) {
     // Silently fail - device fingerprint is optional
     console.error('Failed to store device fingerprint:', error)
@@ -1148,12 +1157,15 @@ export const getDraftQuotaUsage = async (
     const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
     if (deviceFingerprint) {
       // Find all anonymous organizations with matching device fingerprint in metadata
+      // Use JSONB @> operator for safe, efficient querying
+      // Note: For optimal performance, consider adding a GIN index:
+      // CREATE INDEX idx_organization_metadata_gin ON organization USING GIN ((metadata::jsonb) jsonb_path_ops);
       const anonymousOrgs = await db
         .select({ id: schema.organization.id })
         .from(schema.organization)
         .where(
           and(
-            sql`${schema.organization.metadata}::text LIKE ${`%"deviceFingerprint":"${deviceFingerprint}"%`}`,
+            sql`${schema.organization.metadata}::jsonb @> ${JSON.stringify({ deviceFingerprint })}::jsonb`,
             sql`${schema.organization.slug} LIKE 'anonymous-%'`
           )
         )
