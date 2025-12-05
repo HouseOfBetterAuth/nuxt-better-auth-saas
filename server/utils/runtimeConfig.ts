@@ -55,6 +55,8 @@ export const generateRuntimeConfig = () => ({
   // Google
   googleClientId: process.env.NUXT_GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.NUXT_GOOGLE_CLIENT_SECRET,
+  // Worker API
+  workerApiUrl: process.env.WORKER_API_URL || 'https://api-service.getquillio.com',
   // DB
   redisUrl: process.env.NUXT_REDIS_URL,
   databaseUrl: process.env.NUXT_DATABASE_URL,

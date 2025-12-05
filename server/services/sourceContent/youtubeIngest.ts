@@ -192,7 +192,7 @@ async function fetchTranscriptViaWorker(event: H3Event, videoId: string) {
   }
 
   try {
-    const response = await $fetch<WorkerTranscriptResponse>('https://api-service.getquillio.com/api/proxy/youtube-transcript', {
+    const response = await $fetch<WorkerTranscriptResponse>(`${runtimeConfig.workerApiUrl}/api/proxy/youtube-transcript`, {
       method: 'POST',
       body: { video_id: videoId },
       headers
