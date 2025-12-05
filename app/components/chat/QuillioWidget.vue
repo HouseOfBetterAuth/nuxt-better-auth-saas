@@ -99,6 +99,7 @@ const verifiedDraftLimit = computed(() => parseDraftLimitValue(runtimeConfig.pub
 const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = shallowRef<any | null>(null)
 const workspaceLoading = ref(false)
+const archivingDraftId = ref<string | null>(null)
 const draftQuotaState = useState<DraftQuotaUsagePayload | null>('draft-quota-usage', () => null)
 const workspacePayloadCache = useState<Record<string, { payload: any | null, timestamp: number }>>('workspace-payload-cache', () => ({}))
 const WORKSPACE_CACHE_TTL_MS = 30_000
@@ -691,6 +692,43 @@ const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
   await activateWorkspace(entry.id)
 }
 
+const archiveDraft = async (entry: { id: string, title?: string | null }) => {
+  if (!entry?.id || archivingDraftId.value === entry.id)
+    return
+
+  archivingDraftId.value = entry.id
+
+  try {
+    await $fetch(`/api/chat/drafts/${entry.id}/archive`, {
+      method: 'POST'
+    })
+
+    if (activeWorkspaceId.value === entry.id) {
+      await activateWorkspace(null)
+      resetConversation()
+    }
+
+    await refreshDrafts()
+
+    toast.add({
+      title: 'Draft archived',
+      description: entry.title || 'Draft moved to archive.',
+      color: 'neutral',
+      icon: 'i-lucide-archive'
+    })
+  } catch (error: any) {
+    const message = error?.data?.statusMessage || error?.statusMessage || 'Failed to archive draft'
+    toast.add({
+      title: 'Archive failed',
+      description: message,
+      color: 'error',
+      icon: 'i-lucide-alert-triangle'
+    })
+  } finally {
+    archivingDraftId.value = null
+  }
+}
+
 const resetConversation = () => {
   prompt.value = ''
   linkedSources.value = []
@@ -1194,7 +1232,9 @@ if (import.meta.client) {
         <ChatDraftsList
           :drafts-pending="draftsPending"
           :content-entries="contentEntries"
+          :archiving-draft-id="archivingDraftId"
           @open-workspace="openWorkspace"
+          @archive-entry="archiveDraft"
         />
       </div>
     </div>
