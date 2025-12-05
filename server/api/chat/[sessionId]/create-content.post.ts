@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   validateRequestBody(body)
 
-  await ensureEmailVerifiedDraftCapacity(db, organizationId, user)
+  await ensureEmailVerifiedDraftCapacity(db, organizationId, user, event)
 
   const title = validateRequiredString(body.title, 'title')
 
@@ -132,6 +132,7 @@ export default defineEventHandler(async (event) => {
     organizationId,
     userId: user.id,
     sourceContentId: manualSource.id,
+    event,
     overrides: {
       title,
       contentType

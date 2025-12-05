@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const draftQuota = includeList
-    ? await getDraftQuotaUsage(db, organizationId, user)
+    ? await getDraftQuotaUsage(db, organizationId, user, event)
     : null
 
   return {

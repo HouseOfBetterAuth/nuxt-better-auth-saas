@@ -1,4 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { H3Event } from 'h3'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
@@ -41,6 +42,7 @@ export interface GenerateContentInput {
   systemPrompt?: string
   temperature?: number
   onPlanReady?: (details: PlanReadyDetails) => Promise<void> | void
+  event?: H3Event | null
 }
 
 export interface GenerateContentResult {
@@ -1169,7 +1171,8 @@ export const generateContentDraftFromSource = async (
     contentId,
     overrides,
     systemPrompt,
-    temperature
+    temperature,
+    event
   } = input
 
   if (!organizationId || !userId) {
@@ -1258,7 +1261,7 @@ export const generateContentDraftFromSource = async (
       })
     }
 
-    await ensureEmailVerifiedDraftCapacity(db, organizationId, user)
+    await ensureEmailVerifiedDraftCapacity(db, organizationId, user, event)
   }
 
   // Track pipeline stages as they complete

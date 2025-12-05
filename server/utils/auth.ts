@@ -989,21 +989,221 @@ export interface DraftQuotaUsageResult {
   profile: 'anonymous' | 'verified' | 'paid'
 }
 
+/**
+ * Get device fingerprint for anonymous quota tracking
+ * This prevents quota reset when cookies are cleared
+ *
+ * Uses Better Auth session data when available, falls back to request headers.
+ * Follows Better Auth's IP address detection patterns.
+ */
+const getDeviceFingerprint = async (
+  db: NodePgDatabase<typeof schema>,
+  event?: H3Event | null,
+  userId?: string | null
+): Promise<string | null> => {
+  if (!event)
+    return null
+
+  try {
+    let ipAddress = ''
+    let userAgent = ''
+
+    // Try to get IP/User-Agent from current session if available
+    // This uses Better Auth's stored session data which is more reliable
+    if (userId) {
+      try {
+        const [currentSession] = await db
+          .select({
+            ipAddress: schema.session.ipAddress,
+            userAgent: schema.session.userAgent
+          })
+          .from(schema.session)
+          .where(
+            and(
+              eq(schema.session.userId, userId),
+              sql`${schema.session.expiresAt} > NOW()`
+            )
+          )
+          .orderBy(desc(schema.session.createdAt))
+          .limit(1)
+
+        if (currentSession?.ipAddress)
+          ipAddress = currentSession.ipAddress
+
+        if (currentSession?.userAgent)
+          userAgent = currentSession.userAgent
+      } catch {
+        // Fall through to request headers
+      }
+    }
+
+    // Fall back to request headers if session data not available
+    // This handles cases where cookies are cleared but we still need device tracking
+    if (!ipAddress || !userAgent) {
+      const headers = getRequestHeaders(event)
+
+      // Better Auth uses X-Forwarded-For by default, but can be configured
+      // We follow the same pattern for consistency
+      // Handle both string and array formats (some proxies return arrays)
+      if (!ipAddress) {
+        const forwardedFor = headers['x-forwarded-for']
+        const forwardedForStr = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor
+        ipAddress = forwardedForStr?.split(',')[0]?.trim()
+          || headers['x-real-ip']
+          || headers['cf-connecting-ip']
+          || ''
+      }
+
+      if (!userAgent)
+        userAgent = headers['user-agent'] || ''
+    }
+
+    // Need at least one identifier to create fingerprint
+    if (!ipAddress && !userAgent)
+      return null
+
+    // Create a hash of IP + User-Agent for device identification
+    // Using SHA-256 for security (same as Better Auth uses for signing)
+    const fingerprint = `${ipAddress}|${userAgent}`
+    const hash = createHash('sha256').update(fingerprint).digest('hex')
+    return hash
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Ensure device fingerprint is stored in anonymous organization metadata
+ * This allows quota tracking across cookie clears
+ *
+ * Follows Better Auth patterns by using session data when available
+ */
+const ensureDeviceFingerprintInOrg = async (
+  db: NodePgDatabase<typeof schema>,
+  organizationId: string,
+  event?: H3Event | null,
+  userId?: string | null
+): Promise<void> => {
+  if (!event)
+    return
+
+  const deviceFingerprint = await getDeviceFingerprint(db, event, userId)
+  if (!deviceFingerprint)
+    return
+
+  try {
+    // Check if organization is anonymous
+    // Use atomic JSONB update to prevent race conditions
+    // Only update if deviceFingerprint not already set
+    const [org] = await db
+      .select({
+        id: schema.organization.id,
+        slug: schema.organization.slug
+      })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, organizationId))
+      .limit(1)
+
+    if (!org || !org.slug.startsWith('anonymous-'))
+      return
+
+    // Atomically update only if deviceFingerprint not already set
+    // Uses JSONB operations to avoid race condition and ensure type safety
+    // Uses parameterized query to prevent SQL injection
+    await db
+      .update(schema.organization)
+      .set({
+        metadata: sql`
+          CASE
+            WHEN ${schema.organization.metadata}::jsonb ? 'deviceFingerprint'
+            THEN ${schema.organization.metadata}
+            ELSE jsonb_set(
+              COALESCE(${schema.organization.metadata}::jsonb, '{}'::jsonb),
+              '{deviceFingerprint}',
+              ${JSON.stringify(deviceFingerprint)}::jsonb
+            )::text
+          END
+        `
+      })
+      .where(eq(schema.organization.id, organizationId))
+  } catch (error) {
+    // Silently fail - device fingerprint is optional
+    console.error('Failed to store device fingerprint:', error)
+  }
+}
+
 export const getDraftQuotaUsage = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
-  user: User | null
+  user: User | null,
+  event?: H3Event | null
 ): Promise<DraftQuotaUsageResult> => {
-  const [countResult] = await db
-    .select({ total: count() })
-    .from(schema.content)
-    .where(eq(schema.content.organizationId, organizationId))
-
-  const used = Number(countResult?.total ?? 0) || 0
   const { hasActiveSubscription, planLabel } = await getOrganizationSubscriptionStatus(db, organizationId)
   const { profile, label } = resolveDraftQuotaProfile(user, hasActiveSubscription)
   const configuredLimit = DRAFT_QUOTA_SETTINGS[profile]
   const unlimited = profile === 'paid' && configuredLimit <= 0
+
+  // Ensure device fingerprint is stored for anonymous organizations
+  if (profile === 'anonymous' && event) {
+    await ensureDeviceFingerprintInOrg(db, organizationId, event, user?.id || null)
+  }
+
+  let used = 0
+
+  // For anonymous users, aggregate quota across all organizations from the same device
+  // This prevents quota reset when cookies are cleared
+  // Uses Better Auth session data when available for more reliable tracking
+  if (profile === 'anonymous' && event) {
+    const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
+    if (deviceFingerprint) {
+      // Find all anonymous organizations with matching device fingerprint in metadata
+      // Use JSONB @> operator for safe, efficient querying
+      // Note: For optimal performance, consider adding a GIN index:
+      // CREATE INDEX idx_organization_metadata_gin ON organization USING GIN ((metadata::jsonb) jsonb_path_ops);
+      const anonymousOrgs = await db
+        .select({ id: schema.organization.id })
+        .from(schema.organization)
+        .where(
+          and(
+            sql`${schema.organization.metadata}::jsonb @> ${JSON.stringify({ deviceFingerprint })}::jsonb`,
+            sql`${schema.organization.slug} LIKE 'anonymous-%'`
+          )
+        )
+
+      const orgIds = anonymousOrgs.map(org => org.id)
+
+      if (orgIds.length > 0) {
+        // Aggregate content count across all anonymous orgs from this device
+        const [aggregateResult] = await db
+          .select({ total: count() })
+          .from(schema.content)
+          .where(inArray(schema.content.organizationId, orgIds))
+
+        used = Number(aggregateResult?.total ?? 0) || 0
+      } else {
+        // Fallback to current organization if no device match found
+        const [countResult] = await db
+          .select({ total: count() })
+          .from(schema.content)
+          .where(eq(schema.content.organizationId, organizationId))
+        used = Number(countResult?.total ?? 0) || 0
+      }
+    } else {
+      // Fallback to current organization if device fingerprint unavailable
+      const [countResult] = await db
+        .select({ total: count() })
+        .from(schema.content)
+        .where(eq(schema.content.organizationId, organizationId))
+      used = Number(countResult?.total ?? 0) || 0
+    }
+  } else {
+    // For non-anonymous users, use organization-based quota
+    const [countResult] = await db
+      .select({ total: count() })
+      .from(schema.content)
+      .where(eq(schema.content.organizationId, organizationId))
+    used = Number(countResult?.total ?? 0) || 0
+  }
 
   if (unlimited) {
     const quota = {
@@ -1034,9 +1234,10 @@ export const getDraftQuotaUsage = async (
 export const ensureEmailVerifiedDraftCapacity = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
-  user: User
+  user: User,
+  event?: H3Event | null
 ): Promise<{ limit: number, used: number, remaining: number } | null> => {
-  const quota = await getDraftQuotaUsage(db, organizationId, user)
+  const quota = await getDraftQuotaUsage(db, organizationId, user, event)
   if (!quota || quota.unlimited || quota.limit === null) {
     return null
   }

@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const draftQuota = await getDraftQuotaUsage(db, organizationId, user)
+  const draftQuota = await getDraftQuotaUsage(db, organizationId, user, event)
 
   return {
     contents: transformedContents,
