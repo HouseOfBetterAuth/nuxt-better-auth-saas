@@ -8,6 +8,29 @@ import { createChunksFromSourceContentText } from './chunkSourceContent'
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000
 
+export type TranscriptFailureReason =
+  | 'no_captions'
+  | 'blocked'
+  | 'private_or_unavailable'
+  | 'rate_limited'
+  | 'client_config'
+  | 'no_account'
+  | 'permission_denied'
+  | 'auth_failed'
+  | 'empty_transcript'
+  | 'unknown'
+
+export interface YouTubeTranscriptErrorData {
+  transcriptFailed: true
+  reasonCode: TranscriptFailureReason
+  userMessage: string
+  suggestAccountLink?: boolean
+  canRetry?: boolean
+  videoId: string
+  innertubeError?: string
+  apiError?: string
+}
+
 interface IngestYouTubeOptions {
   db: NodePgDatabase<typeof schema>
   sourceContentId: string
@@ -44,6 +67,56 @@ function stripVttToPlainText(vtt: string) {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function classifyTranscriptFailure(message: string) {
+  const lowerMessage = message.toLowerCase()
+
+  if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts')) {
+    return { reasonCode: 'no_captions' as const, userMessage: "This video doesn't have captions available.", canRetry: false }
+  }
+  if (lowerMessage.includes('block') || lowerMessage.includes('forbidden')) {
+    return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
+  }
+  if (lowerMessage.includes('private') || lowerMessage.includes('unavailable') || lowerMessage.includes('not found')) {
+    return { reasonCode: 'private_or_unavailable' as const, userMessage: 'This video is private or unavailable.' }
+  }
+  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many')) {
+    return { reasonCode: 'rate_limited' as const, userMessage: 'Too many requests, please try again later.', canRetry: true }
+  }
+  if (lowerMessage.includes('client configuration')) {
+    return { reasonCode: 'client_config' as const, userMessage: 'Unable to extract YouTube client configuration.' }
+  }
+  if (lowerMessage.includes('permission denied')) {
+    return { reasonCode: 'permission_denied' as const, userMessage: "You don't have access to this video's captions." }
+  }
+  if (lowerMessage.includes('authentication failed') || lowerMessage.includes('access token')) {
+    return { reasonCode: 'auth_failed' as const, userMessage: 'YouTube authentication failed. Please reconnect your account.' }
+  }
+  if (lowerMessage.includes('empty content')) {
+    return { reasonCode: 'empty_transcript' as const, userMessage: 'The transcript was empty or could not be read.' }
+  }
+
+  return { reasonCode: 'unknown' as const, userMessage: 'Unable to fetch transcript.' }
+}
+
+function createTranscriptError(params: {
+  reasonCode: TranscriptFailureReason
+  userMessage: string
+  suggestAccountLink?: boolean
+  canRetry?: boolean
+  videoId: string
+  innertubeError?: string
+  apiError?: string
+}) {
+  return createError({
+    statusCode: 400,
+    statusMessage: params.userMessage,
+    data: {
+      transcriptFailed: true,
+      ...params
+    } satisfies YouTubeTranscriptErrorData
+  })
 }
 
 async function fetchInnertubeClientConfig(videoId: string) {
@@ -418,9 +491,13 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
           updatedAt: new Date()
         })
         .where(eq(schema.sourceContent.id, sourceContentId))
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'No YouTube integration available for this organization.'
+      throw createTranscriptError({
+        reasonCode: 'no_account',
+        userMessage: 'No YouTube account is connected for this organization.',
+        suggestAccountLink: true,
+        canRetry: true,
+        videoId,
+        innertubeError: lastInnertubeError
       })
     }
 
@@ -458,7 +535,15 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
         })
         .where(eq(schema.sourceContent.id, sourceContentId))
 
-      throw error
+      const failure = classifyTranscriptFailure(errorMessage)
+
+      throw createTranscriptError({
+        ...failure,
+        videoId,
+        apiError: errorMessage,
+        innertubeError: lastInnertubeError,
+        suggestAccountLink: failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
+      })
     }
   }
 

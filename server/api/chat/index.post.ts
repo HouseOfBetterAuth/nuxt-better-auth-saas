@@ -12,7 +12,7 @@ import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
-import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
+import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent, type YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
@@ -21,6 +21,23 @@ import { createServiceUnavailableError, createValidationError } from '~~/server/
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { validateEnum, validateNumber, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
+
+function buildYouTubeTranscriptErrorMessage(errorData: YouTubeTranscriptErrorData | undefined, hasYouTubeAccount: boolean) {
+  const reason = (errorData?.userMessage || 'Unable to fetch transcript.').trim()
+  const suggestions: string[] = []
+
+  if (!hasYouTubeAccount || errorData?.suggestAccountLink) {
+    suggestions.push('💡 Tip: Sign in and link your YouTube account to access transcripts from videos you own.')
+  }
+
+  if (errorData?.canRetry !== false) {
+    suggestions.push('Please try again or check if the video has captions enabled.')
+  }
+
+  const suggestionText = suggestions.length ? ` ${suggestions.join(' ')}` : ''
+
+  return `❌ Error: I can't get the transcript for this video. ${reason}${suggestionText}`
+}
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
@@ -44,6 +61,7 @@ export default defineEventHandler(async (event) => {
     url: string
     sourceType: string
   }> = []
+  const ingestionErrors: string[] = []
 
   for (const rawUrl of urls) {
     const classification = classifyUrl(rawUrl)
@@ -71,13 +89,23 @@ export default defineEventHandler(async (event) => {
     }
 
     if (classification.sourceType === 'youtube' && classification.externalId && runtimeConfig.enableYoutubeIngestion) {
-      record = await ingestYouTubeVideoAsSourceContent({
-        db,
-        sourceContentId: record.id,
-        organizationId,
-        userId: user.id,
-        videoId: classification.externalId
-      })
+      try {
+        record = await ingestYouTubeVideoAsSourceContent({
+          db,
+          sourceContentId: record.id,
+          organizationId,
+          userId: user.id,
+          videoId: classification.externalId
+        })
+      } catch (error: any) {
+        const errorData = (error?.data as YouTubeTranscriptErrorData | undefined)
+        if (errorData?.transcriptFailed) {
+          const hasYouTubeAccount = !!(await findYouTubeAccount(db, organizationId, user.id))
+          ingestionErrors.push(buildYouTubeTranscriptErrorMessage(errorData, hasYouTubeAccount))
+          continue
+        }
+        throw error
+      }
     } else if (classification.sourceType === 'youtube' && !runtimeConfig.enableYoutubeIngestion) {
       throw createServiceUnavailableError('YouTube ingestion is disabled. Enable it in configuration to process YouTube links.')
     }
@@ -171,6 +199,15 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to create chat session'
+    })
+  }
+
+  for (const errorMessage of ingestionErrors) {
+    await addMessageToChatSession(db, {
+      sessionId: session.id,
+      organizationId,
+      role: 'assistant',
+      content: errorMessage
     })
   }
 
