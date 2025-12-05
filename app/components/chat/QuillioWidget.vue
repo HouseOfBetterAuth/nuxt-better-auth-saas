@@ -287,7 +287,6 @@ const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.va
 const uiStatus = computed(() => status.value)
 const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
 
-
 const createDraftCta = computed(() => {
   if (draftQuotaUsage.value?.unlimited) {
     return 'Create draft'
