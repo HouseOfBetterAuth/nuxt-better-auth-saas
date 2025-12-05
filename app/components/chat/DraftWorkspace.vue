@@ -176,13 +176,17 @@ const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 
 const content = ref<ContentResponse | null>(props.initialPayload ?? null)
+const chatLoading = ref(false)
+const pendingChatFetches = new Set<string>()
 const headerData = ref<{
   title: string
+  status: string | null
   contentType: string | null
   updatedAtLabel: string
   versionId: string | null
   additions: number
   deletions: number
+  contentId: string | null
 } | null>(null)
 const pending = ref(!content.value)
 const headerPending = ref(!content.value)
@@ -237,11 +241,13 @@ async function loadHeaderData() {
 
     headerData.value = {
       title: displayTitle,
+      status: cached.content?.status || 'draft',
       contentType,
       updatedAtLabel,
       versionId: cached.content?.currentVersionId || null,
       additions: cached._computed?.additions || 0,
-      deletions: cached._computed?.deletions || 0
+      deletions: cached._computed?.deletions || 0,
+      contentId: cached.content?.id || currentContentId
     }
     headerPending.value = false
     return // Skip API call!
@@ -252,18 +258,24 @@ async function loadHeaderData() {
   try {
     const header = await $fetch<{
       title: string
+      status: string | null
       contentType: string | null
       updatedAtLabel: string
       versionId: string | null
       additions: number
       deletions: number
+      contentId: string | null
     }>('/api/chat/workspace-header', {
       query: { contentId: currentContentId }
     })
 
     // Verify contentId hasn't changed before updating state
     if (contentId.value === currentContentId) {
-      headerData.value = header
+      headerData.value = {
+        ...header,
+        status: header.status || 'draft',
+        contentId: header.contentId || currentContentId
+      }
     }
   } catch (err: any) {
     // Header load failure is non-critical, continue with full load
@@ -276,6 +288,51 @@ async function loadHeaderData() {
   }
 }
 
+const fetchWorkspaceChat = async (workspaceContentId: string | null, sessionId: string | null) => {
+  if (!workspaceContentId || !sessionId) {
+    return
+  }
+  if (pendingChatFetches.has(workspaceContentId)) {
+    return
+  }
+
+  pendingChatFetches.add(workspaceContentId)
+  chatLoading.value = true
+  try {
+    const [messagesResponse, logsResponse] = await Promise.all([
+      $fetch<{ messages: ContentChatMessage[] }>(`/api/chat/workspace/${workspaceContentId}/messages`),
+      $fetch<{ logs: ContentChatLog[] }>(`/api/chat/workspace/${workspaceContentId}/logs`)
+    ])
+
+    if (!content.value || content.value.content.id !== workspaceContentId) {
+      return
+    }
+
+    content.value = {
+      ...content.value,
+      chatMessages: messagesResponse.messages,
+      chatLogs: logsResponse.logs
+    }
+  } catch (error) {
+    console.error('[DraftWorkspace] Unable to fetch chat data', error)
+  } finally {
+    pendingChatFetches.delete(workspaceContentId)
+    chatLoading.value = false
+  }
+}
+
+const maybeFetchChatData = (payload: ContentResponse | null) => {
+  const workspaceContentId = payload?.content?.id || null
+  const sessionId = payload?.chatSession?.id || null
+  if (!workspaceContentId || !sessionId) {
+    return
+  }
+  if (Array.isArray(payload?.chatMessages) && Array.isArray(payload?.chatLogs)) {
+    return
+  }
+  void fetchWorkspaceChat(workspaceContentId, sessionId)
+}
+
 async function loadWorkspacePayload() {
   if (!contentId.value) {
     content.value = null
@@ -284,11 +341,10 @@ async function loadWorkspacePayload() {
   pending.value = true
   error.value = null
   try {
-    const response = await $fetch<{ workspace: ContentResponse | null }>('/api/chat/workspace', {
-      query: { contentId: contentId.value }
-    })
+    const response = await $fetch<{ workspace: ContentResponse | null }>(`/api/chat/workspace/${contentId.value}`)
     content.value = response.workspace ?? null
     emitReady()
+    maybeFetchChatData(content.value)
   } catch (err: any) {
     error.value = err
   } finally {
@@ -300,6 +356,7 @@ if (content.value) {
   pending.value = false
   headerPending.value = false
   emitReady()
+  maybeFetchChatData(content.value)
 } else {
   // Load header first (lightweight), then full workspace
   await Promise.all([
@@ -313,6 +370,7 @@ watch(() => props.initialPayload, (value) => {
     content.value = value
     pending.value = false
     emitReady()
+    maybeFetchChatData(content.value)
   }
 })
 
@@ -326,6 +384,7 @@ watch(() => contentId.value, async (next, prev) => {
     pending.value = false
     headerPending.value = false
     emitReady()
+    maybeFetchChatData(content.value)
     return
   }
   // Load header first (lightweight), then full workspace
@@ -504,16 +563,36 @@ const diffStats = computed(() => {
   }
 })
 
+type ViewTabValue = 'summary' | 'diff' | 'metadata'
+const viewTabs: { label: string, value: ViewTabValue }[] = [
+  { label: 'Summary', value: 'summary' },
+  { label: 'Raw MDX', value: 'diff' },
+  { label: 'Metadata', value: 'metadata' }
+]
+
+const activeViewTab = ref<ViewTabValue>('summary')
+
+const headerTabs = computed(() => ({
+  items: viewTabs,
+  modelValue: activeViewTab.value,
+  onUpdate: (value: ViewTabValue) => {
+    activeViewTab.value = value
+  }
+}))
+
 const headerPayload = computed<WorkspaceHeaderState | null>(() => {
   // Use lightweight header data if available (faster), fallback to full content
   if (headerData.value) {
     return {
       title: headerData.value.title,
+      status: headerData.value.status || 'draft',
       contentType: headerData.value.contentType || 'content',
       updatedAtLabel: headerData.value.updatedAtLabel,
       versionId: headerData.value.versionId,
       additions: headerData.value.additions,
       deletions: headerData.value.deletions,
+      tabs: headerTabs.value,
+      contentId: headerData.value.contentId || contentId.value || null,
       showBackButton: showBackButton.value,
       onBack: showBackButton.value ? handleBackNavigation : null,
       // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
@@ -532,11 +611,14 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
   }
   return {
     title: contentDisplayTitle.value,
+    status: contentRecord.value.status || 'draft',
     contentType: frontmatter.value?.contentType || 'content',
     updatedAtLabel: contentUpdatedAtLabel.value,
     versionId: currentVersion.value?.id || null,
     additions: diffStats.value.additions,
     deletions: diffStats.value.deletions,
+    tabs: headerTabs.value,
+    contentId: contentRecord.value.id || contentId.value || null,
     showBackButton: showBackButton.value,
     onBack: showBackButton.value ? handleBackNavigation : null,
     // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
@@ -552,15 +634,6 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
 watch(headerPayload, (value) => {
   workspaceHeaderState.value = value
 }, { immediate: true })
-
-type ViewTabValue = 'summary' | 'diff' | 'metadata'
-const viewTabs: { label: string, value: ViewTabValue }[] = [
-  { label: 'Summary', value: 'summary' },
-  { label: 'Raw MDX', value: 'diff' },
-  { label: 'Metadata', value: 'metadata' }
-]
-
-const activeViewTab = ref<ViewTabValue>('summary')
 
 function slugify(value: string) {
   return value
@@ -760,15 +833,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <UContainer class="space-y-6">
-    <section class="space-y-4">
-      <UTabs
-        v-model="activeViewTab"
-        :items="viewTabs"
-        size="sm"
-        :content="false"
-        class="w-full"
-      />
+  <div class="space-y-6">
+    <section class="space-y-4 pt-2">
 
       <div
         v-if="activeViewTab === 'summary'"
@@ -782,7 +848,7 @@ onBeforeUnmount(() => {
           :description="chatErrorMessage"
         />
 
-        <UContainer class="flex-1 flex flex-col gap-4">
+        <div class="flex-1 flex flex-col gap-4">
           <UChatMessages
             :messages="displayMessages"
             :status="uiStatus"
@@ -911,7 +977,7 @@ onBeforeUnmount(() => {
               @submit="_handleSubmit"
             />
           </div>
-        </UContainer>
+        </div>
       </div>
 
       <div
@@ -1207,5 +1273,5 @@ onBeforeUnmount(() => {
         />
       </div>
     </section>
-  </UContainer>
+  </div>
 </template>

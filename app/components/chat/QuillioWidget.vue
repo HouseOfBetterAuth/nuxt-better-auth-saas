@@ -2,7 +2,8 @@
 import type { ContentType } from '#shared/constants/contentTypes'
 import type { ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
-import { useClipboard } from '@vueuse/core'
+import { shallowRef } from 'vue'
+import { useClipboard, useDebounceFn } from '@vueuse/core'
 
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
 import PromptComposer from './PromptComposer.vue'
@@ -69,9 +70,47 @@ const guestDraftLimit = computed(() => parseDraftLimitValue(runtimeConfig.public
 const verifiedDraftLimit = computed(() => parseDraftLimitValue(runtimeConfig.public?.draftQuota?.verified, 25))
 
 const activeWorkspaceId = ref<string | null>(null)
-const workspaceDetail = ref<any | null>(null)
+const workspaceDetail = shallowRef<any | null>(null)
 const workspaceLoading = ref(false)
 const draftQuotaState = useState<DraftQuotaUsagePayload | null>('draft-quota-usage', () => null)
+const workspacePayloadCache = useState<Map<string, { payload: any | null, timestamp: number }>>('workspace-payload-cache', () => new Map())
+const WORKSPACE_CACHE_TTL_MS = 30_000
+const debouncedRefreshDrafts = useDebounceFn(() => refreshDrafts(), 300)
+
+const scheduleIdleTask = (fn: () => void) => {
+  if (typeof window === 'undefined')
+    return
+  const idle = (window as any).requestIdleCallback as ((cb: () => void) => number) | undefined
+  if (typeof idle === 'function') {
+    idle(() => fn())
+  } else {
+    setTimeout(() => fn(), 200)
+  }
+}
+
+const prefetchWorkspacePayload = (contentId?: string | null) => {
+  if (!import.meta.client || !contentId) {
+    return
+  }
+  scheduleIdleTask(() => {
+    const cacheEntry = workspacePayloadCache.value.get(contentId)
+    const now = Date.now()
+    if (cacheEntry && (now - cacheEntry.timestamp) < WORKSPACE_CACHE_TTL_MS) {
+      return
+    }
+    $fetch<{ workspace?: any | null }>(`/api/chat/workspace/${contentId}`)
+      .then((response) => {
+        workspacePayloadCache.value.set(contentId, {
+          payload: response?.workspace ?? null,
+          timestamp: Date.now()
+        })
+      })
+      .catch(() => {
+        // Ignore prefetch errors
+      })
+  })
+}
+const debouncedRefreshDrafts = useDebounceFn(() => refreshDrafts(), 300)
 interface DraftQuotaUsagePayload {
   limit: number | null
   used: number | null
@@ -417,6 +456,7 @@ const handlePromptSubmit = async (value?: string) => {
   promptSubmitting.value = true
   try {
     await sendMessage(trimmed)
+    prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
     prompt.value = ''
   } finally {
     promptSubmitting.value = false
@@ -526,18 +566,38 @@ function removeLinkedSource(id: string) {
 }
 
 const loadWorkspaceDetail = async (contentId: string) => {
-  workspaceLoading.value = true
-  workspaceDetail.value = null
+  if (!contentId) {
+    workspaceDetail.value = null
+    return
+  }
+
+  const cacheEntry = workspacePayloadCache.value.get(contentId)
+  const now = Date.now()
+
+  if (cacheEntry) {
+    workspaceDetail.value = cacheEntry.payload
+    if (now - cacheEntry.timestamp < WORKSPACE_CACHE_TTL_MS) {
+      workspaceLoading.value = false
+      return
+    }
+  } else {
+    workspaceDetail.value = null
+  }
+
+  workspaceLoading.value = !cacheEntry
   try {
-    // Only fetch workspace detail, not the full contents list
-    // The list is already loaded via the lightweight drafts-list endpoint
-    const response = await $fetch<{ workspace?: any | null }>('/api/chat/workspace', {
-      query: { contentId }
+    const response = await $fetch<{ workspace?: any | null }>(`/api/chat/workspace/${contentId}`)
+    const payload = response?.workspace ?? null
+    workspaceDetail.value = payload
+    workspacePayloadCache.value.set(contentId, {
+      payload,
+      timestamp: Date.now()
     })
-    workspaceDetail.value = response?.workspace ?? null
   } catch (error) {
     console.error('Unable to load workspace', error)
-    workspaceDetail.value = null
+    if (!cacheEntry) {
+      workspaceDetail.value = null
+    }
   } finally {
     workspaceLoading.value = false
   }
@@ -558,6 +618,7 @@ const resetWorkspaceState = () => {
 }
 
 const routeDraftId = computed(() => normalizeDraftId(route.query.draft))
+const standaloneDraftId = computed(() => props.initialDraftId ?? routeDraftId.value ?? null)
 
 const syncWorkspace = async (draftId: string | null) => {
   if (!draftId) {
@@ -570,6 +631,10 @@ const syncWorkspace = async (draftId: string | null) => {
   activeWorkspaceId.value = draftId
   await loadWorkspaceDetail(draftId)
 }
+
+const scheduleSyncWorkspace = useDebounceFn((draftId: string | null) => {
+  void syncWorkspace(draftId)
+}, 200)
 
 const updateDraftRoute = async (draftId: string | null) => {
   const nextQuery = { ...route.query }
@@ -584,6 +649,10 @@ const updateDraftRoute = async (draftId: string | null) => {
     console.warn('Failed to update draft route', error)
   }
 }
+
+const initialDraftId = computed(() => (props.routeSync ? routeDraftId.value : standaloneDraftId.value) ?? null)
+
+await syncWorkspace(initialDraftId.value)
 
 const activateWorkspace = async (draftId: string | null) => {
   if (props.routeSync) {
@@ -609,8 +678,10 @@ const resetConversation = () => {
 }
 
 const closeWorkspace = async () => {
+  const previousWorkspaceId = activeWorkspaceId.value
   await activateWorkspace(null)
   resetConversation()
+  prefetchWorkspacePayload(previousWorkspaceId)
 }
 
 const handleCreateDraft = async () => {
@@ -731,11 +802,16 @@ watch(
 )
 
 if (props.routeSync) {
-  watch(routeDraftId, async (draftId) => {
-    await syncWorkspace(draftId ?? null)
-  }, { immediate: true })
+  watch(routeDraftId, (draftId) => {
+    scheduleSyncWorkspace(draftId ?? null)
+  })
 } else {
-  await syncWorkspace(props.initialDraftId ?? routeDraftId.value ?? null)
+  watch(standaloneDraftId, (draftId) => {
+    if (!import.meta.client) {
+      return
+    }
+    scheduleSyncWorkspace(draftId ?? null)
+  })
 }
 
 const handleRegenerate = async (message: ChatMessage) => {
@@ -772,8 +848,8 @@ watch(workspaceDraftsPayload, (payload) => {
 }, { immediate: true, deep: true })
 
 if (import.meta.client) {
-  watch(loggedIn, async () => {
-    await refreshDrafts()
+  watch(loggedIn, () => {
+    debouncedRefreshDrafts()
   }, { immediate: true })
 }
 </script>
@@ -804,17 +880,6 @@ if (import.meta.client) {
           v-if="isWorkspaceActive && activeWorkspaceEntry"
           class="space-y-6 w-full"
         >
-          <USkeleton
-            v-if="isWorkspaceLoading"
-            class="rounded-2xl border border-muted-200/70 p-4"
-          >
-            <div class="h-4 rounded bg-muted/70" />
-            <div class="mt-2 space-y-2">
-              <div class="h-3 rounded bg-muted/60" />
-              <div class="h-3 rounded bg-muted/50" />
-            </div>
-          </USkeleton>
-
           <ChatDraftWorkspace
             v-if="workspaceDetail?.content?.id"
             :content-id="workspaceDetail.content.id"
@@ -840,52 +905,51 @@ if (import.meta.client) {
                 <span>Quillio is thinking...</span>
               </div>
 
-              <div class="min-h-[250px] py-4">
-                <UChatMessages
-                  :messages="messages"
-                  :status="uiStatus"
-                  should-auto-scroll
-                  :assistant="{
-                    actions: [
-                      {
-                        label: 'Copy',
-                        icon: 'i-lucide-copy',
-                        onClick: (e, message) => handleCopy(message as ChatMessage)
-                      },
-                      {
-                        label: 'Regenerate',
-                        icon: 'i-lucide-rotate-ccw',
-                        onClick: (e, message) => handleRegenerate(message as ChatMessage)
-                      }
-                    ]
-                  }"
-                  :user="{
-                    actions: [
-                      {
-                        label: 'Copy',
-                        icon: 'i-lucide-copy',
-                        onClick: (e, message) => handleCopy(message as ChatMessage)
-                      },
-                      {
-                        label: 'Send again',
-                        icon: 'i-lucide-send',
-                        onClick: (e, message) => {
-                          const text = (message as ChatMessage).parts[0]?.text || ''
-                          if (text) {
-                            handlePromptSubmit(text)
-                          }
+              <UChatMessages
+                class="py-4"
+                :messages="messages"
+                :status="uiStatus"
+                should-auto-scroll
+                :assistant="{
+                  actions: [
+                    {
+                      label: 'Copy',
+                      icon: 'i-lucide-copy',
+                      onClick: (e, message) => handleCopy(message as ChatMessage)
+                    },
+                    {
+                      label: 'Regenerate',
+                      icon: 'i-lucide-rotate-ccw',
+                      onClick: (e, message) => handleRegenerate(message as ChatMessage)
+                    }
+                  ]
+                }"
+                :user="{
+                  actions: [
+                    {
+                      label: 'Copy',
+                      icon: 'i-lucide-copy',
+                      onClick: (e, message) => handleCopy(message as ChatMessage)
+                    },
+                    {
+                      label: 'Send again',
+                      icon: 'i-lucide-send',
+                      onClick: (e, message) => {
+                        const text = (message as ChatMessage).parts[0]?.text || ''
+                        if (text) {
+                          handlePromptSubmit(text)
                         }
                       }
-                    ]
-                  }"
-                >
-                  <template #content="{ message }">
-                    <div class="whitespace-pre-line">
-                      {{ message.parts[0]?.text }}
-                    </div>
-                  </template>
-                </UChatMessages>
-              </div>
+                    }
+                  ]
+                }"
+              >
+                <template #content="{ message }">
+                  <div class="whitespace-pre-line">
+                    {{ message.parts[0]?.text }}
+                  </div>
+                </template>
+              </UChatMessages>
             </div>
           </div>
 
@@ -934,17 +998,15 @@ if (import.meta.client) {
                       v-model="selectedContentType"
                       :items="CONTENT_TYPE_OPTIONS"
                       value-key="value"
+                      option-attribute="label"
                       variant="ghost"
                       size="sm"
                     >
                       <template #leading>
-                        <div class="flex items-center gap-2">
-                          <UIcon
-                            :name="selectedContentTypeOption.icon"
-                            class="w-4 h-4"
-                          />
-                          <span>{{ selectedContentTypeOption.label }}</span>
-                        </div>
+                        <UIcon
+                          :name="selectedContentTypeOption.icon"
+                          class="w-4 h-4"
+                        />
                       </template>
                     </USelectMenu>
                   </template>

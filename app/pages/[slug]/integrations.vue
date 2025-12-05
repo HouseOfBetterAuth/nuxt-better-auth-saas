@@ -10,10 +10,8 @@ useHead({
   title: 'Integrations'
 })
 
-const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle')
-if (setHeaderTitle) {
-  setHeaderTitle('Integrations')
-}
+const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
+setHeaderTitle?.('Integrations')
 
 const currentRoute = useRoute()
 const router = useRouter()

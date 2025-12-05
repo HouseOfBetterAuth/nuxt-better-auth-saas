@@ -9,10 +9,8 @@ useHead({
   title: 'Billing'
 })
 
-const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle')
-if (setHeaderTitle) {
-  setHeaderTitle('Billing')
-}
+const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
+setHeaderTitle?.('Billing')
 
 const { useActiveOrganization, subscription: stripeSubscription, client, refreshActiveOrg } = useAuth()
 const activeOrg = useActiveOrganization()

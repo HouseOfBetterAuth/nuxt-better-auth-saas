@@ -230,12 +230,23 @@ export function useChatSession() {
   }
 
   async function loadSessionForContent(contentId: string) {
-    const response = await $fetch<{ workspace: Record<string, any> | null }>('/api/chat/workspace', {
-      query: { contentId }
-    })
+    const response = await $fetch<{ workspace: Record<string, any> | null }>(`/api/chat/workspace/${contentId}`)
 
     const workspace = response?.workspace
     if (workspace?.content?.id) {
+      if (workspace.chatSession?.id && (!workspace.chatMessages || !workspace.chatLogs)) {
+        try {
+          const [messagesResponse, logsResponse] = await Promise.all([
+            $fetch<{ messages: any[] }>(`/api/chat/workspace/${workspace.content.id}/messages`),
+            $fetch<{ logs: any[] }>(`/api/chat/workspace/${workspace.content.id}/logs`)
+          ])
+          workspace.chatMessages = messagesResponse.messages
+          workspace.chatLogs = logsResponse.logs
+        } catch (error) {
+          console.error('[useChatSession] Failed to fetch chat history', error)
+        }
+      }
+
       hydrateSession({
         sessionId: workspace.chatSession?.id ?? null,
         sessionContentId: workspace.chatSession?.contentId ?? workspace.content.id,

@@ -17,10 +17,8 @@ useHead({
   title
 })
 
-const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle')
-if (setHeaderTitle) {
-  setHeaderTitle(t('global.appName'))
-}
+const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
+setHeaderTitle?.(t('global.appName'))
 
 useSeoMeta({
   title,

@@ -7,8 +7,10 @@ import { findChatSession, getSessionLogs, getSessionMessages } from '../chatSess
 export async function getContentWorkspacePayload(
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
-  contentId: string
+  contentId: string,
+  options?: { includeChat?: boolean }
 ) {
+  const includeChat = options?.includeChat !== false
   const rows = await db
     .select({
       content: schema.content,
@@ -53,26 +55,28 @@ export async function getContentWorkspacePayload(
     const session = await findChatSession(db, organizationId, record.content.id)
 
     if (session) {
-      const [messages, logs] = await Promise.all([
-        getSessionMessages(db, session.id, organizationId),
-        getSessionLogs(db, session.id, organizationId)
-      ])
-
       chatSession = session
-      chatMessages = messages.map(message => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        payload: message.payload,
-        createdAt: message.createdAt
-      }))
-      chatLogs = logs.map(log => ({
-        id: log.id,
-        type: log.type,
-        message: log.message,
-        payload: log.payload,
-        createdAt: log.createdAt
-      }))
+      if (includeChat) {
+        const [messages, logs] = await Promise.all([
+          getSessionMessages(db, session.id, organizationId),
+          getSessionLogs(db, session.id, organizationId)
+        ])
+
+        chatMessages = messages.map(message => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          payload: message.payload,
+          createdAt: message.createdAt
+        }))
+        chatLogs = logs.map(log => ({
+          id: log.id,
+          type: log.type,
+          message: log.message,
+          payload: log.payload,
+          createdAt: log.createdAt
+        }))
+      }
     }
   } catch (error) {
     console.error('Failed to load chat session', {
@@ -85,7 +89,7 @@ export async function getContentWorkspacePayload(
   return {
     ...record,
     chatSession,
-    chatMessages,
-    chatLogs
+    chatMessages: includeChat ? chatMessages : null,
+    chatLogs: includeChat ? chatLogs : null
   }
 }
