@@ -1,7 +1,8 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { FetchError } from 'ofetch'
 import { and, eq } from 'drizzle-orm'
-import { createError } from 'h3'
+import { createError, getRequestHeaders } from 'h3'
+import type { H3Event } from 'h3'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import * as schema from '../../database/schema'
 import { createChunksFromSourceContentText } from './chunkSourceContent'
@@ -29,14 +30,36 @@ export interface YouTubeTranscriptErrorData {
   videoId: string
   innertubeError?: string
   apiError?: string
+  workerError?: string
 }
 
 interface IngestYouTubeOptions {
+  event: H3Event
   db: NodePgDatabase<typeof schema>
   sourceContentId: string
   organizationId: string
   userId: string
   videoId: string
+}
+
+interface WorkerTranscriptResponse {
+  success: boolean
+  transcript?: {
+    text: string
+    format: string
+    language?: string | null
+    track_kind?: string | null
+  }
+  metadata?: {
+    client_version?: string | null
+    method?: string | null
+    video_id?: string
+  }
+  error?: {
+    code?: string
+    message?: string
+    details?: string
+  }
 }
 
 function hasYouTubeScopes(scope: string | null | undefined) {
@@ -108,6 +131,7 @@ function createTranscriptError(params: {
   videoId: string
   innertubeError?: string
   apiError?: string
+  workerError?: string
 }) {
   return createError({
     statusCode: 400,
@@ -117,6 +141,46 @@ function createTranscriptError(params: {
       ...params
     } satisfies YouTubeTranscriptErrorData
   })
+}
+
+function mapWorkerError(code: string | undefined, statusCode?: number) {
+  if (statusCode === 401) {
+    return { reasonCode: 'auth_failed' as const, userMessage: 'Authentication required to fetch YouTube transcript. Please sign in again.' }
+  }
+  if (statusCode === 429 || code === 'rate_limited') {
+    return { reasonCode: 'rate_limited' as const, userMessage: 'Too many requests, please try again later.', canRetry: true }
+  }
+  switch (code) {
+    case 'no_captions':
+      return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
+    case 'invalid_video':
+      return { reasonCode: 'private_or_unavailable' as const, userMessage: 'Invalid or unavailable YouTube video.' }
+    case 'blocked':
+      return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
+    case 'network_error':
+      return { reasonCode: 'unknown' as const, userMessage: 'Network error while fetching YouTube transcript. Please try again.' }
+    case 'internal_error':
+      return { reasonCode: 'unknown' as const, userMessage: 'Internal error while fetching YouTube transcript.' }
+    default:
+      break
+  }
+
+  if (statusCode === 400) {
+    return { reasonCode: 'private_or_unavailable' as const, userMessage: 'Unable to fetch transcript for this video.' }
+  }
+
+  return { reasonCode: 'unknown' as const, userMessage: 'Unable to fetch transcript.' }
+}
+
+class WorkerTranscriptError extends Error {
+  failure: { reasonCode: TranscriptFailureReason, userMessage: string, canRetry?: boolean }
+  statusCode?: number
+
+  constructor(message: string, failure: { reasonCode: TranscriptFailureReason, userMessage: string, canRetry?: boolean }, statusCode?: number) {
+    super(message)
+    this.failure = failure
+    this.statusCode = statusCode
+  }
 }
 
 async function fetchInnertubeClientConfig(videoId: string) {
@@ -132,6 +196,54 @@ async function fetchInnertubeClientConfig(videoId: string) {
   }
 
   return { apiKey, clientVersion }
+}
+
+async function fetchTranscriptViaWorker(event: H3Event, videoId: string) {
+  const headers: Record<string, string> = {}
+  const requestHeaders = getRequestHeaders(event) || {}
+
+  if (typeof requestHeaders.cookie === 'string' && requestHeaders.cookie) {
+    headers.cookie = requestHeaders.cookie
+  }
+
+  if (typeof requestHeaders.authorization === 'string' && requestHeaders.authorization) {
+    headers.authorization = requestHeaders.authorization
+  }
+
+  try {
+    const response = await $fetch<WorkerTranscriptResponse>('https://api-service.getquillio.com/api/proxy/youtube-transcript', {
+      method: 'POST',
+      body: { video_id: videoId },
+      headers
+    })
+
+    if (!response?.success) {
+      const failure = mapWorkerError(response?.error?.code, undefined)
+      throw new WorkerTranscriptError(response?.error?.message || 'Failed to fetch transcript via Worker.', failure)
+    }
+
+    if (!response.transcript?.text) {
+      throw new WorkerTranscriptError('Worker returned empty transcript content.', mapWorkerError('internal_error'))
+    }
+
+    return {
+      text: response.transcript.text,
+      format: response.transcript.format,
+      language: response.transcript.language,
+      trackKind: response.transcript.track_kind,
+      metadata: response.metadata
+    }
+  } catch (error: any) {
+    if (error instanceof WorkerTranscriptError) {
+      throw error
+    }
+
+    const statusCode = (error as FetchError)?.statusCode
+    const code = (error as FetchError)?.data?.error?.code as string | undefined
+    const message = (error as FetchError)?.data?.error?.message || (error as Error).message || 'Failed to fetch transcript via Worker.'
+    const failure = mapWorkerError(code, statusCode)
+    throw new WorkerTranscriptError(message, failure, statusCode)
+  }
 }
 
 function selectPreferredCaptionTrack(tracks: any[]) {
@@ -428,7 +540,7 @@ export async function findYouTubeAccount(db: NodePgDatabase<typeof schema>, orga
  * @returns Updated source content record with transcript
  */
 export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOptions) {
-  const { db, sourceContentId, organizationId, userId, videoId } = options
+  const { event, db, sourceContentId, organizationId, userId, videoId } = options
 
   const [source] = await db
     .select()
@@ -448,27 +560,49 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
   const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
   let transcriptText: string | null = null
   let youtubeMetadata = { ...existingYoutubeMetadata }
+  let lastWorkerError: string | undefined
   let lastInnertubeError: string | undefined
   let ingestMethod: string | null = typeof (baseMetadata as any)?.ingestMethod === 'string'
     ? (baseMetadata as any).ingestMethod
     : null
 
   try {
-    const innertubeResult = await fetchTranscriptViaInnertube(videoId)
-    transcriptText = innertubeResult.text
-    ingestMethod = 'youtube_innertube'
+    const workerResult = await fetchTranscriptViaWorker(event, videoId)
+    transcriptText = workerResult.text
+    ingestMethod = 'youtube_worker'
     youtubeMetadata = {
       ...youtubeMetadata,
-      transcriptMethod: 'innertube',
-      language: innertubeResult.track?.languageCode ?? innertubeResult.track?.languageName,
-      trackKind: innertubeResult.track?.kind,
-      transcriptFormat: innertubeResult.format,
-      clientVersion: innertubeResult.clientVersion,
+      transcriptMethod: 'worker',
+      language: workerResult.language,
+      trackKind: workerResult.trackKind,
+      transcriptFormat: workerResult.format,
+      workerMetadata: workerResult.metadata,
       lastIngestedAt: new Date().toISOString()
     }
   } catch (error) {
-    lastInnertubeError = (error as Error).message
-    console.warn('Innertube transcript fetch failed, falling back to YouTube API', error)
+    lastWorkerError = (error as Error).message
+    console.warn('Worker transcript fetch failed, falling back to Innertube', error)
+  }
+
+  if (!transcriptText) {
+    try {
+      const innertubeResult = await fetchTranscriptViaInnertube(videoId)
+      transcriptText = innertubeResult.text
+      ingestMethod = 'youtube_innertube'
+      youtubeMetadata = {
+        ...youtubeMetadata,
+        transcriptMethod: 'innertube',
+        language: innertubeResult.track?.languageCode ?? innertubeResult.track?.languageName,
+        trackKind: innertubeResult.track?.kind,
+        transcriptFormat: innertubeResult.format,
+        clientVersion: innertubeResult.clientVersion,
+        lastIngestedAt: new Date().toISOString(),
+        lastWorkerError
+      }
+    } catch (error) {
+      lastInnertubeError = (error as Error).message
+      console.warn('Innertube transcript fetch failed, falling back to YouTube API', error)
+    }
   }
 
   if (!transcriptText) {
@@ -485,6 +619,7 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
             youtube: {
               ...youtubeMetadata,
               lastError: 'No connected YouTube integration available.',
+              lastWorkerError,
               lastInnertubeError
             }
           },
@@ -497,7 +632,8 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
         suggestAccountLink: true,
         canRetry: true,
         videoId,
-        innertubeError: lastInnertubeError
+        innertubeError: lastInnertubeError,
+        workerError: lastWorkerError
       })
     }
 
@@ -513,7 +649,8 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
         captionId: caption.id,
         language: caption?.snippet?.language,
         lastIngestedAt: new Date().toISOString(),
-        lastInnertubeError
+        lastInnertubeError,
+        lastWorkerError
       }
     } catch (error) {
       const errorMessage = (error as FetchError)?.data?.error?.message || (error as Error).message || 'Unknown ingest error'
@@ -528,6 +665,7 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
               ...youtubeMetadata,
               lastError: errorMessage,
               lastInnertubeError,
+              lastWorkerError,
               lastIngestedAt: new Date().toISOString()
             }
           },
@@ -535,13 +673,15 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
         })
         .where(eq(schema.sourceContent.id, sourceContentId))
 
-      const failure = classifyTranscriptFailure(errorMessage)
+      const workerFailure = (error as WorkerTranscriptError)?.failure
+      const failure = workerFailure || classifyTranscriptFailure(errorMessage)
 
       throw createTranscriptError({
         ...failure,
         videoId,
         apiError: errorMessage,
         innertubeError: lastInnertubeError,
+        workerError: lastWorkerError,
         suggestAccountLink: failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
       })
     }
