@@ -246,11 +246,11 @@ useEventListener(textareaRef, 'blur', () => {
       >
         <button
           v-for="(section, index) in mentionResults"
+          :id="mentionOptionId(section.id)"
           :key="section.id"
           type="button"
           class="w-full text-left px-3 py-2 rounded-md transition-colors"
           :class="mentionHighlightedIndex === index ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-100' : 'hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70'"
-          :id="mentionOptionId(section.id)"
           role="option"
           :aria-selected="mentionHighlightedIndex === index"
           :data-highlighted="mentionHighlightedIndex === index"

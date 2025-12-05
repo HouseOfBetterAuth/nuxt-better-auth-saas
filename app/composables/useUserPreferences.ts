@@ -25,7 +25,7 @@ export function useUserPreferences() {
   )
 
   // Stronger type guard that validates against actual available locale codes
-  const isLocaleCode = (code: unknown): code is LocaleCode =>
+  const _isLocaleCode = (code: unknown): code is LocaleCode =>
     typeof code === 'string' && availableLocaleCodes.value.includes(code as LocaleCode)
 
   const detectLocale = (): LocaleCode => {

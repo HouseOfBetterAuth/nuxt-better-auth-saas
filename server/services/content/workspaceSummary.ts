@@ -67,13 +67,13 @@ function extractSections(version?: typeof schema.contentVersion.$inferSelect | n
         type: null
       }
     })
+}
 
 interface AssetsWithSource {
   source?: {
     type?: string | null
     originalUrl?: string | null
   }
-}
 }
 
 export function buildWorkspaceSummary(payload: WorkspaceSummaryInput) {

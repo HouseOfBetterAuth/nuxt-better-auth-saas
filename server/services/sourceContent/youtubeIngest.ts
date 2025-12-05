@@ -29,6 +29,7 @@ export interface YouTubeTranscriptErrorData {
   canRetry?: boolean
   videoId: string
   workerError?: string
+  accountLinkHint?: string
 }
 
 interface IngestYouTubeOptions {
@@ -128,6 +129,7 @@ function createTranscriptError(params: {
   canRetry?: boolean
   videoId: string
   workerError?: string
+  accountLinkHint?: string
 }) {
   return createError({
     statusCode: 400,
@@ -431,11 +433,21 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
       })
       .where(eq(schema.sourceContent.id, sourceContentId))
 
+    const shouldSuggestAccountLink =
+      failure.reasonCode === 'auth_failed' ||
+      failure.reasonCode === 'permission_denied' ||
+      failure.reasonCode === 'private_or_unavailable'
+
+    const accountLinkHint = shouldSuggestAccountLink
+      ? 'Link your YouTube account from Settings -> Integrations so we can fall back to the official API for higher accuracy captions.'
+      : undefined
+
     throw createTranscriptError({
       ...failure,
       videoId,
       workerError: errorMessage,
-      suggestAccountLink: failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
+      suggestAccountLink: shouldSuggestAccountLink,
+      accountLinkHint
     })
   }
 

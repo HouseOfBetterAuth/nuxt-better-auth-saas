@@ -29,7 +29,10 @@ function buildYouTubeTranscriptErrorMessage(errorData: YouTubeTranscriptErrorDat
   const suggestions: string[] = []
 
   if (!hasYouTubeAccount || errorData?.suggestAccountLink) {
-    suggestions.push('💡 Tip: Sign in and link your YouTube account to access transcripts from videos you own.')
+    const hint = (typeof errorData?.accountLinkHint === 'string' && errorData.accountLinkHint.trim())
+      ? errorData.accountLinkHint.trim()
+      : 'Link your YouTube account from Settings -> Integrations to unlock more accurate captions using the official API.'
+    suggestions.push(`💡 Tip: ${hint}`)
   }
 
   if (errorData?.canRetry !== false) {
@@ -334,7 +337,7 @@ export default defineEventHandler(async (event) => {
     url: string
     sourceType: string
   }> = []
-  const ingestionErrors: string[] = []
+  const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
 
   for (const rawUrl of urls) {
     const classification = classifyUrl(rawUrl)
@@ -375,7 +378,14 @@ export default defineEventHandler(async (event) => {
         const errorData = error?.data as YouTubeTranscriptErrorData | undefined
         if (errorData?.transcriptFailed) {
           const hasYouTubeAccount = !!(await findYouTubeAccount(db, organizationId, user.id))
-          ingestionErrors.push(buildYouTubeTranscriptErrorMessage(errorData, hasYouTubeAccount))
+          ingestionErrors.push({
+            content: buildYouTubeTranscriptErrorMessage(errorData, hasYouTubeAccount),
+            payload: {
+              transcriptFailed: true,
+              videoId: classification.externalId,
+              reasonCode: errorData?.reasonCode ?? null
+            }
+          })
           continue
         }
         throw error
@@ -481,7 +491,8 @@ export default defineEventHandler(async (event) => {
       sessionId: session.id,
       organizationId,
       role: 'assistant',
-      content: errorMessage
+      content: errorMessage.content,
+      payload: errorMessage.payload ?? null
     })
   }
 

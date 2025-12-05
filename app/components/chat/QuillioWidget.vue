@@ -59,6 +59,14 @@ const { copy } = useClipboard()
 const toast = useToast()
 const runtimeConfig = useRuntimeConfig()
 
+const youtubeAccuracyHint = computed(() => {
+  const baseHint = 'Link your YouTube account under Settings -> Integrations for more accurate transcripts powered by the official API'
+  if (loggedIn.value) {
+    return `Pro tip: ${baseHint}.`
+  }
+  return `Pro tip: Sign in, then ${baseHint}.`
+})
+
 const messageActionSheetOpen = ref(false)
 const messageActionSheetTarget = ref<ChatMessage | null>(null)
 let longPressTimeout: ReturnType<typeof setTimeout> | null = null
@@ -278,13 +286,6 @@ const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.va
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
 const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
-
-const autoDraftTriggered = ref(false)
-const draftAutoFailCount = ref(0)
-const lastAutoDraftAttempt = ref<number | null>(null)
-const lastAttemptedMessageCount = ref(0)
-const MAX_AUTO_DRAFT_RETRIES = 3
-const AUTO_DRAFT_COOLDOWN_MS = 5000 // 5 seconds
 
 const createDraftCta = computed(() => {
   if (draftQuotaUsage.value?.unlimited) {
@@ -695,10 +696,6 @@ const resetConversation = () => {
   prompt.value = ''
   linkedSources.value = []
   createDraftError.value = null
-  autoDraftTriggered.value = false
-  draftAutoFailCount.value = 0
-  lastAutoDraftAttempt.value = null
-  lastAttemptedMessageCount.value = 0
   resetSession()
 }
 
@@ -743,9 +740,6 @@ const handleCreateDraft = async () => {
     if (response?.content?.id) {
       await refreshDrafts()
       await activateWorkspace(response.content.id)
-      // Reset failure counter on success
-      draftAutoFailCount.value = 0
-      lastAttemptedMessageCount.value = 0
       return true
     }
     return false
@@ -780,51 +774,6 @@ const handleCreateDraft = async () => {
 const handleCreateDraftClick = async () => {
   await handleCreateDraft()
 }
-
-watch(
-  () => ({
-    active: isWorkspaceActive.value,
-    canStart: canStartDraft.value,
-    count: messages.value.length,
-    loading: createDraftLoading.value
-  }),
-  async ({ active, canStart, count, loading }) => {
-    // Don't attempt if workspace is active, loading, already triggered, can't start, no messages, or limit reached
-    if (active || loading || autoDraftTriggered.value || !canStart || count === 0 || hasReachedDraftQuota.value)
-      return
-
-    // Prevent infinite retries: check failure counter and cooldown
-    if (draftAutoFailCount.value >= MAX_AUTO_DRAFT_RETRIES) {
-      return
-    }
-
-    // Check cooldown period
-    const now = Date.now()
-    if (lastAutoDraftAttempt.value !== null && (now - lastAutoDraftAttempt.value) < AUTO_DRAFT_COOLDOWN_MS) {
-      return
-    }
-
-    // Don't retry for the same message count (prevents loop when error message is added)
-    if (lastAttemptedMessageCount.value === count) {
-      return
-    }
-
-    autoDraftTriggered.value = true
-    lastAutoDraftAttempt.value = now
-    lastAttemptedMessageCount.value = count
-
-    const success = await handleCreateDraft()
-    if (!success) {
-      draftAutoFailCount.value++
-      autoDraftTriggered.value = false
-      // Keep lastAttemptedMessageCount to prevent immediate retry when error message is added
-    } else {
-      // Success: reset failure counter and message count tracking
-      draftAutoFailCount.value = 0
-      lastAttemptedMessageCount.value = 0
-    }
-  }
-)
 
 if (props.routeSync) {
   watch(routeDraftId, (draftId) => {
@@ -1109,6 +1058,7 @@ if (import.meta.client) {
                   :status="promptSubmitting ? 'submitted' : uiStatus"
                   :context-label="isWorkspaceActive ? 'Active draft' : undefined"
                   :context-value="activeWorkspaceEntry?.title || null"
+                  :hint="youtubeAccuracyHint"
                   @submit="handlePromptSubmit"
                 >
                   <template #footer>
@@ -1168,6 +1118,9 @@ if (import.meta.client) {
                     {{ quotaBadgeLabel }}
                   </UButton>
                 </div>
+                <p class="text-xs text-muted-500 text-center">
+                  I'll only start a draft when you explicitly ask. Click "{{ createDraftCta }}" once the chat confirms you're ready.
+                </p>
                 <p
                   v-if="quotaHelperText"
                   class="text-xs text-muted-500 text-center"
