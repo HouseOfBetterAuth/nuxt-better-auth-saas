@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ContentType } from '#shared/constants/contentTypes'
-import type { ChatMessage } from '#shared/utils/types'
+import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
 import { shallowRef } from 'vue'
@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
 const router = useRouter()
 const route = useRoute()
 const auth = useAuth()
-const { loggedIn, user, useActiveOrganization, refreshActiveOrg, signIn } = auth
+const { loggedIn, useActiveOrganization, refreshActiveOrg, signIn } = auth
 const activeOrgState = useActiveOrganization()
 
 const {
@@ -29,17 +29,14 @@ const {
   errorMessage,
   sendMessage,
   isBusy,
-  sessionId,
   sessionContentId,
-  sources,
-  createContentFromConversation,
+  actions,
+  executeAction,
   resetSession
 } = useChatSession()
 
 const prompt = ref('')
 const promptSubmitting = ref(false)
-const createDraftLoading = ref(false)
-const createDraftError = ref<string | null>(null)
 const showQuotaModal = ref(false)
 const quotaModalData = ref<{ limit: number | null, used: number | null, remaining: number | null, planLabel: string | null } | null>(null)
 const showUpgradeModal = ref(false)
@@ -65,19 +62,21 @@ const messageActionSheetTarget = ref<ChatMessage | null>(null)
 let longPressTimeout: ReturnType<typeof setTimeout> | null = null
 let longPressStartPosition: { x: number, y: number } | null = null
 
-function getEventCoordinates(event?: Event | null) {
+function getEventCoordinates(event?: Event | null): { x: number, y: number } | null {
   if (!event)
     return null
 
   if ('touches' in event) {
-    const touch = event.touches?.[0]
+    const touchEvent = event as TouchEvent
+    const touch = touchEvent.touches?.[0]
     if (!touch)
       return null
     return { x: touch.clientX, y: touch.clientY }
   }
 
   if ('clientX' in event && 'clientY' in event) {
-    return { x: event.clientX, y: event.clientY }
+    const mouseEvent = event as MouseEvent
+    return { x: mouseEvent.clientX, y: mouseEvent.clientY }
   }
 
   return null
@@ -165,40 +164,7 @@ const debouncedRefreshDrafts = useDebounceFn(() => refreshDrafts(), 300)
 const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
 
 const draftQuotaUsage = computed<DraftQuotaUsagePayload | null>(() => workspaceDraftsPayload.value?.draftQuota ?? null)
-const remainingDraftQuota = computed(() => {
-  const usage = draftQuotaUsage.value
-  if (!usage)
-    return null
-  if (typeof usage.remaining === 'number')
-    return usage.remaining
-  if (typeof usage.limit === 'number' && typeof usage.used === 'number')
-    return usage.limit - usage.used
-  return null
-})
-const hasReachedDraftQuota = computed(() => {
-  const remaining = remainingDraftQuota.value
-  if (remaining === null)
-    return false
-  return remaining <= 0
-})
-const quotaBadgeLabel = computed(() => {
-  const usage = draftQuotaUsage.value
-  if (usage?.unlimited) {
-    return '∞'
-  }
-  if (!usage || typeof usage.limit !== 'number') {
-    return null
-  }
-  const limit = Math.max(0, usage.limit)
-  const used = Math.max(0, usage.used ?? (limit - (usage.remaining ?? 0)))
-  return `${Math.min(used, limit)}/${limit}`
-})
 const quotaPlanLabel = computed(() => draftQuotaUsage.value?.label ?? (loggedIn.value ? 'Current plan' : 'Guest access'))
-const quotaBadgeAriaLabel = computed(() => {
-  if (!quotaBadgeLabel.value)
-    return 'Draft quota details'
-  return `${quotaBadgeLabel.value} drafts used on ${quotaPlanLabel.value}. Tap for plan details.`
-})
 
 watch(draftQuotaUsage, (value) => {
   if (value) {
@@ -276,44 +242,40 @@ const contentEntries = computed(() => {
 })
 
 const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
-const hasReadyDraftSource = computed(() => {
-  if (linkedSources.value.length > 0) {
-    return true
-  }
-  return sources.value?.some(source => source.ingestStatus === 'ingested') ?? false
-})
-const canStartDraft = computed(() => messages.value.length > 0 && !!sessionId.value && !isBusy.value && hasReadyDraftSource.value)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
 const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
+const actionSuggestions = computed(() => actions.value || [])
+const actionInFlightId = ref<string | null>(null)
 
-const createDraftCta = computed(() => {
-  if (draftQuotaUsage.value?.unlimited) {
-    return 'Create draft'
+const getActionKey = (action: ChatActionSuggestion, index?: number) => action.sourceContentId || `${action.type}-${index ?? 0}`
+
+const getActionLabel = (action: ChatActionSuggestion) => {
+  if (action.label) {
+    return action.label
   }
-  if (hasReachedDraftQuota.value) {
-    return loggedIn.value ? 'Upgrade to keep drafting' : 'Create an account to keep drafting'
+  if (action.sourceType === 'youtube') {
+    return 'Create draft from video'
   }
-  if (user.value?.emailVerified) {
-    return 'Create draft'
+  if (action.sourceType === 'manual_transcript') {
+    return 'Create draft from transcript'
   }
-  const remaining = remainingDraftQuota.value
-  return remaining !== null ? `Save draft (${Math.max(0, remaining)} left)` : 'Create draft'
-})
-const quotaHelperText = computed(() => {
-  if (draftQuotaUsage.value?.unlimited) {
-    return `${quotaPlanLabel.value || 'Pro plan'} unlocks unlimited drafts.`
+  return 'Start draft in workspace'
+}
+
+const handleActionSuggestionClick = async (action: ChatActionSuggestion, keyOverride?: string) => {
+  if (isBusy.value) {
+    return
   }
-  const remaining = remainingDraftQuota.value
-  if (remaining === null)
-    return null
-  if (remaining > 0) {
-    return loggedIn.value
-      ? `${remaining} draft${remaining === 1 ? '' : 's'} left on your plan`
-      : `${remaining} draft${remaining === 1 ? '' : 's'} left before creating an account`
+  const key = keyOverride || getActionKey(action)
+  actionInFlightId.value = key
+  try {
+    await executeAction(action)
+    actions.value = (actions.value || []).filter(existing => existing !== action && existing.sourceContentId !== action.sourceContentId)
+  } finally {
+    actionInFlightId.value = null
   }
-  return loggedIn.value ? 'Upgrade your plan to unlock more drafts.' : 'Create an account to unlock more drafts.'
-})
+}
 
 const handleWhatsNewSelect = (payload: { id: 'youtube' | 'transcript' | 'seo', command?: string }) => {
   if (!payload) {
@@ -401,10 +363,6 @@ const quotaPrimaryLabel = computed(() => {
     return 'Close'
   return 'Upgrade'
 })
-
-const handleQuotaBadgeClick = () => {
-  openQuotaModal()
-}
 
 const handleQuotaModalPrimary = () => {
   showQuotaModal.value = false
@@ -695,7 +653,6 @@ const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
 const resetConversation = () => {
   prompt.value = ''
   linkedSources.value = []
-  createDraftError.value = null
   resetSession()
 }
 
@@ -741,75 +698,6 @@ const closeWorkspace = async () => {
   await activateWorkspace(null)
   resetConversation()
   prefetchWorkspacePayload(previousWorkspaceId)
-}
-
-const handleCreateDraft = async () => {
-  createDraftError.value = null
-  if (!canStartDraft.value) {
-    return false
-  }
-
-  if (hasReachedDraftQuota.value) {
-    openQuotaModal()
-    return false
-  }
-
-  if (!activeOrgState.value?.data?.slug) {
-    await refreshActiveOrg()
-  }
-
-  if (sessionContentId.value) {
-    await refreshDrafts()
-    await activateWorkspace(sessionContentId.value)
-    return true
-  }
-
-  createDraftLoading.value = true
-  try {
-    const firstUserMessage = messages.value.find(message => message.role === 'user')
-    const fallbackTitle = 'Quillio draft'
-    const response = await createContentFromConversation({
-      title: firstUserMessage?.parts?.[0]?.text?.slice(0, 80) || fallbackTitle,
-      contentType: selectedContentType.value,
-      messageIds: messages.value.map(message => message.id)
-    })
-
-    if (response?.content?.id) {
-      await refreshDrafts()
-      await activateWorkspace(response.content.id)
-      return true
-    }
-    return false
-  } catch (error: any) {
-    // Check if this is a quota limit error
-    if (error?.data?.limitReached === true) {
-      openQuotaModal({
-        limit: error.data.limit || null,
-        used: error.data.used || null,
-        remaining: error.data.remaining || null,
-        label: error.data.label || null
-      })
-      return false
-    }
-
-    const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Unable to create a draft from this conversation.'
-    createDraftError.value = errorMsg
-
-    // Also add error as a chat message
-    messages.value.push({
-      id: createLocalId(),
-      role: 'assistant',
-      parts: [{ type: 'text', text: `❌ Error: ${errorMsg}` }],
-      createdAt: new Date()
-    })
-    return false
-  } finally {
-    createDraftLoading.value = false
-  }
-}
-
-const handleCreateDraftClick = async () => {
-  await handleCreateDraft()
 }
 
 if (props.routeSync) {
@@ -1128,50 +1016,28 @@ if (import.meta.client) {
 
             <!-- Draft creation - only show when there are messages -->
             <div
-              v-if="messages.length"
+              v-if="messages.length && actionSuggestions.length"
               class="space-y-3 mt-6"
             >
-              <div class="flex flex-col gap-2">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-center gap-2">
+              <div class="space-y-2">
+                <p class="text-xs text-muted-500 text-center">
+                  Next steps suggested by Quillio
+                </p>
+                <div class="flex flex-wrap items-center justify-center gap-2">
                   <UButton
+                    v-for="(action, index) in actionSuggestions"
+                    :key="getActionKey(action, index)"
                     color="primary"
-                    :loading="createDraftLoading"
-                    :disabled="!canStartDraft"
-                    class="w-full sm:w-auto"
-                    @click="handleCreateDraftClick"
-                  >
-                    {{ createDraftCta }}
-                  </UButton>
-                  <UButton
-                    v-if="quotaBadgeLabel"
-                    size="xs"
                     variant="soft"
-                    color="neutral"
-                    class="font-mono text-xs rounded-full px-4 py-3 w-full sm:w-auto justify-center min-h-[44px]"
-                    :aria-label="quotaBadgeAriaLabel"
-                    @click="handleQuotaBadgeClick"
+                    icon="i-lucide-wand-sparkles"
+                    :loading="actionInFlightId === getActionKey(action, index)"
+                    :disabled="isBusy"
+                    @click="handleActionSuggestionClick(action, getActionKey(action, index))"
                   >
-                    {{ quotaBadgeLabel }}
+                    {{ getActionLabel(action) }}
                   </UButton>
                 </div>
-                <p class="text-xs text-muted-500 text-center">
-                  I'll only start a draft when you explicitly ask. Click "{{ createDraftCta }}" once the chat confirms you're ready.
-                </p>
-                <p
-                  v-if="quotaHelperText"
-                  class="text-xs text-muted-500 text-center"
-                >
-                  {{ quotaHelperText }}
-                </p>
               </div>
-
-              <UAlert
-                v-if="createDraftError"
-                color="error"
-                variant="soft"
-                icon="i-lucide-alert-triangle"
-                :description="createDraftError"
-              />
             </div>
           </div>
         </template>

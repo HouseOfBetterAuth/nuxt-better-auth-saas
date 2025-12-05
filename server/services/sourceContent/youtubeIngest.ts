@@ -97,6 +97,9 @@ function _classifyTranscriptFailure(message: string) {
   if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts')) {
     return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
   }
+  if (lowerMessage.includes('bot') || lowerMessage.includes('sign in to confirm')) {
+    return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking automated requests. Try linking your YouTube account for better access.', suggestAccountLink: true }
+  }
   if (lowerMessage.includes('block') || lowerMessage.includes('forbidden')) {
     return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
   }
@@ -185,12 +188,14 @@ async function fetchTranscriptViaWorker(event: H3Event, videoId: string) {
   const headers: Record<string, string> = {}
   const requestHeaders = getRequestHeaders(event) || {}
 
-  if (typeof requestHeaders.cookie === 'string' && requestHeaders.cookie) {
-    headers.cookie = requestHeaders.cookie
-  }
-
-  if (typeof requestHeaders.authorization === 'string' && requestHeaders.authorization) {
-    headers.authorization = requestHeaders.authorization
+  // Forward authentication-related headers to ensure Better Auth can authenticate properly
+  // Better Auth needs cookie for session validation and may use other headers
+  const authHeaders = ['cookie', 'authorization', 'x-forwarded-for', 'user-agent']
+  for (const key of authHeaders) {
+    const value = requestHeaders[key]
+    if (value && typeof value === 'string') {
+      headers[key] = value
+    }
   }
 
   try {

@@ -19,6 +19,7 @@ interface ChatResponse {
   generation?: ChatGenerationResult | null
   sessionId?: string | null
   sessionContentId?: string | null
+  actions?: ChatActionSuggestion[]
   messages?: Array<{
     id: string
     role: 'user' | 'assistant' | 'system'
@@ -159,11 +160,12 @@ export function useChatSession() {
         ]
       }
 
-      // Actions removed - sources are now described in LLM messages
+      // Update shared state for sources/actions so the UI can surface suggested steps
       sources.value = response.sources ?? []
       const firstSourceId = sources.value[0]?.id ?? null
       activeSourceId.value = firstSourceId
       generation.value = response.generation ?? null
+      actions.value = response.actions ?? []
       logs.value = normalizeLogs(response.logs)
       status.value = 'ready'
       return response
@@ -171,6 +173,7 @@ export function useChatSession() {
       status.value = 'error'
       const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Something went wrong.'
       errorMessage.value = errorMsg
+      actions.value = []
 
       // Also add error as a chat message so user can see it
       messages.value.push({
