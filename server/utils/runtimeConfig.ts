@@ -10,8 +10,6 @@ declare module '@nuxt/schema' {
 }
 
 const parseDraftQuotaLimit = (value: string | undefined, fallback: number) => {
-  if (typeof value === 'number')
-    return value
   const parsed = Number.parseInt(value ?? '', 10)
   return Number.isFinite(parsed) ? parsed : fallback
 }

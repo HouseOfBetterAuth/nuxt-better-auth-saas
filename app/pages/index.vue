@@ -14,7 +14,7 @@ const title = `${t('global.appName')}: ${t('home.slogan')}`
 const desc = t('home.slogan')
 
 useHead({
-  title: t('global.appName')
+  title
 })
 
 const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle')

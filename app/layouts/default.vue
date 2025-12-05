@@ -21,6 +21,11 @@ useHead(() => ({
 // Page title state - pages can set this via provide
 const headerTitle = useState<string | null>('page-header-title', () => null)
 
+// Reset header title on route change
+watch(() => route.path, () => {
+  headerTitle.value = null
+})
+
 // Simple page title
 const pageTitle = computed(() => {
   // If page explicitly set title, use it

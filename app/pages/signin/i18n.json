@@ -1,6 +1,7 @@
 {
   "en": {
     "signIn": {
+      "title": "Sign In",
       "welcome": "Welcome to {name}",
       "email": "Email",
       "password": "Password",
@@ -26,6 +27,7 @@
   },
   "zh-CN": {
     "signIn": {
+      "title": "登录",
       "welcome": "欢迎使用 {name}",
       "email": "邮箱",
       "password": "密码",
@@ -54,6 +56,7 @@
   },
   "ja": {
     "signIn": {
+      "title": "ログイン",
       "welcome": "{name}へようこそ",
       "email": "メールアドレス",
       "password": "パスワード",
@@ -82,6 +85,7 @@
   },
   "fr": {
     "signIn": {
+      "title": "Se connecter",
       "welcome": "Bienvenue sur {name}",
       "email": "E-mail",
       "password": "Mot de passe",

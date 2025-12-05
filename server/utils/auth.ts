@@ -891,7 +891,7 @@ const logQuotaUsageSnapshot = async (
 
     const hasMeaningfulChange = !last ||
       last.used !== quota.used ||
-      (last.limit ?? null) !== (quota.limit ?? null) ||
+      (last.quotaLimit ?? null) !== (quota.limit ?? null) ||
       last.unlimited !== Boolean(quota.unlimited)
 
     if (!hasMeaningfulChange) {
@@ -900,7 +900,7 @@ const logQuotaUsageSnapshot = async (
 
     await db.insert(schema.quotaUsageLog).values({
       organizationId,
-      limit: quota.limit ?? null,
+      quotaLimit: quota.limit ?? null,
       used: quota.used,
       remaining: quota.remaining ?? (quota.limit !== null ? Math.max(0, quota.limit - quota.used) : null),
       profile: quota.profile,
@@ -910,7 +910,7 @@ const logQuotaUsageSnapshot = async (
 
     if (quota.limit && quota.limit > 0) {
       const ratio = quota.used / quota.limit
-      const lastRatio = last && last.limit ? (last.used / last.limit) : 0
+      const lastRatio = last && last.quotaLimit ? (last.used / last.quotaLimit) : 0
       for (const threshold of QUOTA_USAGE_THRESHOLDS) {
         if (ratio >= threshold && lastRatio < threshold) {
           await logAuditEvent({

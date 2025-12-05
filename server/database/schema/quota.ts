@@ -6,7 +6,7 @@ export const quotaUsageLog = pgTable('quota_usage_log', {
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  limit: integer('limit'),
+  quotaLimit: integer('quota_limit'),
   used: integer('used').notNull(),
   remaining: integer('remaining'),
   profile: text('profile'),
