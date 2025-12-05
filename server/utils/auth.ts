@@ -494,14 +494,14 @@ export const createBetterAuth = () => betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
-      sendResetPassword: async ({ user, url }) => {
-        if (!user.email) {
-          throw new Error('User email is required for password reset')
-        }
-        if (!url) {
-          throw new Error('Password reset URL is required')
-        }
-        const name = user.name || user.email.split('@')[0]
+    sendResetPassword: async ({ user, url }) => {
+      if (!user.email) {
+        throw new Error('User email is required for password reset')
+      }
+      if (!url) {
+        throw new Error('Password reset URL is required')
+      }
+      const name = user.name || user.email.split('@')[0]
       const html = await renderResetPassword(name, url)
 
       // Generate plain text version for better deliverability and accessibility

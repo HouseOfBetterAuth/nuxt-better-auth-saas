@@ -24,7 +24,7 @@ if (import.meta.client) {
     if (newSlug && user.value && (!activeOrg.value?.data || !activeOrg.value?.data?.members)) {
       try {
         await refreshActiveOrg()
-      } catch (error) {
+      } catch {
         // Silently fail - data will load on next navigation
       }
     }
@@ -34,7 +34,7 @@ if (import.meta.client) {
     if (slug.value && user.value && (!activeOrg.value?.data || !activeOrg.value?.data?.members)) {
       try {
         await refreshActiveOrg()
-      } catch (error) {
+      } catch {
         // Silently fail - data will load on next navigation
       }
     }

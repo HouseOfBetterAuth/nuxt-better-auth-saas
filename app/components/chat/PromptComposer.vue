@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 interface MentionSection {
   id: string
@@ -49,7 +49,7 @@ const mentionResults = computed(() => {
   if (!query) {
     return mentionSections.value
   }
-  return mentionSections.value.filter(section => {
+  return mentionSections.value.filter((section) => {
     const title = section.title?.toLowerCase() || ''
     const anchor = section.anchor?.toLowerCase() || ''
     const summary = section.summary?.toLowerCase() || ''

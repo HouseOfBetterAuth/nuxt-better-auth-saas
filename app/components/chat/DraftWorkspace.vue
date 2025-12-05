@@ -99,26 +99,6 @@ interface ContentChatLog {
   createdAt: string | Date
 }
 
-interface WorkspaceFilePayload {
-  id: string
-  filename: string
-  body: string
-  frontmatter: Record<string, any> | null
-  wordCount: number
-  sectionsCount: number
-  seoSnapshot: Record<string, any> | null
-  seoPlan: Record<string, any> | null
-  frontmatterKeywords: string[]
-  seoKeywords: string[]
-  tags: string[]
-  schemaTypes: string[]
-  generatorDetails: ContentVersion['assets'] extends { generator?: infer T } ? T : null
-  generatorStages: string[]
-  sourceDetails: SourceContent | null
-  sourceLink: string | null
-  fullMdx: string
-}
-
 interface ContentResponse {
   content: ContentEntity
   currentVersion?: ContentVersion | null
@@ -417,9 +397,9 @@ watch(() => contentId.value, async (next, prev) => {
 
 const contentRecord = computed(() => content.value?.content ?? null)
 const currentVersion = computed(() => content.value?.currentVersion ?? null)
-const sourceDetails = computed<SourceContent | null>(() => content.value?.sourceContent ?? null)
+const _sourceDetails = computed<SourceContent | null>(() => content.value?.sourceContent ?? null)
 
-function toDate(value: string | Date): Date | null {
+function _toDate(value: string | Date): Date | null {
   if (value instanceof Date) {
     return value
   }
@@ -468,9 +448,9 @@ const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
 const generatorDetails = computed(() => currentVersion.value?.assets?.generator || null)
-const generatorStages = computed(() => normalizeStringList(generatorDetails.value?.stages))
-const frontmatterTags = computed(() => normalizeStringList(frontmatter.value?.tags))
-const schemaTypes = computed(() => normalizeStringList(frontmatter.value?.schemaTypes))
+const _generatorStages = computed(() => normalizeStringList(generatorDetails.value?.stages))
+const _frontmatterTags = computed(() => normalizeStringList(frontmatter.value?.tags))
+const _schemaTypes = computed(() => normalizeStringList(frontmatter.value?.schemaTypes))
 
 const _seoPlan = computed(() => {
   const snapshot = seoSnapshot.value
@@ -478,8 +458,8 @@ const _seoPlan = computed(() => {
   return plan && typeof plan === 'object' ? plan : null
 })
 
-const seoKeywords = computed(() => normalizeStringList(_seoPlan.value?.keywords))
-const frontmatterKeywords = computed(() => normalizeStringList(frontmatter.value?.keywords))
+const _seoKeywords = computed(() => normalizeStringList(_seoPlan.value?.keywords))
+const _frontmatterKeywords = computed(() => normalizeStringList(frontmatter.value?.keywords))
 const sections = computed(() => {
   const sectionsData = currentVersion.value?.sections
   if (!Array.isArray(sectionsData)) {
@@ -735,7 +715,7 @@ function orderFrontmatter(frontmatter: Record<string, any>) {
   return Object.fromEntries(orderedEntries)
 }
 
-function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined) {
+function _buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined) {
   if (!frontmatter || !isPlainObject(frontmatter)) {
     return '---\n---'
   }
@@ -830,7 +810,7 @@ function setActiveSection(sectionId: string | null) {
   selectedSectionId.value = sectionId
 }
 
-function insertSectionReference(sectionId: string) {
+function _insertSectionReference(sectionId: string) {
   const section = sections.value.find(section => section.id === sectionId)
   if (!section) {
     return
@@ -968,8 +948,8 @@ onBeforeUnmount(() => {
         />
 
         <div class="flex-1 flex flex-col gap-4">
-            <UChatMessages
-              :messages="messages"
+          <UChatMessages
+            :messages="messages"
             :status="uiStatus"
             should-auto-scroll
             :assistant="{
@@ -978,14 +958,14 @@ onBeforeUnmount(() => {
                   label: 'Copy',
                   icon: 'i-lucide-copy',
                   onClick: (e, message) => handleCopy(message as ChatMessage)
-                  },
-                  {
-                    label: 'Regenerate',
-                    icon: 'i-lucide-rotate-ccw',
-                    onClick: (e, message) => handleRegenerate(message as ChatMessage)
-                  }
-                ]
-              }"
+                },
+                {
+                  label: 'Regenerate',
+                  icon: 'i-lucide-rotate-ccw',
+                  onClick: (e, message) => handleRegenerate(message as ChatMessage)
+                }
+              ]
+            }"
             :user="{
               actions: [
                 {
@@ -993,18 +973,19 @@ onBeforeUnmount(() => {
                   icon: 'i-lucide-copy',
                   onClick: (e, message) => handleCopy(message as ChatMessage)
                 },
-                  {
-                    label: 'Send again',
-                    icon: 'i-lucide-send',
-                    onClick: (e, message) => handleSendAgain(message as ChatMessage)
-                  }
-                ]
-              }"
+                {
+                  label: 'Send again',
+                  icon: 'i-lucide-send',
+                  onClick: (e, message) => handleSendAgain(message as ChatMessage)
+                }
+              ]
+            }"
           >
             <template #content="{ message }">
               <div
                 v-if="message.payload?.type === 'workspace_summary'"
-                :class="[messageBodyClass, 'space-y-2']"
+                class="space-y-2"
+                :class="messageBodyClass"
               >
                 <p class="font-semibold">
                   Summary

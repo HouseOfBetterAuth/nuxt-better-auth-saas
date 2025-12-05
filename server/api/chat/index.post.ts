@@ -104,7 +104,7 @@ function toYamlLines(value: any, indent = 0): string[] {
     if (!value.length) {
       return [`${prefix}[]`]
     }
-    return value.flatMap(entry => {
+    return value.flatMap((entry) => {
       if (entry && typeof entry === 'object') {
         return [`${prefix}-`, ...toYamlLines(entry, indent + 1)]
       }
