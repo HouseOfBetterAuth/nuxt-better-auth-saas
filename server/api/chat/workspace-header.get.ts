@@ -8,7 +8,7 @@ import { validateUUID } from '~~/server/utils/validation'
 
 /**
  * Lightweight endpoint for workspace header - only returns minimal fields needed for header display
- * Full workspace content is loaded via /api/chat/workspace when needed
+ * Full workspace content is loaded via /api/chat/workspace/:contentId when needed
  */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
       content: {
         id: schema.content.id,
         title: schema.content.title,
+        status: schema.content.status,
         updatedAt: schema.content.updatedAt,
         currentVersionId: schema.content.currentVersionId
       },
@@ -57,6 +58,7 @@ export default defineEventHandler(async (event) => {
           content: {
             id: schema.content.id,
             title: schema.content.title,
+            status: schema.content.status,
             updatedAt: schema.content.updatedAt,
             currentVersionId: schema.content.currentVersionId
           },
@@ -103,10 +105,12 @@ export default defineEventHandler(async (event) => {
 
   return {
     title: displayTitle,
+    status: record.content.status || null,
     contentType,
     updatedAtLabel,
     versionId: record.versionId || null,
     additions: diffStats?.additions ? Number(diffStats.additions) : 0,
-    deletions: diffStats?.deletions ? Number(diffStats.deletions) : 0
+    deletions: diffStats?.deletions ? Number(diffStats.deletions) : 0,
+    contentId: record.content.id
   }
 })

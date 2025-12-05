@@ -6,7 +6,7 @@ import { requireActiveOrganization } from '~~/server/utils/organization'
 
 /**
  * Lightweight endpoint for drafts list - only returns minimal fields needed for list view
- * Full content is loaded via /api/chat/workspace when a draft is opened
+ * Full content is loaded via /api/chat/workspace/:contentId when a draft is opened
  */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })

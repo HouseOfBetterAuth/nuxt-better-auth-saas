@@ -9,10 +9,8 @@ useHead({
   title: 'Settings'
 })
 
-const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle')
-if (setHeaderTitle) {
-  setHeaderTitle('Settings')
-}
+const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
+setHeaderTitle?.('Settings')
 
 const route = useRoute()
 const slug = computed(() => {

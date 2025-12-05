@@ -15,18 +15,29 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const contentId = validateOptionalUUID(query.contentId, 'contentId')
 
-  const contents = await db
-    .select({
-      content: schema.content,
-      sourceContent: schema.sourceContent,
-      currentVersion: schema.contentVersion
-    })
-    .from(schema.content)
-    .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
-    .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
-    .where(eq(schema.content.organizationId, organizationId))
-    .orderBy(desc(schema.content.updatedAt))
-    .limit(100)
+  const includeListFlag = Array.isArray(query.includeList) ? query.includeList[0] : query.includeList
+  const includeList = !contentId || includeListFlag === 'true' || includeListFlag === '1'
+
+  let contents: Array<{
+    content: typeof schema.content.$inferSelect
+    sourceContent: typeof schema.sourceContent.$inferSelect | null
+    currentVersion: typeof schema.contentVersion.$inferSelect | null
+  }> = []
+
+  if (includeList) {
+    contents = await db
+      .select({
+        content: schema.content,
+        sourceContent: schema.sourceContent,
+        currentVersion: schema.contentVersion
+      })
+      .from(schema.content)
+      .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
+      .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
+      .where(eq(schema.content.organizationId, organizationId))
+      .orderBy(desc(schema.content.updatedAt))
+      .limit(100)
+  }
 
   let workspace = null
   if (contentId) {
@@ -66,7 +77,9 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const draftQuota = await getDraftQuotaUsage(db, organizationId, user)
+  const draftQuota = includeList
+    ? await getDraftQuotaUsage(db, organizationId, user)
+    : null
 
   return {
     contents,

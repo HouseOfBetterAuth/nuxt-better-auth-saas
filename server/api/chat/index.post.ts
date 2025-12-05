@@ -1,4 +1,6 @@
+import type { YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
 import type { ChatRequestBody } from '~~/server/types/api'
+import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { eq } from 'drizzle-orm'
 import * as schema from '~~/server/database/schema'
 import {
@@ -8,11 +10,10 @@ import {
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
-import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent, type YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
+import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
@@ -98,7 +99,7 @@ export default defineEventHandler(async (event) => {
           videoId: classification.externalId
         })
       } catch (error: any) {
-        const errorData = (error?.data as YouTubeTranscriptErrorData | undefined)
+        const errorData = error?.data as YouTubeTranscriptErrorData | undefined
         if (errorData?.transcriptFailed) {
           const hasYouTubeAccount = !!(await findYouTubeAccount(db, organizationId, user.id))
           ingestionErrors.push(buildYouTubeTranscriptErrorMessage(errorData, hasYouTubeAccount))

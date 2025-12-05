@@ -1,7 +1,7 @@
 import { createError } from 'h3'
 import { runtimeConfig } from './runtimeConfig'
 
-export type ChatCompletionMessage = {
+export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }

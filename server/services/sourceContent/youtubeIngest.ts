@@ -73,7 +73,7 @@ function classifyTranscriptFailure(message: string) {
   const lowerMessage = message.toLowerCase()
 
   if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts')) {
-    return { reasonCode: 'no_captions' as const, userMessage: "This video doesn't have captions available.", canRetry: false }
+    return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
   }
   if (lowerMessage.includes('block') || lowerMessage.includes('forbidden')) {
     return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
@@ -88,7 +88,7 @@ function classifyTranscriptFailure(message: string) {
     return { reasonCode: 'client_config' as const, userMessage: 'Unable to extract YouTube client configuration.' }
   }
   if (lowerMessage.includes('permission denied')) {
-    return { reasonCode: 'permission_denied' as const, userMessage: "You don't have access to this video's captions." }
+    return { reasonCode: 'permission_denied' as const, userMessage: 'You don\'t have access to this video\'s captions.' }
   }
   if (lowerMessage.includes('authentication failed') || lowerMessage.includes('access token')) {
     return { reasonCode: 'auth_failed' as const, userMessage: 'YouTube authentication failed. Please reconnect your account.' }
