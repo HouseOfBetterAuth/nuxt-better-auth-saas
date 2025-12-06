@@ -5,6 +5,8 @@ import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
 import { shallowRef } from 'vue'
 
+import { resolveAiThinkingIndicator } from '~/utils/aiThinkingIndicators'
+
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
 import PromptComposer from './PromptComposer.vue'
 import QuotaLimitModal from './QuotaLimitModal.vue'
@@ -293,6 +295,11 @@ const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.va
 const uiStatus = computed(() => status.value)
 const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
 const THINKING_MESSAGE_ID = 'quillio-thinking-placeholder'
+const aiThinkingIndicator = computed(() => resolveAiThinkingIndicator({
+  status: status.value,
+  logs: logs.value,
+  fallbackMessage: 'Working on your draft...'
+}))
 const displayMessages = computed<ChatMessage[]>(() => {
   const baseMessages = messages.value.slice()
 
@@ -301,7 +308,7 @@ const displayMessages = computed<ChatMessage[]>(() => {
       baseMessages.push({
         id: THINKING_MESSAGE_ID,
         role: 'assistant',
-        parts: [{ type: 'text' as const, text: 'Quillio is thinking...' }],
+        parts: [{ type: 'text' as const, text: aiThinkingIndicator.value.message }],
         createdAt: new Date(),
         payload: { placeholder: true }
       })
@@ -1071,6 +1078,7 @@ if (import.meta.client) {
           :drafts-pending="draftsPending"
           :content-entries="contentEntries"
           :archiving-draft-id="archivingDraftId"
+          :pending-message="aiThinkingIndicator.message"
           @open-workspace="openWorkspace"
           @archive-entry="archiveDraft"
           @stop-entry="stopWorkingDraft"

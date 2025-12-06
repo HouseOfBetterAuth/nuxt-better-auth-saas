@@ -15,9 +15,11 @@ interface Props {
   draftsPending: boolean
   contentEntries: DraftEntry[]
   archivingDraftId?: string | null
+  pendingMessage?: string
 }
 
 const props = defineProps<Props>()
+const pendingMessage = computed(() => props.pendingMessage?.trim() || 'Working on your draft...')
 
 const emit = defineEmits<{
   openWorkspace: [entry: DraftEntry]
@@ -175,7 +177,7 @@ const formatUpdatedAt = (date: Date | null) => {
               v-else
               class="flex items-center gap-2 text-primary-200 font-semibold capitalize"
             >
-              <span class="animate-pulse">Working</span>
+              <span class="animate-pulse">{{ pendingMessage }}</span>
               <UButton
                 color="neutral"
                 variant="ghost"
