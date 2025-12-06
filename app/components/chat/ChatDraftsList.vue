@@ -36,7 +36,7 @@ const SWIPE_THRESHOLD = 50
 const SWIPE_VERTICAL_THRESHOLD = 30
 
 const tabs = [
-  { label: 'Drafts', value: 0 },
+  { label: 'Content', value: 0 },
   { label: 'Archived', value: 1 }
 ]
 
@@ -57,18 +57,17 @@ const filteredEntries = computed(() => {
 
 const hasFilteredContent = computed(() => filteredEntries.value.length > 0)
 
-const getStatusIcon = (status: string) => {
+const STATUS_META: Record<string, { icon: string, color: InstanceType<typeof UBadge>['$props']['color'], label: string }> = {
+  draft: { icon: 'i-lucide-pen-line', color: 'neutral', label: 'Draft' },
+  in_review: { icon: 'i-lucide-eye', color: 'warning', label: 'In review' },
+  ready_for_publish: { icon: 'i-lucide-rocket', color: 'primary', label: 'Ready to publish' },
+  published: { icon: 'i-lucide-badge-check', color: 'primary', label: 'Published' },
+  archived: { icon: 'i-lucide-archive', color: 'neutral', label: 'Archived' }
+}
+
+const getStatusMeta = (status: string) => {
   const normalized = (status || '').toLowerCase().trim()
-
-  if (normalized === 'archived') {
-    return 'i-lucide-archive'
-  }
-
-  if (normalized === 'published') {
-    return 'i-lucide-badge-check'
-  }
-
-  return 'i-lucide-pen-line'
+  return STATUS_META[normalized] || STATUS_META.draft
 }
 
 const handleOpenWorkspace = (entry: DraftEntry) => {
@@ -152,16 +151,16 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
 
             <UBadge
               v-if="!entry.isPending"
-              color="neutral"
+              :color="getStatusMeta(entry.status).color"
               variant="soft"
-              class="capitalize rounded-full px-3 py-1.5 gap-1.5 flex items-center"
+              class="rounded-full px-3 py-1.5 gap-1.5 flex items-center"
             >
               <UIcon
-                :name="getStatusIcon(entry.status)"
+                :name="getStatusMeta(entry.status).icon"
                 class="h-3.5 w-3.5"
               />
               <span class="leading-none">
-                {{ entry.status || 'draft' }}
+                {{ getStatusMeta(entry.status).label }}
               </span>
             </UBadge>
             <div
@@ -226,7 +225,7 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
       v-else
       class="text-center text-sm text-muted-500"
     >
-      {{ activeTab === 1 ? 'No archived drafts' : 'No drafts yet' }}
+      {{ activeTab === 1 ? 'No archived content yet' : 'No content yet' }}
     </div>
   </section>
 </template>

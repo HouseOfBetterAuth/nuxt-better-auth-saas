@@ -57,19 +57,24 @@ export class FileService {
     mimeType: string,
     uploadedBy?: string,
     ipAddress?: string,
-    userAgent?: string
+    userAgent?: string,
+    options?: {
+      fileName?: string
+      originalName?: string
+    }
   ): Promise<FileRecord> {
     const db = await useDB()
     const fileId = uuidv7()
-    const fileName = this.generateFileName(originalName)
+    const fileName = options?.fileName ?? this.generateFileName(originalName)
     const fileType = getFileTypeFromMimeType(mimeType)
+    const resolvedOriginalName = options?.originalName ?? originalName
 
     try {
       const { path, url } = await this.storage.upload(fileBuffer, fileName, mimeType)
 
       const fileData = {
         id: fileId,
-        originalName,
+        originalName: resolvedOriginalName,
         fileName,
         mimeType,
         fileType,
@@ -99,7 +104,7 @@ export class FileService {
         userAgent,
         status: 'success',
         details: JSON.stringify({
-          originalName,
+          originalName: resolvedOriginalName,
           fileName,
           mimeType,
           size: formatFileSize(fileBuffer.length),
@@ -118,7 +123,7 @@ export class FileService {
         userAgent,
         status: 'failure',
         details: JSON.stringify({
-          originalName,
+          originalName: resolvedOriginalName,
           mimeType,
           size: formatFileSize(fileBuffer.length),
           error: error instanceof Error ? error.message : 'Unknown error'

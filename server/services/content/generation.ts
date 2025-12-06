@@ -147,6 +147,21 @@ const CONTENT_TYPE_SCHEMA_EXTENSIONS: Partial<Record<typeof CONTENT_TYPES[number
   course: ['Course']
 }
 
+const FRONTMATTER_KEY_ORDER = [
+  'title',
+  'seoTitle',
+  'description',
+  'slug',
+  'contentType',
+  'targetLocale',
+  'status',
+  'primaryKeyword',
+  'keywords',
+  'tags',
+  'schemaTypes',
+  'sourceContentId'
+]
+
 const normalizeSchemaTypes = (
   ...candidates: Array<string | string[] | null | undefined>
 ) => {
@@ -946,6 +961,206 @@ const combineSectionsIntoMarkdown = (params: {
   }
 }
 
+function formatScalarForYaml(value: any): string {
+  if (value == null) {
+    return ''
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  if (typeof value === 'string') {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  }
+  return JSON.stringify(value)
+}
+
+function toYamlLinesForFrontmatter(value: any, indent = 0): string[] {
+  const prefix = '  '.repeat(indent)
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      return [`${prefix}[]`]
+    }
+    return value.flatMap((entry) => {
+      if (entry && typeof entry === 'object') {
+        return [`${prefix}-`, ...toYamlLinesForFrontmatter(entry, indent + 1)]
+      }
+      return [`${prefix}- ${formatScalarForYaml(entry)}`]
+    })
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, any>)
+    if (!entries.length) {
+      return [`${prefix}{}`]
+    }
+    return entries.flatMap(([key, entry]) => {
+      if (entry && typeof entry === 'object') {
+        return [`${prefix}${key}:`, ...toYamlLinesForFrontmatter(entry, indent + 1)]
+      }
+      return [`${prefix}${key}: ${formatScalarForYaml(entry)}`]
+    })
+  }
+  return [`${prefix}${formatScalarForYaml(value)}`]
+}
+
+function orderFrontmatterForBlock(frontmatter: Record<string, any>) {
+  const ordered: Record<string, any> = {}
+  for (const key of FRONTMATTER_KEY_ORDER) {
+    if (frontmatter[key] !== undefined) {
+      ordered[key] = frontmatter[key]
+    }
+  }
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (ordered[key] === undefined) {
+      ordered[key] = value
+    }
+  }
+  return ordered
+}
+
+function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined) {
+  if (!frontmatter || typeof frontmatter !== 'object') {
+    return '---\n---'
+  }
+  const filtered = Object.fromEntries(
+    Object.entries(frontmatter).filter(([, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0
+      }
+      if (value && typeof value === 'object') {
+        return Object.keys(value).length > 0
+      }
+      return value !== null && value !== undefined && value !== ''
+    })
+  )
+  const ordered = orderFrontmatterForBlock(filtered)
+  const lines = toYamlLinesForFrontmatter(ordered)
+  return ['---', ...lines, '---'].join('\n')
+}
+
+function generateJsonLdStructuredData(params: {
+  frontmatter: FrontmatterResult
+  seoSnapshot: Record<string, any> | null
+  baseUrl?: string
+}): string {
+  const { frontmatter, seoSnapshot, baseUrl } = params
+  const schemaTypes = Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes : []
+  
+  if (!schemaTypes.length) {
+    return ''
+  }
+
+  const structuredData: Record<string, any> = {
+    '@context': 'https://schema.org',
+    '@type': schemaTypes[0] || 'BlogPosting'
+  }
+
+  // Basic article properties
+  if (frontmatter.title) {
+    structuredData.headline = frontmatter.title
+  }
+  if (frontmatter.description) {
+    structuredData.description = frontmatter.description
+  }
+  if (frontmatter.primaryKeyword) {
+    structuredData.keywords = frontmatter.primaryKeyword
+  }
+  if (Array.isArray(frontmatter.keywords) && frontmatter.keywords.length > 0) {
+    structuredData.keywords = frontmatter.keywords.join(', ')
+  }
+
+  // Add datePublished if available
+  const seoPlan = seoSnapshot && typeof seoSnapshot === 'object' ? seoSnapshot.plan : null
+  if (seoPlan && typeof seoPlan === 'object' && seoPlan.datePublished) {
+    structuredData.datePublished = seoPlan.datePublished
+  }
+
+  // Add URL if baseUrl is provided
+  if (baseUrl && frontmatter.slug) {
+    structuredData.url = `${baseUrl}/${frontmatter.slug}`
+  }
+
+  // Add additional schema types as nested structures
+  if (schemaTypes.length > 1) {
+    const additionalTypes = schemaTypes.slice(1)
+    for (const type of additionalTypes) {
+      if (type === 'Recipe') {
+        structuredData['@type'] = ['BlogPosting', 'Recipe']
+      } else if (type === 'HowTo') {
+        structuredData['@type'] = ['BlogPosting', 'HowTo']
+      } else if (type === 'FAQPage') {
+        structuredData['@type'] = ['BlogPosting', 'FAQPage']
+      } else if (type === 'Course') {
+        structuredData['@type'] = ['BlogPosting', 'Course']
+      }
+    }
+  }
+
+  const jsonLd = JSON.stringify(structuredData, null, 2)
+  return `<script type="application/ld+json">\n${jsonLd}\n</script>`
+}
+
+/**
+ * Extracts raw markdown from enriched MDX by stripping frontmatter and JSON-LD
+ */
+function extractRawMarkdownFromEnrichedMdx(enrichedMdx: string): string {
+  const trimmed = enrichedMdx.trim()
+  
+  // If it doesn't start with '---', it's not enriched, return as-is
+  if (!trimmed.startsWith('---')) {
+    return trimmed
+  }
+  
+  // Find the end of frontmatter block (second '---')
+  const frontmatterEnd = trimmed.indexOf('\n---', 3)
+  if (frontmatterEnd === -1) {
+    // No closing frontmatter, return as-is
+    return trimmed
+  }
+  
+  // Extract content after frontmatter
+  let content = trimmed.substring(frontmatterEnd + 5).trim()
+  
+  // Check if there's a JSON-LD script tag and remove it
+  const jsonLdStart = content.indexOf('<script type="application/ld+json">')
+  if (jsonLdStart !== -1) {
+    const jsonLdEnd = content.indexOf('</script>', jsonLdStart)
+    if (jsonLdEnd !== -1) {
+      // Remove JSON-LD block and any surrounding whitespace
+      const before = content.substring(0, jsonLdStart).trim()
+      const after = content.substring(jsonLdEnd + 9).trim()
+      content = [before, after].filter(Boolean).join('\n\n')
+    }
+  }
+  
+  return content.trim()
+}
+
+/**
+ * Enriches markdown with frontmatter and JSON-LD structured data
+ */
+export function enrichMdxWithMetadata(params: {
+  markdown: string
+  frontmatter: FrontmatterResult
+  seoSnapshot: Record<string, any> | null
+  baseUrl?: string
+}): string {
+  const { markdown, frontmatter, seoSnapshot, baseUrl } = params
+  
+  // Extract raw markdown if already enriched
+  const rawMarkdown = extractRawMarkdownFromEnrichedMdx(markdown)
+  
+  const frontmatterBlock = buildFrontmatterBlock(frontmatter)
+  const jsonLd = generateJsonLdStructuredData({ frontmatter, seoSnapshot, baseUrl })
+  
+  const parts: string[] = [frontmatterBlock]
+  if (jsonLd) {
+    parts.push(jsonLd)
+  }
+  parts.push(rawMarkdown)
+  
+  return parts.filter(part => part.trim().length > 0).join('\n\n')
+}
+
 const createContentGenerationMetadata = (
   sourceContent: typeof schema.sourceContent.$inferSelect | null,
   stages: string[]
@@ -1361,6 +1576,14 @@ export const generateContentDraftFromSource = async (
     schemaTypes: frontmatter.schemaTypes
   }
 
+  // Enrich MDX with frontmatter and JSON-LD structured data
+  const enrichedMdx = enrichMdxWithMetadata({
+    markdown: assembled.markdown,
+    frontmatter,
+    seoSnapshot
+  })
+  pipelineStages.push('enrichment')
+
   const result = await db.transaction(async (tx) => {
     let contentRecord = existingContent
     let slug = existingContent?.slug
@@ -1482,7 +1705,7 @@ export const generateContentDraftFromSource = async (
           primaryKeyword,
           targetLocale
         },
-        bodyMdx: assembled.markdown,
+        bodyMdx: enrichedMdx,
         bodyHtml: null,
         sections: assembled.sections,
         assets,
@@ -1530,7 +1753,7 @@ export const generateContentDraftFromSource = async (
   return {
     content: result.content,
     version: result.version,
-    markdown: assembled.markdown,
+    markdown: enrichedMdx,
     meta
   }
 }
@@ -1725,6 +1948,13 @@ export const updateContentSectionWithAI = async (
     patchedAt: new Date().toISOString()
   }
 
+  // Enrich MDX with frontmatter and JSON-LD structured data
+  const enrichedMdx = enrichMdxWithMetadata({
+    markdown: assembled.markdown,
+    frontmatter,
+    seoSnapshot
+  })
+
   const result = await db.transaction(async (tx) => {
     const [latestVersion] = await tx
       .select({ version: schema.contentVersion.version })
@@ -1755,7 +1985,7 @@ export const updateContentSectionWithAI = async (
           primaryKeyword: frontmatter.primaryKeyword,
           targetLocale: frontmatter.targetLocale
         },
-        bodyMdx: assembled.markdown,
+        bodyMdx: enrichedMdx,
         bodyHtml: null,
         sections: assembled.sections,
         assets,
@@ -1795,11 +2025,130 @@ export const updateContentSectionWithAI = async (
   return {
     content: result.content,
     version: result.version,
-    markdown: assembled.markdown,
+    markdown: enrichedMdx,
     section: {
       id: targetSection.id,
       title: targetSection.title,
       index: targetSection.index
     }
+  }
+}
+
+/**
+ * Re-enriches existing content version with frontmatter and JSON-LD
+ * 
+ * @param db - Database instance
+ * @param params - Parameters for re-enrichment
+ * @returns Updated content version with enriched MDX
+ */
+export async function reEnrichContentVersion(
+  db: NodePgDatabase<typeof schema>,
+  params: {
+    organizationId: string
+    userId: string
+    contentId: string
+    baseUrl?: string
+  }
+): Promise<{
+  content: typeof schema.content.$inferSelect
+  version: typeof schema.contentVersion.$inferSelect
+  enrichedMdx: string
+}> {
+  const { organizationId, userId, contentId, baseUrl } = params
+
+  // Fetch content and current version
+  const [record] = await db
+    .select({
+      content: schema.content,
+      version: schema.contentVersion
+    })
+    .from(schema.content)
+    .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
+    .where(and(
+      eq(schema.content.organizationId, organizationId),
+      eq(schema.content.id, contentId)
+    ))
+    .limit(1)
+
+  if (!record || !record.content) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Content not found for this organization'
+    })
+  }
+
+  if (!record.version) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'This content has no version to enrich'
+    })
+  }
+
+  const currentVersion = record.version
+  const frontmatter = currentVersion.frontmatter as FrontmatterResult | null
+  const seoSnapshot = currentVersion.seoSnapshot as Record<string, any> | null
+
+  if (!frontmatter) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Content version has no frontmatter to use for enrichment'
+    })
+  }
+
+  // Extract raw markdown from existing bodyMdx (handles both enriched and non-enriched)
+  const rawMarkdown = extractRawMarkdownFromEnrichedMdx(currentVersion.bodyMdx)
+
+  // Re-enrich with current frontmatter and seoSnapshot
+  const enrichedMdx = enrichMdxWithMetadata({
+    markdown: rawMarkdown,
+    frontmatter,
+    seoSnapshot,
+    baseUrl
+  })
+
+  // Update the current version's bodyMdx with enriched content
+  const result = await db.transaction(async (tx) => {
+    const [updatedVersion] = await tx
+      .update(schema.contentVersion)
+      .set({
+        bodyMdx: enrichedMdx,
+        // Update updatedAt if there's such a field, otherwise just update bodyMdx
+      })
+      .where(eq(schema.contentVersion.id, currentVersion.id))
+      .returning()
+
+    if (!updatedVersion) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to update content version'
+      })
+    }
+
+    // Update content's updatedAt timestamp
+    const [updatedContent] = await tx
+      .update(schema.content)
+      .set({
+        updatedAt: new Date()
+      })
+      .where(eq(schema.content.id, record.content.id))
+      .returning()
+
+    if (!updatedContent) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to update content record'
+      })
+    }
+
+    return {
+      content: updatedContent,
+      version: updatedVersion
+    }
+  })
+
+  return {
+    content: result.content,
+    version: result.version,
+    enrichedMdx
   }
 }

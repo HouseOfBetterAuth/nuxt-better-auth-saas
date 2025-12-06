@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PublishContentResponse } from '~~/server/types/content'
 import type { ChatMessage } from '#shared/utils/types'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard } from '@vueuse/core'
@@ -445,15 +446,22 @@ const generatedContent = computed(() => currentVersion.value?.bodyMdx || current
 const hasGeneratedContent = computed(() => !!generatedContent.value)
 const fullMdx = computed(() => {
   const body = typeof generatedContent.value === 'string' ? generatedContent.value.trim() : ''
+  // Check if bodyMdx already contains frontmatter (enriched MDX)
+  // If it starts with '---', it's already enriched with frontmatter and JSON-LD
+  const isEnriched = body.startsWith('---')
+  if (isEnriched) {
+    return body
+  }
   const frontmatterBlock = _buildFrontmatterBlock(frontmatter.value || {})
   const parts = [frontmatterBlock, body].filter(part => typeof part === 'string' && part.trim().length)
   return parts.join('\n\n')
 })
 const hasFullMdx = computed(() => fullMdx.value.trim().length > 0)
-const exportFilename = computed(() => {
-  const slug = frontmatter.value?.slug || contentRecord.value?.id || 'draft'
-  return `${slug}.mdx`
+const isPublishing = ref(false)
+const canPublish = computed(() => {
+  return hasFullMdx.value && Boolean(contentRecord.value?.id && currentVersion.value?.id)
 })
+const publishActionLabel = computed(() => isPublishing.value ? 'Publishing…' : 'Publish draft')
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
 const generatorDetails = computed(() => currentVersion.value?.assets?.generator || null)
@@ -532,10 +540,10 @@ const viewTabs: { label: string, value: ViewTabValue }[] = [
 const activeViewTab = ref<ViewTabValue>('summary')
 
 const headerTabs = computed(() => ({
-  items: viewTabs,
+  items: viewTabs.map(tab => ({ label: tab.label, value: tab.value })),
   modelValue: activeViewTab.value,
-  onUpdate: (value: ViewTabValue) => {
-    activeViewTab.value = value
+  onUpdate: (value: string) => {
+    activeViewTab.value = value as ViewTabValue
   }
 }))
 
@@ -556,10 +564,10 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
       onBack: showBackButton.value ? handleBackNavigation : null,
       onArchive: null,
       onShare: hasFullMdx.value ? handleCopyFullMdx : null,
-      onPrimaryAction: hasFullMdx.value ? handleDownloadFullMdx : null,
-      primaryActionLabel: 'Download MDX',
+      onPrimaryAction: canPublish.value ? handlePublishDraft : null,
+      primaryActionLabel: publishActionLabel.value,
       primaryActionColor: 'primary',
-      primaryActionDisabled: !hasFullMdx.value
+      primaryActionDisabled: !canPublish.value || isPublishing.value
     }
   }
 
@@ -581,10 +589,10 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
     onBack: showBackButton.value ? handleBackNavigation : null,
     onArchive: null,
     onShare: hasFullMdx.value ? handleCopyFullMdx : null,
-    onPrimaryAction: hasFullMdx.value ? handleDownloadFullMdx : null,
-    primaryActionLabel: 'Download MDX',
+    onPrimaryAction: canPublish.value ? handlePublishDraft : null,
+    primaryActionLabel: publishActionLabel.value,
     primaryActionColor: 'primary',
-    primaryActionDisabled: !hasFullMdx.value
+    primaryActionDisabled: !canPublish.value || isPublishing.value
   }
 })
 
@@ -840,50 +848,6 @@ function handleCopy(message: ChatMessage) {
   }
 }
 
-async function handleShare(message: ChatMessage) {
-  const rawText = message.parts[0]?.text ?? ''
-  const hasContent = rawText.trim().length > 0
-
-  if (!hasContent) {
-    toast.add({
-      title: 'Nothing to share',
-      description: 'This message has no text content to share.',
-      color: 'error'
-    })
-    return
-  }
-
-  try {
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      await navigator.share({ text: rawText })
-      toast.add({
-        title: 'Shared',
-        description: 'Message sent to your share target.',
-        color: 'primary'
-      })
-      return
-    }
-  } catch (error) {
-    console.warn('Navigator share failed, falling back to copy', error)
-  }
-
-  try {
-    copy(rawText)
-    toast.add({
-      title: 'Copied to clipboard',
-      description: 'Message copied for sharing.',
-      color: 'primary'
-    })
-  } catch (error) {
-    console.error('Failed to share message', error)
-    toast.add({
-      title: 'Share failed',
-      description: 'Could not share this message.',
-      color: 'error'
-    })
-  }
-}
-
 function handleCopyFullMdx() {
   if (!hasFullMdx.value) {
     toast.add({
@@ -911,31 +875,50 @@ function handleCopyFullMdx() {
   }
 }
 
-function handleDownloadFullMdx() {
-  if (!hasFullMdx.value) {
+async function handlePublishDraft() {
+  if (!canPublish.value || !contentRecord.value?.id || !currentVersion.value?.id) {
     toast.add({
-      title: 'No MDX available',
-      description: 'Generate content before downloading.',
+      title: 'Cannot publish yet',
+      description: 'Generate content before publishing.',
       color: 'error'
     })
     return
   }
-
-  const blob = new Blob([fullMdx.value], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = exportFilename.value
-  anchor.rel = 'noopener'
-  anchor.click()
-  URL.revokeObjectURL(url)
-  anchor.remove()
-
-  toast.add({
-    title: 'Download started',
-    description: `${exportFilename.value} saved to your device.`,
-    color: 'primary'
-  })
+  if (isPublishing.value) {
+    return
+  }
+  try {
+    isPublishing.value = true
+    const response = await $fetch<PublishContentResponse>(`/api/content/${contentRecord.value.id}/publish`, {
+      method: 'POST',
+      body: {
+        versionId: currentVersion.value.id
+      }
+    })
+    const existing = content.value ?? { content: null }
+    content.value = {
+      ...existing,
+      content: response.content,
+      currentVersion: response.version
+    }
+    toast.add({
+      title: 'Draft published',
+      description: response.file.url
+        ? `Available at ${response.file.url}`
+        : 'The latest version has been saved to your content storage.',
+      color: 'primary'
+    })
+  } catch (error: any) {
+    console.error('[DraftWorkspace] Failed to publish draft', error)
+    const description = error?.data?.message || error?.message || 'An unexpected error occurred while publishing.'
+    toast.add({
+      title: 'Publish failed',
+      description,
+      color: 'error'
+    })
+  } finally {
+    isPublishing.value = false
+  }
 }
 
 function handleRegenerate(message: ChatMessage) {
@@ -1095,7 +1078,7 @@ onBeforeUnmount(() => {
                   Files
                 </p>
                 <UAccordion
-                  :items="message.payload.files.map(file => ({ value: file.id, file }))"
+                  :items="message.payload.files.map((file: any) => ({ value: file.id, file }))"
                   type="single"
                   collapsible
                   :ui="{ root: 'space-y-2' }"

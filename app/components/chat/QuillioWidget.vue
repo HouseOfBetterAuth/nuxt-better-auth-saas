@@ -978,15 +978,20 @@ if (import.meta.client) {
           v-if="isWorkspaceActive && activeWorkspaceEntry"
           class="space-y-6 w-full"
         >
-          <ChatDraftWorkspace
-            v-if="workspaceDetail?.content?.id"
-            :content-id="workspaceDetail.content.id"
-            :organization-slug="workspaceDetail.content.slug || activeOrgState?.value?.data?.slug || null"
-            :initial-payload="workspaceDetail"
-            :show-back-button="true"
-            :back-to="null"
-            @close="closeWorkspace"
-          />
+          <ClientOnly>
+            <ChatDraftWorkspace
+              v-if="workspaceDetail?.content?.id"
+              :content-id="workspaceDetail.content.id"
+              :organization-slug="workspaceDetail.content.slug || activeOrgState?.value?.data?.slug || null"
+              :initial-payload="workspaceDetail"
+              :show-back-button="true"
+              :back-to="null"
+              @close="closeWorkspace"
+            />
+            <template #fallback>
+              <div class="space-y-6 w-full" />
+            </template>
+          </ClientOnly>
         </div>
 
         <template v-else>
@@ -1150,13 +1155,12 @@ if (import.meta.client) {
       v-model:open="messageActionSheetOpen"
       :ui="{
         overlay: 'bg-black/60 backdrop-blur-sm',
-        container: 'max-w-sm mx-auto',
-        base: 'bg-background text-foreground rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
+        wrapper: 'max-w-sm mx-auto',
+        content: 'bg-background text-foreground rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
         header: 'hidden',
         body: 'p-4 space-y-4',
         footer: 'hidden'
       }"
-      :transition="{ name: 'fade' }"
       @close="closeMessageActionSheet"
     >
       <template #body>

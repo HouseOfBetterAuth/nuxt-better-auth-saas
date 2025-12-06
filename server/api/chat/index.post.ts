@@ -10,7 +10,8 @@ import {
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
+import { enrichMdxWithMetadata, generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
+import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
 import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
@@ -18,6 +19,7 @@ import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, inges
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
+import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
 import { useDB } from '~~/server/utils/db'
 import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -44,155 +46,6 @@ function buildYouTubeTranscriptErrorMessage(errorData: YouTubeTranscriptErrorDat
   return `❌ Error: I can't get the transcript for this video. ${reason}${suggestionText}`
 }
 
-interface WorkspaceFilePayload {
-  id: string
-  filename: string
-  body: string
-  frontmatter: Record<string, any> | null
-  wordCount: number
-  sectionsCount: number
-  seoSnapshot: Record<string, any> | null
-  seoPlan: Record<string, any> | null
-  frontmatterKeywords: string[]
-  seoKeywords: string[]
-  tags: string[]
-  schemaTypes: string[]
-  generatorDetails: Record<string, any> | null
-  generatorStages: string[]
-  sourceDetails: typeof schema.sourceContent.$inferSelect | null
-  sourceLink: string | null
-  fullMdx: string
-}
-
-const FRONTMATTER_KEY_ORDER = [
-  'title',
-  'seoTitle',
-  'description',
-  'slug',
-  'contentType',
-  'targetLocale',
-  'status',
-  'primaryKeyword',
-  'keywords',
-  'tags',
-  'schemaTypes',
-  'sourceContentId'
-]
-
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value
-    .map(item => typeof item === 'string' ? item.trim() : '')
-    .filter((item): item is string => Boolean(item))
-}
-
-function formatScalar(value: any): string {
-  if (value == null) {
-    return ''
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-  if (typeof value === 'string') {
-    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-  }
-  return JSON.stringify(value)
-}
-
-function toYamlLines(value: any, indent = 0): string[] {
-  const prefix = '  '.repeat(indent)
-  if (Array.isArray(value)) {
-    if (!value.length) {
-      return [`${prefix}[]`]
-    }
-    return value.flatMap((entry) => {
-      if (entry && typeof entry === 'object') {
-        return [`${prefix}-`, ...toYamlLines(entry, indent + 1)]
-      }
-      return [`${prefix}- ${formatScalar(entry)}`]
-    })
-  }
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, any>)
-    if (!entries.length) {
-      return [`${prefix}{}`]
-    }
-    return entries.flatMap(([key, entry]) => {
-      if (entry && typeof entry === 'object') {
-        return [`${prefix}${key}:`, ...toYamlLines(entry, indent + 1)]
-      }
-      return [`${prefix}${key}: ${formatScalar(entry)}`]
-    })
-  }
-  return [`${prefix}${formatScalar(value)}`]
-}
-
-function orderFrontmatter(frontmatter: Record<string, any>) {
-  const ordered: Record<string, any> = {}
-  for (const key of FRONTMATTER_KEY_ORDER) {
-    if (frontmatter[key] !== undefined) {
-      ordered[key] = frontmatter[key]
-    }
-  }
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (ordered[key] === undefined) {
-      ordered[key] = value
-    }
-  }
-  return ordered
-}
-
-function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined) {
-  if (!frontmatter || typeof frontmatter !== 'object') {
-    return '---\n---'
-  }
-  const filtered = Object.fromEntries(
-    Object.entries(frontmatter).filter(([, value]) => {
-      if (Array.isArray(value)) {
-        return value.length > 0
-      }
-      if (value && typeof value === 'object') {
-        return Object.keys(value).length > 0
-      }
-      return value !== null && value !== undefined && value !== ''
-    })
-  )
-  const ordered = orderFrontmatter(filtered)
-  const lines = toYamlLines(ordered)
-  return ['---', ...lines, '---'].join('\n')
-}
-
-function resolveFilePath(content: typeof schema.content.$inferSelect, version: typeof schema.contentVersion.$inferSelect) {
-  const frontmatterSlug = typeof version.frontmatter?.slug === 'string' ? version.frontmatter.slug : ''
-  const contentSlug = typeof content.slug === 'string' ? content.slug : ''
-  const slug = frontmatterSlug || contentSlug || 'draft'
-  const cleaned = slug
-    .replace(/^content\//, '')
-    .replace(/^\/+/, '')
-    .replace(/\.mdx$/i, '')
-  return `content/${cleaned}.mdx`
-}
-
-function resolveSourceLink(
-  sourceContent: typeof schema.sourceContent.$inferSelect | null,
-  assets: typeof schema.contentVersion.$inferSelect['assets']
-) {
-  const metadata = sourceContent?.metadata as Record<string, any> | undefined
-  if (metadata?.originalUrl) {
-    return metadata.originalUrl
-  }
-  if (sourceContent?.sourceType === 'youtube' && sourceContent.externalId) {
-    return `https://www.youtube.com/watch?v=${sourceContent.externalId}`
-  }
-  const assetSource = assets && typeof assets === 'object' ? (assets as any).source : null
-  if (assetSource?.originalUrl) {
-    return assetSource.originalUrl
-  }
-  return null
-}
-
 function toSummaryBullets(text: string | null | undefined) {
   if (!text) {
     return []
@@ -207,60 +60,6 @@ function toSummaryBullets(text: string | null | undefined) {
   }
   const sentences = normalized.split(/(?<=[.!?])\s+/).map(line => line.trim()).filter(Boolean)
   return sentences.length ? sentences : [normalized]
-}
-
-function buildWorkspaceFilesPayload(
-  content: typeof schema.content.$inferSelect,
-  version: typeof schema.contentVersion.$inferSelect,
-  sourceContent: typeof schema.sourceContent.$inferSelect | null
-): WorkspaceFilePayload[] {
-  const body = version.bodyMdx || version.bodyHtml || ''
-  const sections = Array.isArray(version.sections) ? version.sections : []
-  const frontmatter = version.frontmatter && typeof version.frontmatter === 'object'
-    ? version.frontmatter as Record<string, any>
-    : {}
-  const seoSnapshot = version.seoSnapshot && typeof version.seoSnapshot === 'object'
-    ? version.seoSnapshot as Record<string, any>
-    : null
-  const seoPlan = seoSnapshot && typeof seoSnapshot.plan === 'object' ? seoSnapshot.plan : null
-  const generatorDetails = version.assets && typeof version.assets === 'object' ? (version.assets as any).generator ?? null : null
-  const generatorStages = Array.isArray(generatorDetails?.stages)
-    ? generatorDetails.stages.filter((stage: any) => typeof stage === 'string').map((stage: string) => stage.trim()).filter(Boolean)
-    : []
-  const filename = resolveFilePath(content, version)
-  const frontmatterKeywords = normalizeStringArray(frontmatter.keywords || frontmatter.tags || [])
-  const tags = normalizeStringArray(frontmatter.tags)
-  const schemaTypes = normalizeStringArray(frontmatter.schemaTypes)
-  const seoKeywords = normalizeStringArray(seoPlan?.keywords)
-  const wordCount = sections.reduce((total, section: any) => {
-    const count = typeof section?.wordCount === 'number' ? section.wordCount : Number(section?.wordCount) || 0
-    return total + count
-  }, 0) || body.split(/\s+/).filter(Boolean).length
-  const frontmatterBlock = buildFrontmatterBlock(frontmatter)
-  const fullMdxParts = [frontmatterBlock, body].filter(Boolean)
-  const fullMdx = fullMdxParts.join('\n\n')
-
-  return [
-    {
-      id: version.id || filename,
-      filename,
-      body,
-      frontmatter,
-      wordCount,
-      sectionsCount: sections.length,
-      seoSnapshot,
-      seoPlan,
-      frontmatterKeywords,
-      seoKeywords,
-      tags,
-      schemaTypes,
-      generatorDetails,
-      generatorStages,
-      sourceDetails: sourceContent,
-      sourceLink: resolveSourceLink(sourceContent, version.assets),
-      fullMdx
-    }
-  ]
 }
 
 async function composeWorkspaceCompletionMessages(
@@ -317,7 +116,8 @@ async function composeWorkspaceCompletionMessages(
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
-  const { organizationId } = await requireActiveOrganization(event, user.id)
+  // Get active organization from Better Auth session (set by session.create.before hook)
+  const { organizationId } = await requireActiveOrganization(event, user.id, { allowAnonymous: true })
   const db = await useDB(event)
 
   const body = await readBody<ChatRequestBody>(event)
@@ -499,7 +299,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (sessionSourceId && !suggestedSourceIds.has(sessionSourceId)) {
+  if (sessionSourceId && !readySourceIds.has(sessionSourceId)) {
     const existingSource = processedSources.find(item => item.source.id === sessionSourceId)?.source
     if (existingSource) {
       trackReadySource(existingSource)
@@ -603,7 +403,10 @@ export default defineEventHandler(async (event) => {
         status: generateAction.status ? validateEnum(generateAction.status, CONTENT_STATUSES, 'status') : undefined,
         primaryKeyword: generateAction.primaryKeyword ? validateRequiredString(generateAction.primaryKeyword, 'primaryKeyword') : null,
         targetLocale: generateAction.targetLocale ? validateRequiredString(generateAction.targetLocale, 'targetLocale') : null,
-        contentType: generateAction.contentType ? validateEnum(generateAction.contentType, CONTENT_TYPES, 'contentType') : undefined
+        // Default to 'blog_post' if contentType is not provided (most common use case)
+        contentType: generateAction.contentType 
+          ? validateEnum(generateAction.contentType, CONTENT_TYPES, 'contentType')
+          : DEFAULT_CONTENT_TYPE
       },
       systemPrompt: sanitizedSystemPrompt,
       temperature: sanitizedTemperature,
@@ -765,10 +568,11 @@ export default defineEventHandler(async (event) => {
     content: message.content
   }))
 
-  const assistantMessages: string[] = []
+  // Build context for LLM to generate a single coherent assistant message
+  const contextParts: string[] = []
 
+  // Add information about processed sources
   if (processedSources.length > 0) {
-    // Generate descriptive messages for each source
     for (const item of processedSources) {
       if (!item.source) {
         continue
@@ -779,7 +583,6 @@ export default defineEventHandler(async (event) => {
         let videoDescription = ''
 
         try {
-          // Check if we have access to YouTube API
           const account = await findYouTubeAccount(db, organizationId, user.id)
           if (account) {
             const accessToken = await ensureAccessToken(db, account)
@@ -793,100 +596,85 @@ export default defineEventHandler(async (event) => {
           console.error('Failed to fetch YouTube metadata', error)
         }
 
-        // Generate descriptive message using LLM
-        const { callChatCompletions } = await import('~~/server/utils/aiGateway')
-        const descriptionPreview = videoDescription ? videoDescription.slice(0, 500) : 'the video content'
-        const prompt = `The user sent a YouTube video link. Video title: "${videoTitle}". Description preview: "${descriptionPreview}". 
-
-Generate a friendly, conversational message that:
-1. Identifies it as a YouTube video with the title
-2. Summarizes what the video covers based on the description
-3. Offers to provide a full detailed summary or create content from it
-
-Keep it concise (2-3 sentences) and conversational.`
-
-        try {
-          const llmMessage = await callChatCompletions({
-            messages: [
-              { role: 'system', content: 'You are a helpful assistant that describes YouTube videos in a friendly, conversational way.' },
-              ...conversationHistory,
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.7,
-            maxTokens: 200
-          })
-          assistantMessages.push(llmMessage)
-        } catch {
-          // Fallback if LLM fails
-          assistantMessages.push(`The link you sent is a YouTube video titled: "${videoTitle}". ${videoDescription ? `It covers: ${videoDescription.slice(0, 200)}...` : 'I\'m processing the video content.'} If you want, I can give you a full detailed summary of everything in the video — just tell me!`)
-        }
+        contextParts.push(`User shared a YouTube video: "${videoTitle}". ${videoDescription ? `Description: ${videoDescription.slice(0, 500)}` : 'Video content is being processed.'}`)
       } else if (item.sourceType === 'manual_transcript') {
-        // Generate descriptive message for transcript
         const transcriptPreview = item.source.sourceText ? item.source.sourceText.slice(0, 1000) : ''
-        const { callChatCompletions } = await import('~~/server/utils/aiGateway')
-
-        const prompt = `The user shared a transcript. Transcript preview: "${transcriptPreview}"
-
-Generate a friendly, conversational message that:
-1. Acknowledges the transcript
-2. Summarizes what it appears to be about
-3. Mentions key topics or themes
-4. Offers to create a draft from it
-
-Keep it concise (2-3 sentences) and conversational.`
-
-        try {
-          const llmMessage = await callChatCompletions({
-            messages: [
-              { role: 'system', content: 'You are a helpful assistant that describes transcripts in a friendly, conversational way.' },
-              ...conversationHistory,
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.7,
-            maxTokens: 200
-          })
-          assistantMessages.push(llmMessage)
-        } catch {
-          // Fallback if LLM fails
-          const wordCount = transcriptPreview.split(/\s+/).length
-          assistantMessages.push(`I see you've shared a transcript (${wordCount} words). I'm processing it and will be ready to create content from it shortly. If you want, I can create a draft from this transcript — just let me know!`)
-        }
+        const wordCount = transcriptPreview.split(/\s+/).length
+        contextParts.push(`User shared a transcript (${wordCount} words). Preview: "${transcriptPreview}"`)
       } else {
-        // Generic message for other source types
         const typeLabel = item.sourceType.replace('_', ' ')
-        assistantMessages.push(`Saved your ${typeLabel} for this organization. I can help you create content from it if you'd like.`)
+        contextParts.push(`User shared a ${typeLabel} source.`)
       }
     }
   }
 
-  if (generationResult) {
-    assistantMessages.push('Your draft is ready, let me know if you want edits to specific sections.')
-  }
-
-  if (patchSectionResult) {
-    const sectionLabel = (body.action?.type === 'patch_section' && body.action.sectionTitle) || patchSectionResult.section?.title || 'that section'
-    assistantMessages.push(`Updated "${sectionLabel}". Refresh the draft to review the latest changes.`)
-  }
-
-  if (!generationResult && readySources.length) {
+  // Add information about ready sources (ingested and ready for drafting)
+  if (!generationResult && readySources.length > 0) {
     const sourceSummaries = readySources.map((source) => {
       const title = typeof source.title === 'string' && source.title.trim() ? source.title.trim() : null
       const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
       return title ? `${title} (${typeLabel})` : typeLabel
     })
+    contextParts.push(`Successfully ingested ${sourceSummaries.length === 1 ? 'source' : 'sources'}: ${sourceSummaries.join(', ')}. Ready to create a draft.`)
+  }
 
-    if (sourceSummaries.length === 1) {
-      assistantMessages.push(`I grabbed the transcript for ${sourceSummaries[0]}. Want me to start a draft from it?`)
-    } else {
-      assistantMessages.push(`I grabbed transcripts for these sources:\n- ${sourceSummaries.join('\n- ')}\nTell me which one to start drafting.`)
+  // Add information about generation results
+  if (generationResult) {
+    contextParts.push('A draft has been successfully generated and is ready for review.')
+  }
+
+  // Add information about section patches
+  if (patchSectionResult) {
+    const sectionLabel = (body.action?.type === 'patch_section' && body.action.sectionTitle) || patchSectionResult.section?.title || 'a section'
+    contextParts.push(`Updated ${sectionLabel} in the draft.`)
+  }
+
+  // Generate a single coherent assistant message using LLM
+  let assistantMessageBody = ''
+  if (contextParts.length > 0 || message.trim()) {
+    const { callChatCompletions } = await import('~~/server/utils/aiGateway')
+    const contextText = contextParts.length > 0 ? `Context:\n${contextParts.join('\n')}` : ''
+    const userMessage = message.trim() || 'User sent a message or action.'
+
+    const prompt = `${contextText}
+
+${userMessage}
+
+Generate a friendly, conversational assistant response that:
+1. Acknowledges what happened (sources processed, drafts created, sections updated, etc.)
+2. Offers next steps (creating drafts, editing sections, etc.)
+3. Is concise (2-4 sentences) and natural
+4. Explicitly offers to create blog drafts when sources are ready
+
+Keep it conversational and helpful.`
+
+    try {
+      assistantMessageBody = await callChatCompletions({
+        messages: [
+          { role: 'system', content: 'You are a helpful content creation assistant. You help users create blog drafts from sources like YouTube videos and transcripts. Be friendly, concise, and always offer to create drafts when sources are ready.' },
+          ...conversationHistory,
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        maxTokens: 300
+      })
+    } catch (error) {
+      console.error('Failed to generate assistant message with LLM', error)
+      // Minimal fallback - just acknowledge
+      if (generationResult) {
+        assistantMessageBody = 'Your draft is ready, let me know if you want edits to specific sections.'
+      } else if (readySources.length > 0) {
+        const sourceNames = readySources.map(s => s.title || s.sourceType).join(', ')
+        assistantMessageBody = `I've processed ${sourceNames}. Want me to create a blog draft from it?`
+      } else if (processedSources.length > 0) {
+        assistantMessageBody = 'I\'ve saved your source. I can help you create a blog draft from it — just let me know!'
+      } else {
+        assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
+      }
     }
+  } else {
+    assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
   }
-
-  if (assistantMessages.length === 0) {
-    assistantMessages.push('Got it. I\'m ready whenever you want to start a draft or share a link.')
-  }
-
-  const assistantMessageBody = assistantMessages.join(' ')
 
   if (assistantMessageBody) {
     await addMessageToChatSession(db, {

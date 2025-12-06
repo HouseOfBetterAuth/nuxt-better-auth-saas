@@ -1,3 +1,4 @@
+import type { file, publication } from '~~/server/database/schema'
 import type { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 
 /**
@@ -167,5 +168,50 @@ export interface UpdateContentSectionWithAIResponse {
     id: string
     title: string
     index: number
+  }
+}
+
+/**
+ * Request body for publishing a content version
+ */
+export interface PublishContentRequestBody {
+  /** Optional version ID to publish (defaults to current version) */
+  versionId?: string | null
+}
+
+/**
+ * Response payload returned after publishing a content version
+ */
+export interface PublishContentResponse {
+  content: {
+    id: string
+    organizationId: string
+    slug: string
+    title: string
+    status: ContentStatus
+    contentType: ContentType
+    publishedAt: Date | null
+    updatedAt: Date
+  }
+  version: {
+    id: string
+    contentId: string
+    version: number
+    createdAt: Date
+    frontmatter: Record<string, any> | null
+    bodyMdx: string
+    bodyHtml: string | null
+  }
+  file: typeof file.$inferSelect
+  publication: typeof publication.$inferSelect
+  filePayload: {
+    filename: string
+    fullMdx: string
+    wordCount: number
+    sectionsCount: number
+    schemaTypes: string[]
+    tags: string[]
+    seoKeywords: string[]
+    frontmatter: Record<string, any>
   }
 }

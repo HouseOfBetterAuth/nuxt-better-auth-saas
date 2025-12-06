@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
       .limit(100)
   }
 
-  let workspace = null
+  let workspace: Awaited<ReturnType<typeof getContentWorkspacePayload>> | null = null
   if (contentId) {
     try {
       workspace = await getContentWorkspacePayload(db, organizationId, contentId)
