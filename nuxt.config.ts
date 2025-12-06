@@ -60,9 +60,8 @@ export default defineNuxtConfig({
       standalone: false
     }
   },
-  fonts: {
-    provider: 'local'
-  },
+  // Fonts are now self-hosted locally for GDPR compliance, performance, and offline support
+  // See app/assets/css/main.css for @font-face declarations
   ogImage: {
     enabled: false
   },

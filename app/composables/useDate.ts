@@ -340,7 +340,8 @@ export const useDate = () => {
   }
 
   /**
-   * Format date for list rows: show time for today, otherwise short date (e.g., "Dec 5")
+   * Format date for list rows: Git-like relative time (e.g., "2 hours ago", "3 days ago", "2 weeks ago")
+   * Falls back to short date for very old dates
    */
   const formatDateListStamp = (
     date: string | Date | null | undefined,
@@ -360,13 +361,46 @@ export const useDate = () => {
       const tzDate = toTimezoneDate(dateObj, tz)
       const nowInTz = toZonedTime(new Date(), tz)
 
-      if (isSameDay(tzDate, nowInTz)) {
-        return formatDate(dateObj, {
-          hour: 'numeric',
-          minute: '2-digit'
-        }, tz)
+      // Calculate time difference
+      const diffMs = nowInTz.getTime() - tzDate.getTime()
+      const isFuture = diffMs < 0
+      const diffHours = Math.abs(diffMs) / (1000 * 60 * 60)
+      const diffDays = Math.abs(diffMs) / (1000 * 60 * 60 * 24)
+
+      // Less than 1 hour: show minutes
+      if (diffHours < 1) {
+        const diffMins = Math.floor(Math.abs(diffMs) / (1000 * 60))
+        if (isFuture) {
+          return diffMins <= 1 ? 'in a moment' : `in ${diffMins}m`
+        }
+        return diffMins <= 1 ? 'just now' : `${diffMins}m ago`
       }
 
+      // Less than 24 hours: show hours
+      if (diffHours < 24) {
+        const hours = Math.floor(diffHours)
+        return isFuture ? `in ${hours}h` : `${hours}h ago`
+      }
+
+      // Less than 7 days: show days
+      if (diffDays < 7) {
+        const days = Math.floor(diffDays)
+        return isFuture ? `in ${days}d` : `${days}d ago`
+      }
+
+      // Less than 4 weeks: show weeks
+      if (diffDays < 28) {
+        const weeks = Math.floor(diffDays / 7)
+        return isFuture ? `in ${weeks}w` : `${weeks}w ago`
+      }
+
+      // Less than 12 months: show months
+      if (diffDays < 365) {
+        const months = Math.floor(diffDays / 30)
+        return isFuture ? `in ${months}mo` : `${months}mo ago`
+      }
+
+      // Older: show short date format (e.g., "Dec 5, 2024")
       return formatDateShort(dateObj, { timezoneOverride: tz })
     } catch {
       return '—'

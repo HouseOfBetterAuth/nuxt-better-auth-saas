@@ -64,7 +64,13 @@ export type ChatActionType = 'generate_content' | 'patch_section'
  */
 export interface ChatActionGenerateContent {
   type: 'generate_content'
+  /** Source content ID to generate from (e.g., transcript, YouTube video) */
   sourceContentId?: string | null
+  /**
+   * Target content ID to generate into (for updating existing draft).
+   * If provided, takes precedence over top-level `contentId` for session linking.
+   * If null/undefined, a new draft will be created.
+   */
   contentId?: string | null
   transcript?: string | null
   title?: string | null
@@ -82,7 +88,12 @@ export interface ChatActionGenerateContent {
  */
 export interface ChatActionPatchSection {
   type: 'patch_section'
-  contentId?: string | null
+  /**
+   * Target content ID to patch a section in.
+   * Required when action type is 'patch_section'.
+   * This is independent of top-level `contentId` and always refers to the content being patched.
+   */
+  contentId: string
   sectionId?: string | null
   sectionTitle?: string | null
   instructions?: string | null
@@ -100,6 +111,24 @@ export type ChatAction = ChatActionGenerateContent | ChatActionPatchSection
 export interface ChatRequestBody {
   /** User message */
   message: string
+  /** Optional existing session to continue */
+  sessionId?: string | null
+  /**
+   * Optional content ID to link the chat session to.
+   * Used for session linking when no action is provided or when action doesn't specify contentId.
+   *
+   * **Precedence rules:**
+   * - If `action.type === 'generate_content'` and `action.contentId` is provided,
+   *   `action.contentId` takes precedence for session linking.
+   * - If `action.type === 'patch_section'`, `action.contentId` is used for patching
+   *   (independent of this field).
+   * - Otherwise, this field is used for session linking.
+   *
+   * **Use cases:**
+   * - Link a chat session to an existing draft for context
+   * - Continue a conversation about a specific piece of content
+   */
+  contentId?: string | null
   /** Optional action to perform */
   action?: ChatAction
 }

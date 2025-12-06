@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { WorkspaceFilePayload } from '~/server/services/content/workspaceFiles'
+import { computed } from 'vue'
 
 const props = defineProps<{
   files: WorkspaceFilePayload[]
 }>()
 
-const accordionItems = computed(() => props.files?.map((file) => ({ value: file.id, file })) ?? [])
+const accordionItems = computed(() => props.files?.map(file => ({ value: file.id, file })) ?? [])
 </script>
 
 <template>

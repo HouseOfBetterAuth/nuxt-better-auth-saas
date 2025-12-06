@@ -6,6 +6,20 @@ interface WorkspaceSummaryInput {
   sourceContent?: typeof schema.sourceContent.$inferSelect | null
 }
 
+interface SourceSummaryInput {
+  sourceContent: typeof schema.sourceContent.$inferSelect | null
+}
+
+export interface SourceSummaryPreview {
+  title: string | null
+  typeLabel: string
+  url: string | null
+  thumbnailUrl: string | null
+  authorName: string | null
+  providerName: string | null
+  embedUrl: string | null
+}
+
 interface SectionLike {
   title?: string | null
   summary?: string | null
@@ -45,6 +59,68 @@ function normalizeStringList(value: unknown): string[] {
       .filter(Boolean)
   }
   return []
+}
+
+function finalizeSummary(summaryParts: string[]): string | null {
+  const summary = summaryParts.join('\n\n').trim()
+  return summary.length ? summary : null
+}
+
+function deriveSourcePresentation(source: typeof schema.sourceContent.$inferSelect | null) {
+  if (!source) {
+    return null
+  }
+  const metadata = source.metadata as Record<string, any> | undefined
+  const youtubeMetadata = metadata?.youtube as Record<string, any> | undefined
+  const previewMetadata = youtubeMetadata?.preview as Record<string, any> | undefined
+  const baseTitle = normalizeString(source.title)
+    || normalizeString(metadata?.title)
+    || normalizeString(metadata?.name)
+    || normalizeString(youtubeMetadata?.workerMetadata?.title)
+    || null
+  const sourceTypeRaw = normalizeString(source.sourceType) || 'source'
+  const sourceTypeLabel = (() => {
+    switch (sourceTypeRaw) {
+      case 'youtube':
+        return 'YouTube video'
+      case 'google_doc':
+        return 'Google Doc'
+      default:
+        return sourceTypeRaw.replace(/_/g, ' ')
+    }
+  })()
+  const sourceUrl = normalizeString(metadata?.originalUrl)
+  const thumbnail = normalizeString(previewMetadata?.thumbnailUrl)
+    || normalizeString(youtubeMetadata?.workerMetadata?.thumbnail_url)
+    || null
+  const providerName = normalizeString(previewMetadata?.providerName)
+    || normalizeString(youtubeMetadata?.workerMetadata?.provider_name)
+    || null
+  const authorName = normalizeString(previewMetadata?.authorName)
+    || normalizeString(youtubeMetadata?.workerMetadata?.author_name)
+    || null
+  const videoId = source.sourceType === 'youtube'
+    ? source.externalId || youtubeMetadata?.workerMetadata?.video_id || youtubeMetadata?.workerMetadata?.videoId
+    : null
+  const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}` : null
+
+  return {
+    title: baseTitle,
+    typeLabel: sourceTypeLabel,
+    url: sourceUrl,
+    thumbnailUrl: thumbnail,
+    providerName,
+    authorName,
+    embedUrl
+  }
+}
+
+export function buildSourceSummaryPreview(payload: SourceSummaryInput): SourceSummaryPreview | null {
+  const presentation = deriveSourcePresentation(payload.sourceContent)
+  if (!presentation) {
+    return null
+  }
+  return presentation
 }
 
 function extractSections(version?: typeof schema.contentVersion.$inferSelect | null) {
@@ -166,6 +242,5 @@ export function buildWorkspaceSummary(payload: WorkspaceSummaryInput) {
     }
   }
 
-  const summary = summaryParts.join(' ').trim()
-  return summary.length ? summary : null
+  return finalizeSummary(summaryParts)
 }

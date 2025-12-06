@@ -15,12 +15,12 @@ const PRESETS: Record<string, IndicatorPreset> = {
     message: 'Analyzing your request...'
   },
   collecting: {
-    label: 'Collecting sources',
-    message: 'Collecting links and transcripts...'
+    label: 'Transcribing',
+    message: 'Transcribing your source...'
   },
   drafting: {
     label: 'Drafting',
-    message: 'Drafting content right now...'
+    message: 'Drafting your post right now...'
   },
   updating: {
     label: 'Updating',
@@ -38,6 +38,7 @@ const PRESETS: Record<string, IndicatorPreset> = {
 
 const LOG_TYPE_TO_PRESET: Record<string, keyof typeof PRESETS> = {
   source_detected: 'collecting',
+  generation_started: 'drafting',
   content_generated: 'saving',
   generation_complete: 'finishing',
   section_patched: 'updating',
@@ -46,7 +47,7 @@ const LOG_TYPE_TO_PRESET: Record<string, keyof typeof PRESETS> = {
 
 const STATUS_TO_PRESET: Record<string, keyof typeof PRESETS> = {
   submitted: 'thinking',
-  streaming: 'drafting'
+  streaming: 'collecting'
 }
 
 function getLatestLog(logs?: AiThinkingLogEntry[] | null): AiThinkingLogEntry | null {
@@ -60,12 +61,33 @@ function getLatestLog(logs?: AiThinkingLogEntry[] | null): AiThinkingLogEntry | 
   }, null)
 }
 
+function normalizeTimestamp(value: Date | string | number | null | undefined) {
+  if (value == null) {
+    return null
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  const date = value instanceof Date ? value : new Date(value)
+  const time = date.getTime()
+  return Number.isFinite(time) ? time : null
+}
+
 export function resolveAiThinkingIndicator(input: {
   status?: string | null
   logs?: AiThinkingLogEntry[] | null
   fallbackMessage?: string
+  activeSince?: Date | string | number | null
 }): IndicatorPreset {
-  const latestLog = getLatestLog(input.logs)
+  const activeSinceTime = normalizeTimestamp(input.activeSince)
+  const scopedLogs = activeSinceTime
+    ? (input.logs ?? []).filter((log) => {
+        const logTime = normalizeTimestamp(log.createdAt)
+        return logTime == null || logTime >= activeSinceTime
+      })
+    : input.logs
+
+  const latestLog = getLatestLog(scopedLogs)
   const presetFromLog = latestLog?.type ? LOG_TYPE_TO_PRESET[(latestLog.type || '').toLowerCase()] : null
 
   if (presetFromLog && PRESETS[presetFromLog])

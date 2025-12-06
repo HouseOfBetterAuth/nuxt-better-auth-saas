@@ -4,6 +4,8 @@ import type { PublishContentResponse } from '~~/server/types/content'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useDraftAction } from '~/composables/useDraftAction'
+import ChatMessageContent from './ChatMessageContent.vue'
 import PromptComposer from './PromptComposer.vue'
 
 const props = withDefaults(defineProps<{
@@ -515,6 +517,53 @@ const mentionableSections = computed(() => sections.value.map(section => ({
   summary: section.summary || null,
   preview: section.body?.slice(0, 200)?.trim() || ''
 })))
+
+const currentContentRecordForDraft = computed<{ id: string, sourceContentId: string | null } | null>(() => {
+  const record = contentRecord.value
+  if (!record) {
+    return null
+  }
+  return {
+    id: record.id,
+    sourceContentId: record.sourceContent?.id ?? null
+  }
+})
+
+const {
+  pendingDraftAction,
+  handleWriteDraftFromSource: handleWriteDraftFromSourceComposable,
+  handlePublishDraft: handlePublishDraftFromPlan,
+  isPublishing: isPublishingFromPlan
+} = useDraftAction({
+  messages,
+  isBusy: chatIsBusy,
+  status: chatStatus,
+  currentContentRecord: currentContentRecordForDraft,
+  sessionContentId,
+  contentId,
+  sendMessage,
+  onLoadWorkspace: loadWorkspacePayload
+})
+
+const handleDraftActionClick = () => {
+  if (!pendingDraftAction.value) {
+    return
+  }
+  const action = pendingDraftAction.value
+  if (action.hasExistingDraft && typeof action.existingDraftId === 'string') {
+    handlePublishDraftFromPlan(action.existingDraftId)
+  } else if (typeof action.sourceId === 'string') {
+    handleWriteDraftFromSourceComposable(action.sourceId)
+  }
+}
+
+const draftActionButtonText = computed(() => {
+  if (!pendingDraftAction.value || typeof pendingDraftAction.value.hasExistingDraft !== 'boolean') {
+    return 'Write draft'
+  }
+  return pendingDraftAction.value.hasExistingDraft ? 'Publish' : 'Write draft'
+})
+
 const messageBodyClass = 'text-[15px] leading-6 text-muted-800 dark:text-muted-100'
 
 const contentUpdatedAtLabel = computed(() => {
@@ -729,22 +778,6 @@ function _buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefi
   const ordered = orderFrontmatter(filtered)
   const lines = toYamlLines(ordered)
   return ['---', ...lines, '---'].join('\n')
-}
-
-function toSummaryBullets(summary: string | null | undefined) {
-  if (!summary) {
-    return []
-  }
-  const normalized = summary.replace(/\r/g, '').trim()
-  if (!normalized) {
-    return []
-  }
-  const newlineSplit = normalized.split(/\n+/).map(line => line.trim()).filter(Boolean)
-  if (newlineSplit.length > 1) {
-    return newlineSplit
-  }
-  const sentences = normalized.split(/(?<=[.!?])\s+/).map(line => line.trim()).filter(Boolean)
-  return sentences.length ? sentences : [normalized]
 }
 
 const selectedSectionId = ref<string | null>(null)
@@ -1125,38 +1158,10 @@ onBeforeUnmount(() => {
             }"
           >
             <template #content="{ message }">
-              <div
-                v-if="message.payload?.type === 'workspace_summary'"
-                class="space-y-2"
-                :class="messageBodyClass"
-              >
-                <p class="font-semibold">
-                  Summary
-                </p>
-                <ul
-                  class="list-disc pl-5 space-y-1"
-                  :class="messageBodyClass"
-                >
-                  <li
-                    v-for="(item, index) in toSummaryBullets(message.payload.summary)"
-                    :key="index"
-                  >
-                    {{ item }}
-                  </li>
-                </ul>
-              </div>
-              <div
-                v-else-if="message.payload?.type === 'workspace_files' && Array.isArray(message.payload.files)"
-              >
-                <WorkspaceFilesAccordion :files="message.payload.files" />
-              </div>
-              <div
-                v-else
-                class="whitespace-pre-line"
-                :class="messageBodyClass"
-              >
-                {{ message.parts?.[0]?.text || message.content }}
-              </div>
+              <ChatMessageContent
+                :message="message"
+                :body-class="messageBodyClass"
+              />
             </template>
           </UChatMessages>
 
@@ -1174,7 +1179,23 @@ onBeforeUnmount(() => {
               "
               :status="uiStatus"
               @submit="_handleSubmit"
-            />
+            >
+              <template #submit>
+                <div class="flex items-center gap-2">
+                  <UButton
+                    v-if="pendingDraftAction"
+                    color="primary"
+                    size="sm"
+                    :disabled="chatIsBusy || chatStatus === 'submitted' || chatStatus === 'streaming'"
+                    :loading="chatIsBusy || chatStatus === 'submitted' || chatStatus === 'streaming' || isPublishingFromPlan"
+                    @click="handleDraftActionClick"
+                  >
+                    {{ draftActionButtonText }}
+                  </UButton>
+                  <UChatPromptSubmit :status="uiStatus" />
+                </div>
+              </template>
+            </PromptComposer>
           </div>
         </div>
       </div>

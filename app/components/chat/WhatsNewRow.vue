@@ -48,12 +48,13 @@ const handleSelect = (card: WhatsNewCard) => {
       </p>
     </div>
     <div class="grid gap-3 sm:grid-cols-3">
-      <button
+      <UButton
         v-for="card in cards"
         :key="card.id"
-        class="group flex items-center gap-3 rounded-2xl border border-white/5 bg-white/5 px-5 py-4 text-left transition hover:border-primary-500/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-white/5 disabled:hover:bg-white/5"
-        type="button"
+        variant="ghost"
+        color="neutral"
         :disabled="card.disabled"
+        class="group flex items-center gap-3 rounded-2xl px-5 py-4 text-left justify-start h-auto bg-muted/50"
         @click="handleSelect(card)"
       >
         <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/30">
@@ -65,7 +66,7 @@ const handleSelect = (card: WhatsNewCard) => {
         <span class="text-sm font-medium text-muted-100 whitespace-nowrap">
           {{ card.title }}
         </span>
-      </button>
+      </UButton>
     </div>
   </div>
 </template>

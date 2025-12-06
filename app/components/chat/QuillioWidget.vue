@@ -5,7 +5,9 @@ import { useClipboard, useDebounceFn } from '@vueuse/core'
 import { shallowRef } from 'vue'
 
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
+import { useDraftAction } from '~/composables/useDraftAction'
 import { resolveAiThinkingIndicator } from '~/utils/aiThinkingIndicators'
+import ChatMessageContent from './ChatMessageContent.vue'
 import PromptComposer from './PromptComposer.vue'
 import QuotaLimitModal from './QuotaLimitModal.vue'
 
@@ -33,7 +35,8 @@ const {
   resetSession,
   selectedContentType,
   stopResponse,
-  logs
+  logs,
+  requestStartedAt
 } = useChatSession()
 
 const prompt = ref('')
@@ -231,6 +234,7 @@ const fetchedContentEntries = computed(() => {
         sectionsCount: entry._computed.sectionsCount || 0,
         wordCount: entry._computed.wordCount || 0,
         sourceType: entry.sourceContent?.sourceType ?? null,
+        sourceContentId: entry.content.sourceContentId ?? null,
         additions: entry._computed.additions,
         deletions: entry._computed.deletions
       }
@@ -265,6 +269,7 @@ const fetchedContentEntries = computed(() => {
       sectionsCount: sections.length,
       wordCount: Number.isFinite(wordCount) ? wordCount : 0,
       sourceType: entry.sourceContent?.sourceType ?? null,
+      sourceContentId: entry.content.sourceContentId ?? null,
       additions: Number.isFinite(additions) ? additions : undefined,
       deletions: Number.isFinite(deletions) ? deletions : undefined
     }
@@ -306,6 +311,9 @@ watch(sessionContentId, (value, previous) => {
   if (alreadyPresent)
     return
 
+  // Remove any temp entries (they'll be replaced by the real draft)
+  pendingDrafts.value = pendingDrafts.value.filter(entry => !entry.id.startsWith('temp-'))
+
   pendingDrafts.value = [
     { id: value, contentType: selectedContentType.value || null },
     ...pendingDrafts.value
@@ -327,6 +335,7 @@ const THINKING_MESSAGE_ID = 'quillio-thinking-placeholder'
 const aiThinkingIndicator = computed(() => resolveAiThinkingIndicator({
   status: status.value,
   logs: logs.value,
+  activeSince: requestStartedAt.value,
   fallbackMessage: 'Working on your draft...'
 }))
 const displayMessages = computed<ChatMessage[]>(() => {
@@ -348,6 +357,33 @@ const displayMessages = computed<ChatMessage[]>(() => {
 
   return baseMessages.filter(message => message.id !== THINKING_MESSAGE_ID)
 })
+
+const {
+  pendingDraftAction,
+  handleWriteDraftFromSource: handleWriteDraftFromSourceComposable,
+  handlePublishDraft: handlePublishDraftComposable,
+  isPublishing: isPublishingComposable
+} = useDraftAction({
+  messages,
+  isBusy,
+  status,
+  contentEntries,
+  sessionContentId,
+  selectedContentType,
+  pendingDrafts,
+  sendMessage,
+  onRefresh: async () => {
+    await refreshDrafts()
+    prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
+  }
+})
+
+const isPublishing = isPublishingComposable
+
+async function handleWriteDraftFromSource(sourceId?: string | null) {
+  await handleWriteDraftFromSourceComposable(sourceId)
+  prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
+}
 
 const handleWhatsNewSelect = (payload: { id: 'youtube' | 'transcript' | 'seo', command?: string }) => {
   if (!payload) {
@@ -518,6 +554,8 @@ const handlePromptSubmit = async (value?: string) => {
     promptSubmitting.value = false
   }
 }
+
+const handlePublishDraft = handlePublishDraftComposable
 
 function createLocalId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -1057,8 +1095,7 @@ if (import.meta.client) {
               >
                 <template #content="{ message }">
                   <div
-                    class="whitespace-pre-line"
-                    :class="{ 'cursor-pointer select-text': message.role === 'user' }"
+                    :class="message.role === 'user' ? 'cursor-pointer select-text' : 'select-text'"
                     @touchstart.passive="startMessageLongPress(message, $event)"
                     @touchmove.passive="handleMessageLongPressMove"
                     @touchend.passive="clearMessageLongPress"
@@ -1069,12 +1106,10 @@ if (import.meta.client) {
                     @mouseleave="clearMessageLongPress"
                     @contextmenu.prevent="handleUserMessageContextMenu(message, $event)"
                   >
-                    <template v-if="message.role === 'user'">
-                      {{ getDisplayMessageText(message) }}
-                    </template>
-                    <template v-else>
-                      {{ message.parts[0]?.text }}
-                    </template>
+                    <ChatMessageContent
+                      :message="message"
+                      :display-text="getDisplayMessageText(message)"
+                    />
                   </div>
                 </template>
               </UChatMessages>
@@ -1137,6 +1172,21 @@ if (import.meta.client) {
                         />
                       </template>
                     </USelectMenu>
+                  </template>
+                  <template #submit>
+                    <div class="flex items-center gap-2">
+                      <UButton
+                        v-if="pendingDraftAction"
+                        color="primary"
+                        size="sm"
+                        :disabled="isBusy || promptSubmitting"
+                        :loading="isBusy || isPublishing"
+                        @click="pendingDraftAction.hasExistingDraft ? handlePublishDraft(pendingDraftAction.existingDraftId) : handleWriteDraftFromSource(pendingDraftAction.sourceId)"
+                      >
+                        {{ pendingDraftAction.hasExistingDraft ? 'Publish' : 'Write draft' }}
+                      </UButton>
+                      <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" />
+                    </div>
                   </template>
                 </PromptComposer>
               </div>

@@ -39,6 +39,7 @@ export default defineEventHandler(async (event) => {
   // Validate baseUrl format if provided
   if (baseUrl) {
     try {
+      // eslint-disable-next-line no-new
       new URL(baseUrl)
     } catch {
       throw createError({ statusCode: 400, message: 'Invalid baseUrl format' })

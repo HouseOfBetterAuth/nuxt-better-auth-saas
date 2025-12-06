@@ -6,13 +6,14 @@ import * as schema from '~~/server/database/schema'
 import {
   addLogEntryToChatSession,
   addMessageToChatSession,
+  getChatSessionById,
   getOrCreateChatSessionForContent,
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
 import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
-import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
+import { buildSourceSummaryPreview, buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
 import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
@@ -142,8 +143,6 @@ async function composeWorkspaceCompletionMessages(
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
-  // Get active organization from Better Auth session (set by session.create.before hook)
-  const { organizationId } = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous })
   const db = await useDB(event)
 
   // Try to get organizationId from session first (faster and more reliable)
@@ -153,7 +152,7 @@ export default defineEventHandler(async (event) => {
   // If not in session, try to get from database via requireActiveOrganization
   if (!organizationId) {
     try {
-      const orgResult = await requireActiveOrganization(event, user.id)
+      const orgResult = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous })
       organizationId = orgResult.organizationId
     } catch (error: any) {
       // If user is anonymous and doesn't have an org yet, throw a helpful error
@@ -174,12 +173,15 @@ export default defineEventHandler(async (event) => {
   validateRequestBody(body)
 
   const message = typeof body.message === 'string' ? body.message : ''
+  const trimmedMessage = message.trim()
+  const requestSessionId = body.sessionId ? validateOptionalUUID(body.sessionId, 'sessionId') : null
 
-  if (!message.trim() && !body.action) {
+  if (!trimmedMessage && !body.action) {
     throw createValidationError('Message or action is required')
   }
 
   const urls = extractUrls(message)
+  const isLinkOnlyMessage = urls.length === 1 && trimmedMessage && trimmedMessage === urls[0]?.trim()
   const seenKeys = new Set<string>()
   const processedSources: Array<{
     source: Awaited<ReturnType<typeof upsertSourceContent>>
@@ -188,16 +190,23 @@ export default defineEventHandler(async (event) => {
   }> = []
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
+  const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
   const readySourceIds = new Set<string>()
   const suggestedSourceIds = new Set<string>()
 
-  const trackReadySource = (source: typeof schema.sourceContent.$inferSelect | null | undefined) => {
+  const trackReadySource = (
+    source: typeof schema.sourceContent.$inferSelect | null | undefined,
+    options?: { isNew?: boolean }
+  ) => {
     if (!source || !source.id || source.ingestStatus !== 'ingested' || readySourceIds.has(source.id)) {
       return
     }
 
     readySources.push(source)
     readySourceIds.add(source.id)
+    if (options?.isNew) {
+      newlyReadySources.push(source)
+    }
   }
 
   for (const rawUrl of urls) {
@@ -234,7 +243,7 @@ export default defineEventHandler(async (event) => {
           userId: user.id,
           videoId: classification.externalId
         })
-        trackReadySource(record)
+        trackReadySource(record, { isNew: true })
       } catch (error: any) {
         const errorData = error?.data as YouTubeTranscriptErrorData | undefined
         if (errorData?.transcriptFailed) {
@@ -269,8 +278,8 @@ export default defineEventHandler(async (event) => {
 
   // Detect transcripts in message
   const transcriptPrefix = 'Transcript attachment:'
-  if (message.trim().startsWith(transcriptPrefix)) {
-    const transcriptText = message.trim().slice(transcriptPrefix.length).trim()
+  if (trimmedMessage.startsWith(transcriptPrefix)) {
+    const transcriptText = trimmedMessage.slice(transcriptPrefix.length).trim()
     if (transcriptText.length > 200) {
       // Create transcript source
       const manualSource = await createSourceContentFromTranscript({
@@ -293,19 +302,19 @@ export default defineEventHandler(async (event) => {
         if (manualSource?.id) {
           suggestedSourceIds.add(manualSource.id)
         }
-        trackReadySource(manualSource)
+        trackReadySource(manualSource, { isNew: true })
       }
     }
-  } else if (message.trim().length > 500 && !urls.length) {
+  } else if (trimmedMessage.length > 500 && !urls.length) {
     // Auto-detect potential transcripts: long messages without URLs
     // Check for transcript-like patterns (speaker labels, timestamps, etc.)
-    const hasTranscriptPatterns = /^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*:|\[?\d{1,2}:\d{2}(?::\d{2})?\]?)/m.test(message.trim())
+    const hasTranscriptPatterns = /^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*:|\[?\d{1,2}:\d{2}(?::\d{2})?\]?)/m.test(trimmedMessage)
     if (hasTranscriptPatterns) {
       const manualSource = await createSourceContentFromTranscript({
         db,
         organizationId,
         userId: user.id,
-        transcript: message.trim(),
+        transcript: trimmedMessage,
         metadata: { createdVia: 'chat_message_auto_detect' },
         onProgress: async () => {
           // Progress messages will be handled by the assistant message
@@ -321,7 +330,7 @@ export default defineEventHandler(async (event) => {
         if (manualSource?.id) {
           suggestedSourceIds.add(manualSource.id)
         }
-        trackReadySource(manualSource)
+        trackReadySource(manualSource, { isNew: true })
       }
     }
   }
@@ -334,28 +343,44 @@ export default defineEventHandler(async (event) => {
     ? validateOptionalUUID((body as any).contentId, 'contentId')
     : null
 
+  // Determine session contentId: action.contentId takes precedence for both generate_content and patch_section
   const initialSessionContentId = (body.action?.type === 'generate_content' && body.action.contentId)
     ? validateOptionalUUID(body.action.contentId, 'action.contentId')
-    : requestContentId
+    : (body.action?.type === 'patch_section' && body.action.contentId)
+        ? validateOptionalUUID(body.action.contentId, 'action.contentId')
+        : requestContentId
 
-  const sessionSourceId = resolvedSourceContentId ?? null
+  let sessionSourceId = resolvedSourceContentId ?? null
 
-  // Ensure session exists early so we can send progress messages
-  let session = await getOrCreateChatSessionForContent(db, {
-    organizationId,
-    contentId: initialSessionContentId,
-    sourceContentId: sessionSourceId,
-    createdByUserId: user.id,
-    metadata: {
-      lastAction: body.action?.type ?? (message.trim() ? 'message' : null)
+  let session = null
+  if (requestSessionId) {
+    session = await getChatSessionById(db, requestSessionId, organizationId)
+    if (!session) {
+      console.warn(`Session ${requestSessionId} not found for organization ${organizationId}, creating new session`)
     }
-  })
+  }
+
+  if (!session) {
+    session = await getOrCreateChatSessionForContent(db, {
+      organizationId,
+      contentId: initialSessionContentId,
+      sourceContentId: sessionSourceId,
+      createdByUserId: user.id,
+      metadata: {
+        lastAction: body.action?.type ?? (trimmedMessage ? 'message' : null)
+      }
+    })
+  }
 
   if (!session) {
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to create chat session'
     })
+  }
+
+  if (!sessionSourceId && session.sourceContentId) {
+    sessionSourceId = session.sourceContentId
   }
 
   if (sessionSourceId && !readySourceIds.has(sessionSourceId)) {
@@ -486,6 +511,25 @@ export default defineEventHandler(async (event) => {
           outlinePreview ? `Outline:\n${outlinePreview}` : 'Outline: (not provided)',
           'Tell me if you want any tweaks to this outline—or hit “Start draft in workspace” when you’re ready for the full article.'
         ]
+        const targetSourceId = resolvedSourceContentId ?? session.sourceContentId ?? null
+        let previewPayload = null
+        if (targetSourceId) {
+          let previewSource = readySources.find(source => source.id === targetSourceId)
+            ?? processedSources.find(item => item.source?.id === targetSourceId)?.source
+            ?? null
+          if (!previewSource) {
+            const [sourceRecord] = await db
+              .select()
+              .from(schema.sourceContent)
+              .where(and(
+                eq(schema.sourceContent.id, targetSourceId),
+                eq(schema.sourceContent.organizationId, organizationId)
+              ))
+              .limit(1)
+            previewSource = sourceRecord ?? null
+          }
+          previewPayload = buildSourceSummaryPreview({ sourceContent: previewSource })
+        }
         await addMessageToChatSession(db, {
           sessionId: planPreviewSessionId,
           organizationId,
@@ -494,7 +538,9 @@ export default defineEventHandler(async (event) => {
           payload: {
             type: 'plan_preview',
             plan,
-            frontmatter
+            frontmatter,
+            preview: previewPayload,
+            sourceId: targetSourceId
           }
         })
       }
@@ -571,12 +617,12 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (message.trim()) {
+  if (trimmedMessage) {
     await addMessageToChatSession(db, {
       sessionId: session.id,
       organizationId,
       role: 'user',
-      content: message.trim()
+      content: trimmedMessage
     })
     await addLogEntryToChatSession(db, {
       sessionId: session.id,
@@ -677,12 +723,12 @@ export default defineEventHandler(async (event) => {
 
   // Add information about ready sources (ingested and ready for drafting)
   if (!generationResult && readySources.length > 0) {
-    const sourceSummaries = readySources.map((source) => {
+    for (const source of readySources) {
       const title = typeof source.title === 'string' && source.title.trim() ? source.title.trim() : null
       const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
-      return title ? `${title} (${typeLabel})` : typeLabel
-    })
-    contextParts.push(`Successfully ingested ${sourceSummaries.length === 1 ? 'source' : 'sources'}: ${sourceSummaries.join(', ')}. Ready to create a draft.`)
+      const intro = title ? `${title} (${typeLabel})` : typeLabel
+      contextParts.push(`Source ready for drafting: ${intro}.`)
+    }
   }
 
   // Add information about generation results
@@ -696,12 +742,18 @@ export default defineEventHandler(async (event) => {
     contextParts.push(`Updated ${sectionLabel} in the draft.`)
   }
 
+  const shouldSkipAssistantResponse = newlyReadySources.length > 0
+    && !generationResult
+    && !patchSectionResult
+    && !body.action?.type
+    && isLinkOnlyMessage
+
   // Generate a single coherent assistant message using LLM
   let assistantMessageBody = ''
-  if (contextParts.length > 0 || message.trim()) {
+  if (!shouldSkipAssistantResponse && (contextParts.length > 0 || trimmedMessage)) {
     const { callChatCompletions } = await import('~~/server/utils/aiGateway')
     const contextText = contextParts.length > 0 ? `Context:\n${contextParts.join('\n\n')}` : ''
-    const userMessage = wrapPromptSnippet('User message', message.trim(), 1500) || 'User sent a message or action.'
+    const userMessage = wrapPromptSnippet('User message', trimmedMessage, 1500) || 'User sent a message or action.'
 
     const prompt = `${contextText}
 
@@ -739,7 +791,7 @@ Keep it conversational and helpful.`
         assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
       }
     }
-  } else {
+  } else if (!shouldSkipAssistantResponse) {
     assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
   }
 

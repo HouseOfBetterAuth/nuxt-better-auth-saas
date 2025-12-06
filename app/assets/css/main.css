@@ -1,8 +1,33 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/* Local font declarations for GDPR compliance, performance, and offline support */
+/* Font files should be placed in public/fonts/ directory */
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/lora-regular.woff2') format('woff2'),
+       url('/fonts/lora-regular.woff') format('woff');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/lora-bold.woff2') format('woff2'),
+       url('/fonts/lora-bold.woff') format('woff');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @theme {
-  --font-sans: 'Public Sans', sans-serif;
+  /* System font stack with CJK support as fallback for better internationalization */
+  --font-sans: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  /* Lora with CJK-friendly fallbacks - serif fonts may not render CJK well, so we fall back to system fonts */
+  --font-heading: 'Lora', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', serif;
   
   /* Semantic color tokens */
   --color-background: white;
@@ -27,6 +52,12 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Apply Lora font to all headings with CJK fallback */
+  /* Note: Lora (serif) may not render CJK characters well, so system fonts are used as fallback */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
   }
 
   /* Mobile-safe full height utility */
