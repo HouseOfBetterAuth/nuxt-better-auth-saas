@@ -1,4 +1,4 @@
-import { getRouterParams } from 'h3'
+import { getRouterParams, setHeader } from 'h3'
 import { getContentWorkspacePayload } from '~~/server/services/content/workspace'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
 
   const { id } = getRouterParams(event)
   const validatedId = validateUUID(id, 'id')
+
+  setHeader(event, 'Cache-Control', 'private, max-age=60')
 
   return await getContentWorkspacePayload(db, organizationId, validatedId)
 })

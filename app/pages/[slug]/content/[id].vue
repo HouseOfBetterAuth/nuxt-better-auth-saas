@@ -30,10 +30,39 @@ const routeSlug = computed(() => {
 
 // Set workspace header state
 const workspaceHeader = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
+const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () => true)
+
+const setShellHeader = () => {
+  workspaceHeader.value = {
+    title: routeSlug.value || 'Loading content…',
+    status: null,
+    contentType: null,
+    updatedAtLabel: null,
+    versionId: null,
+    additions: 0,
+    deletions: 0,
+    contentId: contentId.value || undefined,
+    showBackButton: true,
+    onBack: () => {
+      router.push(`/${routeSlug.value}`)
+    },
+    onArchive: null,
+    onShare: null,
+    onPrimaryAction: null,
+    primaryActionLabel: '',
+    primaryActionColor: '',
+    primaryActionDisabled: false
+  }
+}
+
+setShellHeader()
 
 // Fetch content data
-const { data: contentData, pending, error } = await useFetch(`/api/content/${contentId.value}`, {
-  key: `content-${contentId.value}`
+const { data: contentData, pending, error } = useFetch(`/api/content/${contentId.value}`, {
+  key: `content-${contentId.value}`,
+  lazy: true,
+  server: true,
+  default: () => null
 })
 
 // Transform to DraftEntry format (same as ChatDraftsList expects)
@@ -98,8 +127,16 @@ watch(contentEntry, (entry) => {
       primaryActionColor: '',
       primaryActionDisabled: false
     }
+
+    workspaceHeaderLoading.value = false
   }
 }, { immediate: true })
+
+watchEffect(() => {
+  if (!contentEntry.value) {
+    workspaceHeaderLoading.value = pending.value
+  }
+})
 
 const formatUpdatedAt = (date: Date | null) => {
   if (!date) {
