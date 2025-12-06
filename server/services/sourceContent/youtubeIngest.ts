@@ -199,6 +199,7 @@ function extractTranscriptIoText(entry: TranscriptIoResponseEntry) {
 
 async function fetchTranscriptViaTranscriptIo(videoId: string) {
   const token = runtimeConfig.youtubeTranscriptIoToken
+  console.log('[youtube-transcript.io] Token check:', { hasToken: !!token, tokenLength: token?.length, tokenPreview: token ? `${token.substring(0, 10)}...` : 'none' })
   if (!token) {
     throw new TranscriptProviderError('Transcript provider is not configured.', { reasonCode: 'internal_error', userMessage: 'Transcript provider is not configured.' })
   }
@@ -253,6 +254,17 @@ async function fetchTranscriptViaTranscriptIo(videoId: string) {
       throw error
     }
     const statusCode = (error as FetchError)?.statusCode
+    const errorMessage = (error as Error).message || 'Failed to fetch transcript via external provider.'
+    const errorData = (error as FetchError)?.data
+
+    // Log the actual error for debugging
+    console.error('[youtube-transcript.io] Error details:', {
+      statusCode,
+      message: errorMessage,
+      data: errorData,
+      error
+    })
+
     const retryAfterSeconds = getRetryAfterSeconds(error as FetchError)
     if (statusCode === 429) {
       const cooldownMs = Math.max(1000, (retryAfterSeconds ?? 10) * 1000)
@@ -264,8 +276,7 @@ async function fetchTranscriptViaTranscriptIo(videoId: string) {
       failure.userMessage = `Transcript provider is rate limiting us. Please wait about ${waitSeconds} seconds and try again.`
       failure.canRetry = true
     }
-    const message = (error as Error).message || 'Failed to fetch transcript via external provider.'
-    throw new TranscriptProviderError(message, failure, statusCode)
+    throw new TranscriptProviderError(errorMessage, failure, statusCode)
   }
 }
 
