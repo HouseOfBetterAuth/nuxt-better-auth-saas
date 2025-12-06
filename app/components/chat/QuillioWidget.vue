@@ -162,6 +162,36 @@ const {
   })
 })
 const debouncedRefreshDrafts = useDebounceFn(() => refreshDrafts(), 300)
+// Populate drafts list cache for header reuse
+const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
+
+const updateLocalDraftStatus = (draftId: string, status: string) => {
+  const currentPayload = workspaceDraftsPayload.value
+  if (!currentPayload?.contents?.length)
+    return
+
+  const nextContents = currentPayload.contents.map((entry) => {
+    if (entry.content?.id !== draftId)
+      return entry
+    return {
+      ...entry,
+      content: {
+        ...entry.content,
+        status
+      }
+    }
+  })
+
+  workspaceDraftsPayload.value = {
+    ...currentPayload,
+    contents: nextContents
+  }
+
+  const archivedEntry = nextContents.find(entry => entry.content?.id === draftId)
+  if (archivedEntry) {
+    draftsListCache.value.set(draftId, archivedEntry)
+  }
+}
 const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
 
 const draftQuotaUsage = computed<DraftQuotaUsagePayload | null>(() => workspaceDraftsPayload.value?.draftQuota ?? null)
@@ -710,6 +740,8 @@ const archiveDraft = async (entry: { id: string, title?: string | null }) => {
       method: 'POST'
     })
 
+    updateLocalDraftStatus(entry.id, 'archived')
+
     if (activeWorkspaceId.value === entry.id) {
       await activateWorkspace(null)
       resetConversation()
@@ -869,9 +901,6 @@ function closeMessageActionSheet() {
   messageActionSheetTarget.value = null
   clearMessageLongPress()
 }
-
-// Populate drafts list cache for header reuse
-const draftsListCache = useState<Map<string, any>>('drafts-list-cache', () => new Map())
 
 watch(workspaceDraftsPayload, (payload) => {
   if (!payload?.contents)
