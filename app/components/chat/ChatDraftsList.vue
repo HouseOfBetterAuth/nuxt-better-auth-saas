@@ -57,18 +57,49 @@ const filteredEntries = computed(() => {
 
 const hasFilteredContent = computed(() => filteredEntries.value.length > 0)
 
-const STATUS_META: Record<string, { icon: string, color: InstanceType<typeof UBadge>['$props']['color'], label: string }> = {
-  draft: { icon: 'i-lucide-pen-line', color: 'neutral', label: 'Draft' },
-  in_review: { icon: 'i-lucide-eye', color: 'warning', label: 'In review' },
-  ready_for_publish: { icon: 'i-lucide-rocket', color: 'primary', label: 'Ready to publish' },
-  published: { icon: 'i-lucide-badge-check', color: 'primary', label: 'Published' },
-  archived: { icon: 'i-lucide-archive', color: 'neutral', label: 'Archived' }
+const STATUS_META: Record<string, { icon: string, label: string, badgeClass: string, dotClass: string }> = {
+  draft: {
+    icon: 'i-lucide-pen-line',
+    label: 'Draft',
+    badgeClass: 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30',
+    dotClass: 'bg-emerald-500'
+  },
+  in_review: {
+    icon: 'i-lucide-eye',
+    label: 'In review',
+    badgeClass: 'bg-amber-400/20 text-amber-500 border border-amber-400/30',
+    dotClass: 'bg-amber-400'
+  },
+  ready_for_publish: {
+    icon: 'i-lucide-rocket',
+    label: 'Ready to publish',
+    badgeClass: 'bg-sky-400/20 text-sky-500 border border-sky-400/30',
+    dotClass: 'bg-sky-400'
+  },
+  published: {
+    icon: 'i-lucide-badge-check',
+    label: 'Published',
+    badgeClass: 'bg-purple-500/20 text-purple-500 border border-purple-500/30',
+    dotClass: 'bg-purple-500'
+  },
+  archived: {
+    icon: 'i-lucide-archive',
+    label: 'Archived',
+    badgeClass: 'bg-rose-500/20 text-rose-500 border border-rose-500/30',
+    dotClass: 'bg-rose-500'
+  }
 }
 
 const getStatusMeta = (status: string) => {
   const normalized = (status || '').toLowerCase().trim()
   return STATUS_META[normalized] || STATUS_META.draft
 }
+
+const statusLegend = computed(() => ([
+  { key: 'draft', label: STATUS_META.draft.label, dotClass: STATUS_META.draft.dotClass },
+  { key: 'published', label: STATUS_META.published.label, dotClass: STATUS_META.published.dotClass },
+  { key: 'archived', label: STATUS_META.archived.label, dotClass: STATUS_META.archived.dotClass }
+]))
 
 const handleOpenWorkspace = (entry: DraftEntry) => {
   emit('openWorkspace', entry)
@@ -119,6 +150,22 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
     />
 
     <div
+      class="flex items-center gap-4 text-xs text-muted-500"
+    >
+      <div
+        v-for="item in statusLegend"
+        :key="item.key"
+        class="flex items-center gap-2"
+      >
+        <span
+          class="h-2.5 w-2.5 rounded-full"
+          :class="item.dotClass"
+        />
+        <span>{{ item.label }}</span>
+      </div>
+    </div>
+
+    <div
       v-if="hasFilteredContent"
       class="divide-y divide-muted-200/80 dark:divide-muted-800/70"
     >
@@ -151,9 +198,9 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
 
             <UBadge
               v-if="!entry.isPending"
-              :color="getStatusMeta(entry.status).color"
               variant="soft"
-              class="rounded-full px-3 py-1.5 gap-1.5 flex items-center"
+              color="neutral"
+              :class="['rounded-full px-3 py-1.5 gap-1.5 flex items-center border', getStatusMeta(entry.status).badgeClass]"
             >
               <UIcon
                 :name="getStatusMeta(entry.status).icon"

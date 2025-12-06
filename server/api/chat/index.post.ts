@@ -10,7 +10,7 @@ import {
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import { enrichMdxWithMetadata, generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
+import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
 import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
@@ -19,12 +19,12 @@ import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, inges
 import { requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
-import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
 import { useDB } from '~~/server/utils/db'
 import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { validateEnum, validateNumber, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
+import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
 
 function buildYouTubeTranscriptErrorMessage(errorData: YouTubeTranscriptErrorData | undefined, hasYouTubeAccount: boolean) {
   const reason = (errorData?.userMessage || 'Unable to fetch transcript.').trim()
@@ -404,7 +404,7 @@ export default defineEventHandler(async (event) => {
         primaryKeyword: generateAction.primaryKeyword ? validateRequiredString(generateAction.primaryKeyword, 'primaryKeyword') : null,
         targetLocale: generateAction.targetLocale ? validateRequiredString(generateAction.targetLocale, 'targetLocale') : null,
         // Default to 'blog_post' if contentType is not provided (most common use case)
-        contentType: generateAction.contentType 
+        contentType: generateAction.contentType
           ? validateEnum(generateAction.contentType, CONTENT_TYPES, 'contentType')
           : DEFAULT_CONTENT_TYPE
       },

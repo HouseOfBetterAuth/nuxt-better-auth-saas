@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { PublishContentResponse } from '~~/server/types/content'
 import type { ChatMessage } from '#shared/utils/types'
+import type { PublishContentResponse } from '~~/server/types/content'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'

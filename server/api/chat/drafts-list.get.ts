@@ -1,6 +1,6 @@
 import { desc, eq, sql } from 'drizzle-orm'
 import * as schema from '~~/server/database/schema'
-import { getAuthSession, getDraftQuotaUsage, requireAuth } from '~~/server/utils/auth'
+import { getDraftQuotaUsage, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'

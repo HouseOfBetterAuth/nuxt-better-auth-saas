@@ -12,7 +12,7 @@ interface RequireActiveOrganizationOptions {
 /**
  * Get the active organization from Better Auth session data.
  * This uses Better Auth's session hooks which inject activeOrganizationId into the session.
- * 
+ *
  * @param event - H3 event
  * @param userId - User ID (for verification, but we get orgId from session)
  * @param options - Options including role requirements and anonymous user handling
@@ -27,9 +27,9 @@ export const requireActiveOrganization = async (
 
   // Get active organization from Better Auth session (set by session.create.before hook)
   const session = await getAuthSession(event)
-  
+
   // Try multiple paths to get activeOrganizationId from session
-  let organizationId = (session?.session as any)?.activeOrganizationId 
+  let organizationId = (session?.session as any)?.activeOrganizationId
     || (session?.data as any)?.session?.activeOrganizationId
     || (session as any)?.activeOrganizationId as string | undefined
 
@@ -56,7 +56,7 @@ export const requireActiveOrganization = async (
         statusMessage: 'No active organization found. Anonymous users need an organization to continue. Please create an account or wait for organization creation to complete.'
       })
     }
-    
+
     throw createError({
       statusCode: 400,
       statusMessage: 'No active organization found in session'

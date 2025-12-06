@@ -1044,7 +1044,7 @@ function generateJsonLdStructuredData(params: {
 }): string {
   const { frontmatter, seoSnapshot, baseUrl } = params
   const schemaTypes = Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes : []
-  
+
   if (!schemaTypes.length) {
     return ''
   }
@@ -1104,22 +1104,22 @@ function generateJsonLdStructuredData(params: {
  */
 function extractRawMarkdownFromEnrichedMdx(enrichedMdx: string): string {
   const trimmed = enrichedMdx.trim()
-  
+
   // If it doesn't start with '---', it's not enriched, return as-is
   if (!trimmed.startsWith('---')) {
     return trimmed
   }
-  
+
   // Find the end of frontmatter block (second '---')
   const frontmatterEnd = trimmed.indexOf('\n---', 3)
   if (frontmatterEnd === -1) {
     // No closing frontmatter, return as-is
     return trimmed
   }
-  
+
   // Extract content after frontmatter
   let content = trimmed.substring(frontmatterEnd + 5).trim()
-  
+
   // Check if there's a JSON-LD script tag and remove it
   const jsonLdStart = content.indexOf('<script type="application/ld+json">')
   if (jsonLdStart !== -1) {
@@ -1131,7 +1131,7 @@ function extractRawMarkdownFromEnrichedMdx(enrichedMdx: string): string {
       content = [before, after].filter(Boolean).join('\n\n')
     }
   }
-  
+
   return content.trim()
 }
 
@@ -1145,19 +1145,19 @@ export function enrichMdxWithMetadata(params: {
   baseUrl?: string
 }): string {
   const { markdown, frontmatter, seoSnapshot, baseUrl } = params
-  
+
   // Extract raw markdown if already enriched
   const rawMarkdown = extractRawMarkdownFromEnrichedMdx(markdown)
-  
+
   const frontmatterBlock = buildFrontmatterBlock(frontmatter)
   const jsonLd = generateJsonLdStructuredData({ frontmatter, seoSnapshot, baseUrl })
-  
+
   const parts: string[] = [frontmatterBlock]
   if (jsonLd) {
     parts.push(jsonLd)
   }
   parts.push(rawMarkdown)
-  
+
   return parts.filter(part => part.trim().length > 0).join('\n\n')
 }
 
@@ -2036,9 +2036,13 @@ export const updateContentSectionWithAI = async (
 
 /**
  * Re-enriches existing content version with frontmatter and JSON-LD
- * 
+ *
  * @param db - Database instance
  * @param params - Parameters for re-enrichment
+ * @param params.organizationId - Organization ID
+ * @param params.userId - User ID
+ * @param params.contentId - Content ID
+ * @param params.baseUrl - Base URL for content
  * @returns Updated content version with enriched MDX
  */
 export async function reEnrichContentVersion(
@@ -2054,7 +2058,7 @@ export async function reEnrichContentVersion(
   version: typeof schema.contentVersion.$inferSelect
   enrichedMdx: string
 }> {
-  const { organizationId, userId, contentId, baseUrl } = params
+  const { organizationId, userId: _userId, contentId, baseUrl } = params
 
   // Fetch content and current version
   const [record] = await db
@@ -2111,7 +2115,7 @@ export async function reEnrichContentVersion(
     const [updatedVersion] = await tx
       .update(schema.contentVersion)
       .set({
-        bodyMdx: enrichedMdx,
+        bodyMdx: enrichedMdx
         // Update updatedAt if there's such a field, otherwise just update bodyMdx
       })
       .where(eq(schema.contentVersion.id, currentVersion.id))
