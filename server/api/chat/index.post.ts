@@ -16,7 +16,7 @@ import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSumma
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
 import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
-import { requireAuth } from '~~/server/utils/auth'
+import { getAuthSession, requireAuth } from '~~/server/utils/auth'
 import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
@@ -146,6 +146,29 @@ export default defineEventHandler(async (event) => {
   const { organizationId } = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous })
   const db = await useDB(event)
 
+  // Try to get organizationId from session first (faster and more reliable)
+  const authSession = await getAuthSession(event)
+  let organizationId: string | null = (authSession?.session as any)?.activeOrganizationId || null
+
+  // If not in session, try to get from database via requireActiveOrganization
+  if (!organizationId) {
+    try {
+      const orgResult = await requireActiveOrganization(event, user.id)
+      organizationId = orgResult.organizationId
+    } catch (error: any) {
+      // If user is anonymous and doesn't have an org yet, throw a helpful error
+      if (user.isAnonymous) {
+        throw createValidationError('Please create an account to use the chat feature. Anonymous users need an organization to continue.')
+      }
+      // For authenticated users, re-throw the error
+      throw error
+    }
+  }
+
+  if (!organizationId) {
+    throw createValidationError('No active organization found. Please create an account or select an organization.')
+  }
+
   const body = await readBody<ChatRequestBody>(event)
 
   validateRequestBody(body)
@@ -166,6 +189,7 @@ export default defineEventHandler(async (event) => {
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
   const readySourceIds = new Set<string>()
+  const suggestedSourceIds = new Set<string>()
 
   const trackReadySource = (source: typeof schema.sourceContent.$inferSelect | null | undefined) => {
     if (!source || !source.id || source.ingestStatus !== 'ingested' || readySourceIds.has(source.id)) {
@@ -236,6 +260,9 @@ export default defineEventHandler(async (event) => {
       url: rawUrl,
       sourceType: classification.sourceType
     })
+    if (record?.id) {
+      suggestedSourceIds.add(record.id)
+    }
 
     seenKeys.add(key)
   }
@@ -263,6 +290,9 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
+        if (manualSource?.id) {
+          suggestedSourceIds.add(manualSource.id)
+        }
         trackReadySource(manualSource)
       }
     }
@@ -288,6 +318,9 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
+        if (manualSource?.id) {
+          suggestedSourceIds.add(manualSource.id)
+        }
         trackReadySource(manualSource)
       }
     }
