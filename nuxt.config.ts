@@ -12,6 +12,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   modules: [
     '@nuxt/ui',
+    '@nuxtjs/mdc',
     '@nuxt/eslint',
     '@nuxtjs/i18n',
     '@nuxtjs/seo',

@@ -1147,48 +1147,8 @@ onBeforeUnmount(() => {
               </div>
               <div
                 v-else-if="message.payload?.type === 'workspace_files' && Array.isArray(message.payload.files)"
-                class="space-y-3"
               >
-                <p class="text-xs uppercase tracking-wide text-muted-500">
-                  Files
-                </p>
-                <UAccordion
-                  :items="message.payload.files.map((file: any) => ({ value: file.id, file }))"
-                  type="single"
-                  collapsible
-                  :ui="{ root: 'space-y-2' }"
-                >
-                  <template #default="{ item }">
-                    <div class="flex items-center justify-between gap-3 py-2">
-                      <div class="min-w-0">
-                        <p class="font-medium truncate">
-                          {{ item.file.filename }}
-                        </p>
-                        <p class="text-xs text-muted-500">
-                          {{ item.file.sectionsCount }} {{ item.file.sectionsCount === 1 ? 'section' : 'sections' }}
-                          · {{ item.file.wordCount }} words
-                        </p>
-                      </div>
-                      <UBadge
-                        size="xs"
-                        color="neutral"
-                        variant="soft"
-                      >
-                        MDX
-                      </UBadge>
-                    </div>
-                  </template>
-                  <template #content="{ item }">
-                    <div class="space-y-3 text-sm">
-                      <p class="text-xs uppercase tracking-wide text-muted-500">
-                        Full MDX
-                      </p>
-                      <pre class="whitespace-pre-wrap text-xs bg-muted px-3 py-2 rounded-md overflow-x-auto max-h-[500px]">
-{{ item.file.fullMdx }}
-                      </pre>
-                    </div>
-                  </template>
-                </UAccordion>
+                <WorkspaceFilesAccordion :files="message.payload.files" />
               </div>
               <div
                 v-else
