@@ -1,10 +1,7 @@
 import type { ContentType } from '#shared/constants/contentTypes'
 import type {
-  ChatActionSuggestion,
-  ChatGenerationResult,
   ChatLogEntry,
   ChatMessage,
-  ChatSourceSnapshot,
   NonEmptyArray
 } from '#shared/utils/types'
 import { useState } from '#app'
@@ -15,11 +12,8 @@ type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
 interface ChatResponse {
   assistantMessage?: string
-  sources?: ChatSourceSnapshot[]
-  generation?: ChatGenerationResult | null
   sessionId?: string | null
   sessionContentId?: string | null
-  actions?: ChatActionSuggestion[]
   messages?: Array<{
     id: string
     role: 'user' | 'assistant' | 'system'
@@ -103,12 +97,8 @@ interface CreateContentFromConversationResponse {
 export function useChatSession() {
   const messages = useState<ChatMessage[]>('chat/messages', () => [])
   const status = useState<ChatStatus>('chat/status', () => 'ready')
-  const actions = useState<ChatActionSuggestion[]>('chat/actions', () => [])
-  const sources = useState<ChatSourceSnapshot[]>('chat/sources', () => [])
-  const generation = useState<ChatGenerationResult | null>('chat/generation', () => null)
   const errorMessage = useState<string | null>('chat/error', () => null)
   const selectedContentType = useState<ContentType>('chat/content-type', () => DEFAULT_CONTENT_TYPE)
-  const activeSourceId = useState<string | null>('chat/active-source-id', () => null)
   const sessionId = useState<string | null>('chat/session-id', () => null)
   const sessionContentId = useState<string | null>('chat/session-content-id', () => null)
   const logs = useState<ChatLogEntry[]>('chat/logs', () => [])
@@ -160,12 +150,6 @@ export function useChatSession() {
         ]
       }
 
-      // Update shared state for sources/actions so the UI can surface suggested steps
-      sources.value = response.sources ?? []
-      const firstSourceId = sources.value[0]?.id ?? null
-      activeSourceId.value = firstSourceId
-      generation.value = response.generation ?? null
-      actions.value = response.actions ?? []
       logs.value = normalizeLogs(response.logs)
       status.value = 'ready'
       return response
@@ -173,7 +157,6 @@ export function useChatSession() {
       status.value = 'error'
       const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Something went wrong.'
       errorMessage.value = errorMsg
-      actions.value = []
 
       // Also add error as a chat message so user can see it
       messages.value.push({
@@ -261,82 +244,6 @@ export function useChatSession() {
     return workspace
   }
 
-  async function generateFromSource(action: ChatActionSuggestion) {
-    if (!action.sourceContentId) {
-      errorMessage.value = 'Missing source reference for this action.'
-      status.value = 'error'
-      return
-    }
-
-    const source = sources.value.find(sourceItem => sourceItem.id === action.sourceContentId)
-
-    if (!source) {
-      status.value = 'error'
-      errorMessage.value = 'Source details not available yet. Try again after a refresh.'
-      return
-    }
-
-    if (source.ingestStatus !== 'ingested') {
-      status.value = 'error'
-      errorMessage.value = 'Still grabbing the transcript for that source. Try again in a moment.'
-      return
-    }
-
-    status.value = 'streaming'
-    errorMessage.value = null
-    activeSourceId.value = action.sourceContentId
-
-    try {
-      const response = await $fetch<ChatGenerationResult>('/api/content/generate', {
-        method: 'POST',
-        body: {
-          sourceContentId: action.sourceContentId,
-          contentType: selectedContentType.value
-        }
-      })
-
-      generation.value = response
-
-      const title = (response as any)?.content?.title
-      const messageContent = title
-        ? `Draft "${title}" created. Open Content to review or publish it.`
-        : 'Draft created from that source. Head to Content to review it.'
-
-      messages.value.push({
-        id: createId(),
-        role: 'assistant' as const,
-        parts: [{ type: 'text' as const, text: messageContent }] as NonEmptyArray<{ type: 'text', text: string }>,
-        createdAt: new Date()
-      })
-
-      status.value = 'ready'
-    } catch (error: any) {
-      status.value = 'error'
-      const errorMsg = error?.data?.statusMessage || error?.message || 'Failed to generate content.'
-      errorMessage.value = errorMsg
-
-      // Also add error as a chat message
-      messages.value.push({
-        id: createId(),
-        role: 'assistant' as const,
-        parts: [{ type: 'text' as const, text: `❌ Error: ${errorMsg}` }] as NonEmptyArray<{ type: 'text', text: string }>,
-        createdAt: new Date()
-      })
-    }
-  }
-
-  async function executeAction(action: ChatActionSuggestion) {
-    if (action.type === 'suggest_generate_from_source') {
-      await generateFromSource(action)
-      return
-    }
-
-    await callChatEndpoint({
-      message: '',
-      action
-    })
-  }
-
   async function createContentFromConversation(payload: CreateContentFromConversationPayload) {
     if (!sessionId.value) {
       throw new Error('Start a conversation before creating content.')
@@ -360,11 +267,7 @@ export function useChatSession() {
   function resetSession() {
     messages.value = []
     status.value = 'ready'
-    actions.value = []
-    sources.value = []
-    generation.value = null
     errorMessage.value = null
-    activeSourceId.value = null
     sessionId.value = null
     sessionContentId.value = null
     logs.value = []
@@ -373,15 +276,10 @@ export function useChatSession() {
   return {
     messages,
     status,
-    actions,
-    sources,
-    generation,
     errorMessage,
     isBusy,
-    activeSourceId,
     selectedContentType,
     sendMessage,
-    executeAction,
     sessionId,
     sessionContentId,
     createContentFromConversation,

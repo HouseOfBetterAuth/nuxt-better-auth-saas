@@ -23,13 +23,6 @@ export interface ChatLogEntry {
   createdAt: Date
 }
 
-export interface ChatActionSuggestion {
-  type: 'suggest_generate_from_source'
-  sourceContentId?: string | null
-  sourceType?: string
-  label?: string
-}
-
 export interface ChatSourceSnapshot {
   id: string
   sourceType: string

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ContentType } from '#shared/constants/contentTypes'
-import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
+import type { ChatMessage } from '#shared/utils/types'
 import { CONTENT_TYPE_OPTIONS } from '#shared/constants/contentTypes'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
 import { shallowRef } from 'vue'
@@ -30,9 +30,8 @@ const {
   sendMessage,
   isBusy,
   sessionContentId,
-  actions,
-  executeAction,
-  resetSession
+  resetSession,
+  selectedContentType
 } = useChatSession()
 
 const prompt = ref('')
@@ -40,8 +39,6 @@ const promptSubmitting = ref(false)
 const showQuotaModal = ref(false)
 const quotaModalData = ref<{ limit: number | null, used: number | null, remaining: number | null, planLabel: string | null } | null>(null)
 const showUpgradeModal = ref(false)
-const selectedContentType = ref<ContentType>(CONTENT_TYPE_OPTIONS[0]?.value ?? 'blog_post')
-
 const selectedContentTypeOption = computed(() => {
   if (!CONTENT_TYPE_OPTIONS.length) {
     return null
@@ -265,37 +262,6 @@ const displayMessages = computed<ChatMessage[]>(() => {
 
   return baseMessages.filter(message => message.id !== THINKING_MESSAGE_ID)
 })
-const actionSuggestions = computed(() => actions.value || [])
-const actionInFlightId = ref<string | null>(null)
-
-const getActionKey = (action: ChatActionSuggestion, index?: number) => action.sourceContentId || `${action.type}-${index ?? 0}`
-
-const getActionLabel = (action: ChatActionSuggestion) => {
-  if (action.label) {
-    return action.label
-  }
-  if (action.sourceType === 'youtube') {
-    return 'Create draft from video'
-  }
-  if (action.sourceType === 'manual_transcript') {
-    return 'Create draft from transcript'
-  }
-  return 'Start draft in workspace'
-}
-
-const handleActionSuggestionClick = async (action: ChatActionSuggestion, keyOverride?: string) => {
-  if (isBusy.value) {
-    return
-  }
-  const key = keyOverride || getActionKey(action)
-  actionInFlightId.value = key
-  try {
-    await executeAction(action)
-    actions.value = (actions.value || []).filter(existing => existing !== action && existing.sourceContentId !== action.sourceContentId)
-  } finally {
-    actionInFlightId.value = null
-  }
-}
 
 const handleWhatsNewSelect = (payload: { id: 'youtube' | 'transcript' | 'seo', command?: string }) => {
   if (!payload) {
@@ -1026,31 +992,6 @@ if (import.meta.client) {
               <ChatWhatsNewRow @select="handleWhatsNewSelect" />
             </div>
 
-            <!-- Draft creation - only show when there are messages -->
-            <div
-              v-if="messages.length && actionSuggestions.length"
-              class="space-y-3 mt-6"
-            >
-              <div class="space-y-2">
-                <p class="text-xs text-muted-500 text-center">
-                  Next steps suggested by Quillio
-                </p>
-                <div class="flex flex-wrap items-center justify-center gap-2">
-                  <UButton
-                    v-for="(action, index) in actionSuggestions"
-                    :key="getActionKey(action, index)"
-                    color="primary"
-                    variant="soft"
-                    icon="i-lucide-wand-sparkles"
-                    :loading="actionInFlightId === getActionKey(action, index)"
-                    :disabled="isBusy"
-                    @click="handleActionSuggestionClick(action, getActionKey(action, index))"
-                  >
-                    {{ getActionLabel(action) }}
-                  </UButton>
-                </div>
-              </div>
-            </div>
           </div>
         </template>
       </div>

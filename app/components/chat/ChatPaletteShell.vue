@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatActionSuggestion, ChatMessage } from '#shared/utils/types'
+import type { ChatMessage } from '#shared/utils/types'
 import { useClipboard } from '@vueuse/core'
 import { computed, ref } from 'vue'
 
@@ -12,19 +12,16 @@ const props = withDefaults(defineProps<{
   title?: string
   placeholder?: string
   disabled?: boolean
-  actions?: ChatActionSuggestion[]
 }>(), {
   status: 'ready',
   title: 'Codex Chat',
   placeholder: 'Ask anything…',
-  disabled: false,
-  actions: () => []
+  disabled: false
 })
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
   'submit': [value: string]
-  'action': [value: ChatActionSuggestion]
   'regenerate': [message: ChatMessage]
 }>()
 
@@ -41,10 +38,6 @@ function handleSubmit(value: string) {
   }
   emit('submit', trimmed)
   prompt.value = ''
-}
-
-function handleAction(action: ChatActionSuggestion) {
-  emit('action', action)
 }
 
 function handleCopy(message: ChatMessage) {
@@ -132,28 +125,6 @@ function handleRegenerate(message: ChatMessage) {
             </div>
           </template>
         </UChatMessages>
-
-        <div
-          v-if="actions.length"
-          class="px-4 py-3"
-        >
-          <div class="mb-2 text-sm font-medium">
-            Suggested actions
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-for="(action, index) in actions"
-              :key="`${action.type}-${action.sourceContentId ?? 'none'}-${index}`"
-              variant="soft"
-              size="sm"
-              icon="i-lucide-wand-sparkles"
-              :disabled="disabled"
-              @click="handleAction(action)"
-            >
-              {{ action.label || 'Start a draft' }}
-            </UButton>
-          </div>
-        </div>
 
         <template #prompt>
           <UChatPrompt

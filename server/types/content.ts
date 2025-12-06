@@ -23,6 +23,8 @@ export interface GenerateContentDraftFromSourceRequestBody {
   sourceContentId?: string | null
   /** ID of existing content to regenerate/update */
   contentId?: string | null
+  /** Optional chat session to attach generation messages to */
+  sessionId?: string | null
   /** Override title for the generated content */
   title?: string | null
   /** Override slug for the generated content */
@@ -85,6 +87,10 @@ export interface GenerateContentDraftFromSourceResponse {
       generatedSections: number
     }
   }
+  /** Chat session associated with the generation, if available */
+  sessionId?: string | null
+  /** Content ID linked to the chat session */
+  sessionContentId?: string | null
 }
 
 /**

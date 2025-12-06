@@ -1,4 +1,3 @@
-import type { ChatActionSuggestion } from '#shared/utils/types'
 import type { YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
@@ -339,20 +338,16 @@ export default defineEventHandler(async (event) => {
     sourceType: string
   }> = []
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
-  const actionSuggestions: ChatActionSuggestion[] = []
-  const suggestedSourceIds = new Set<string>()
+  const readySources: typeof schema.sourceContent.$inferSelect[] = []
+  const readySourceIds = new Set<string>()
 
-  const addDraftSuggestionForSource = (source: typeof schema.sourceContent.$inferSelect | null | undefined, label?: string) => {
-    if (!source || !source.id || source.ingestStatus !== 'ingested' || suggestedSourceIds.has(source.id)) {
+  const trackReadySource = (source: typeof schema.sourceContent.$inferSelect | null | undefined) => {
+    if (!source || !source.id || source.ingestStatus !== 'ingested' || readySourceIds.has(source.id)) {
       return
     }
-    actionSuggestions.push({
-      type: 'suggest_generate_from_source',
-      sourceContentId: source.id,
-      sourceType: source.sourceType ?? undefined,
-      label: label || (source.sourceType === 'youtube' ? 'Draft from this YouTube video' : 'Draft from this transcript')
-    })
-    suggestedSourceIds.add(source.id)
+
+    readySources.push(source)
+    readySourceIds.add(source.id)
   }
 
   for (const rawUrl of urls) {
@@ -389,7 +384,7 @@ export default defineEventHandler(async (event) => {
           userId: user.id,
           videoId: classification.externalId
         })
-        addDraftSuggestionForSource(record)
+        trackReadySource(record)
       } catch (error: any) {
         const errorData = error?.data as YouTubeTranscriptErrorData | undefined
         if (errorData?.transcriptFailed) {
@@ -442,7 +437,7 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
-        addDraftSuggestionForSource(manualSource)
+        trackReadySource(manualSource)
       }
     }
   } else if (message.trim().length > 500 && !urls.length) {
@@ -467,7 +462,7 @@ export default defineEventHandler(async (event) => {
           url: '',
           sourceType: 'manual_transcript'
         })
-        addDraftSuggestionForSource(manualSource)
+        trackReadySource(manualSource)
       }
     }
   }
@@ -507,7 +502,7 @@ export default defineEventHandler(async (event) => {
   if (sessionSourceId && !suggestedSourceIds.has(sessionSourceId)) {
     const existingSource = processedSources.find(item => item.source.id === sessionSourceId)?.source
     if (existingSource) {
-      addDraftSuggestionForSource(existingSource)
+      trackReadySource(existingSource)
     } else {
       const [sessionSource] = await db
         .select()
@@ -518,7 +513,7 @@ export default defineEventHandler(async (event) => {
         ))
         .limit(1)
       if (sessionSource) {
-        addDraftSuggestionForSource(sessionSource)
+        trackReadySource(sessionSource)
       }
     }
   }
@@ -873,6 +868,20 @@ Keep it concise (2-3 sentences) and conversational.`
     assistantMessages.push(`Updated "${sectionLabel}". Refresh the draft to review the latest changes.`)
   }
 
+  if (!generationResult && readySources.length) {
+    const sourceSummaries = readySources.map((source) => {
+      const title = typeof source.title === 'string' && source.title.trim() ? source.title.trim() : null
+      const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
+      return title ? `${title} (${typeLabel})` : typeLabel
+    })
+
+    if (sourceSummaries.length === 1) {
+      assistantMessages.push(`I grabbed the transcript for ${sourceSummaries[0]}. Want me to start a draft from it?`)
+    } else {
+      assistantMessages.push(`I grabbed transcripts for these sources:\n- ${sourceSummaries.join('\n- ')}\nTell me which one to start drafting.`)
+    }
+  }
+
   if (assistantMessages.length === 0) {
     assistantMessages.push('Got it. I\'m ready whenever you want to start a draft or share a link.')
   }
@@ -940,7 +949,6 @@ Keep it concise (2-3 sentences) and conversational.`
       message: log.message,
       payload: log.payload,
       createdAt: log.createdAt
-    })),
-    actions: actionSuggestions
+    }))
   }
 })
