@@ -840,6 +840,39 @@ function handleCopy(message: ChatMessage) {
   })
 }
 
+async function handleShare(message: ChatMessage) {
+  const text = getMessageText(message)
+  if (!text.trim()) {
+    toast.add({
+      title: 'Nothing to share',
+      description: 'This message has no text content to share.',
+      color: 'error'
+    })
+    return
+  }
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      await navigator.share({ text })
+      toast.add({
+        title: 'Shared',
+        description: 'Message sent to your share target.',
+        color: 'primary'
+      })
+      return
+    }
+  } catch (error) {
+    console.warn('Navigator share failed, falling back to copy', error)
+  }
+
+  copy(text)
+  toast.add({
+    title: 'Copied to clipboard',
+    description: 'Message copied for sharing.',
+    color: 'primary'
+  })
+}
+
 function openMessageActions(message: ChatMessage, event?: Event) {
   if (event) {
     event.preventDefault()
@@ -1145,7 +1178,7 @@ if (import.meta.client) {
               variant="ghost"
               block
               icon="i-lucide-share"
-              disabled
+              @click="messageActionSheetTarget && handleShare(messageActionSheetTarget); closeMessageActionSheet()"
             >
               Share
             </UButton>

@@ -440,9 +440,20 @@ watch(content, (value) => {
 }, { immediate: true })
 
 const title = computed(() => contentRecord.value?.title || 'Untitled draft')
+const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
 const generatedContent = computed(() => currentVersion.value?.bodyMdx || currentVersion.value?.bodyHtml || null)
 const hasGeneratedContent = computed(() => !!generatedContent.value)
-const frontmatter = computed(() => currentVersion.value?.frontmatter || null)
+const fullMdx = computed(() => {
+  const body = typeof generatedContent.value === 'string' ? generatedContent.value.trim() : ''
+  const frontmatterBlock = _buildFrontmatterBlock(frontmatter.value || {})
+  const parts = [frontmatterBlock, body].filter(part => typeof part === 'string' && part.trim().length)
+  return parts.join('\n\n')
+})
+const hasFullMdx = computed(() => fullMdx.value.trim().length > 0)
+const exportFilename = computed(() => {
+  const slug = frontmatter.value?.slug || contentRecord.value?.id || 'draft'
+  return `${slug}.mdx`
+})
 const contentDisplayTitle = computed(() => frontmatter.value?.seoTitle || frontmatter.value?.title || title.value)
 const seoSnapshot = computed(() => currentVersion.value?.seoSnapshot || null)
 const generatorDetails = computed(() => currentVersion.value?.assets?.generator || null)
@@ -543,13 +554,12 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
       contentId: headerData.value.contentId || contentId.value || null,
       showBackButton: showBackButton.value,
       onBack: showBackButton.value ? handleBackNavigation : null,
-      // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
       onArchive: null,
-      onShare: null,
-      onPrimaryAction: null,
-      primaryActionLabel: '',
-      primaryActionColor: '',
-      primaryActionDisabled: false
+      onShare: hasFullMdx.value ? handleCopyFullMdx : null,
+      onPrimaryAction: hasFullMdx.value ? handleDownloadFullMdx : null,
+      primaryActionLabel: 'Download MDX',
+      primaryActionColor: 'primary',
+      primaryActionDisabled: !hasFullMdx.value
     }
   }
 
@@ -569,13 +579,12 @@ const headerPayload = computed<WorkspaceHeaderState | null>(() => {
     contentId: contentRecord.value.id || contentId.value || null,
     showBackButton: showBackButton.value,
     onBack: showBackButton.value ? handleBackNavigation : null,
-    // Mobile-focused: removed Archive, Share, and PrimaryAction buttons
     onArchive: null,
-    onShare: null,
-    onPrimaryAction: null,
-    primaryActionLabel: '',
-    primaryActionColor: '',
-    primaryActionDisabled: false
+    onShare: hasFullMdx.value ? handleCopyFullMdx : null,
+    onPrimaryAction: hasFullMdx.value ? handleDownloadFullMdx : null,
+    primaryActionLabel: 'Download MDX',
+    primaryActionColor: 'primary',
+    primaryActionDisabled: !hasFullMdx.value
   }
 })
 
@@ -829,6 +838,104 @@ function handleCopy(message: ChatMessage) {
       color: 'error'
     })
   }
+}
+
+async function handleShare(message: ChatMessage) {
+  const rawText = message.parts[0]?.text ?? ''
+  const hasContent = rawText.trim().length > 0
+
+  if (!hasContent) {
+    toast.add({
+      title: 'Nothing to share',
+      description: 'This message has no text content to share.',
+      color: 'error'
+    })
+    return
+  }
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      await navigator.share({ text: rawText })
+      toast.add({
+        title: 'Shared',
+        description: 'Message sent to your share target.',
+        color: 'primary'
+      })
+      return
+    }
+  } catch (error) {
+    console.warn('Navigator share failed, falling back to copy', error)
+  }
+
+  try {
+    copy(rawText)
+    toast.add({
+      title: 'Copied to clipboard',
+      description: 'Message copied for sharing.',
+      color: 'primary'
+    })
+  } catch (error) {
+    console.error('Failed to share message', error)
+    toast.add({
+      title: 'Share failed',
+      description: 'Could not share this message.',
+      color: 'error'
+    })
+  }
+}
+
+function handleCopyFullMdx() {
+  if (!hasFullMdx.value) {
+    toast.add({
+      title: 'No MDX available',
+      description: 'Generate content before copying the draft.',
+      color: 'error'
+    })
+    return
+  }
+
+  try {
+    copy(fullMdx.value)
+    toast.add({
+      title: 'Draft copied',
+      description: 'Frontmatter and body copied to clipboard.',
+      color: 'primary'
+    })
+  } catch (error) {
+    console.error('Failed to copy MDX', error)
+    toast.add({
+      title: 'Copy failed',
+      description: 'Could not copy the MDX draft.',
+      color: 'error'
+    })
+  }
+}
+
+function handleDownloadFullMdx() {
+  if (!hasFullMdx.value) {
+    toast.add({
+      title: 'No MDX available',
+      description: 'Generate content before downloading.',
+      color: 'error'
+    })
+    return
+  }
+
+  const blob = new Blob([fullMdx.value], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = exportFilename.value
+  anchor.rel = 'noopener'
+  anchor.click()
+  URL.revokeObjectURL(url)
+  anchor.remove()
+
+  toast.add({
+    title: 'Download started',
+    description: `${exportFilename.value} saved to your device.`,
+    color: 'primary'
+  })
 }
 
 function handleRegenerate(message: ChatMessage) {

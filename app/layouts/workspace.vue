@@ -93,6 +93,41 @@ useHead(() => ({
                   </span>
                 </div>
               </div>
+              <div
+                v-if="workspaceHeader.onArchive || workspaceHeader.onShare || workspaceHeader.onPrimaryAction"
+                class="flex items-center gap-2 flex-wrap justify-end"
+              >
+                <UButton
+                  v-if="workspaceHeader.onShare"
+                  icon="i-lucide-share"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  @click="workspaceHeader.onShare?.()"
+                >
+                  Copy MDX
+                </UButton>
+                <UButton
+                  v-if="workspaceHeader.onArchive"
+                  icon="i-lucide-archive"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  @click="workspaceHeader.onArchive?.()"
+                >
+                  Archive
+                </UButton>
+                <UButton
+                  v-if="workspaceHeader.onPrimaryAction"
+                  :color="workspaceHeader.primaryActionColor || 'primary'"
+                  icon="i-lucide-download"
+                  size="sm"
+                  :disabled="workspaceHeader.primaryActionDisabled"
+                  @click="workspaceHeader.onPrimaryAction?.()"
+                >
+                  {{ workspaceHeader.primaryActionLabel || 'Continue' }}
+                </UButton>
+              </div>
             </div>
             <div
               v-if="workspaceHeader.tabs"
