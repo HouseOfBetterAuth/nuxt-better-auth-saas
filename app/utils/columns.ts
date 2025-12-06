@@ -53,8 +53,18 @@ export const createDateColumn = <T>(
  */
 export const dateColumn = <T>(cell: ColumnCell<T>) => {
   const value = cell.getValue() as Date | string
+  const date = new Date(value)
+
+  // Handle invalid dates
+  if (Number.isNaN(date.getTime())) {
+    return '—'
+  }
+
   // Fallback formatter when composable is not available
-  return new Date(value).toLocaleString('en-US', {
+  // Use browser's default locale if available, otherwise fallback to en-US
+  const locale = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US'
+
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

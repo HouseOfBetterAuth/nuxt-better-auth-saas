@@ -45,46 +45,81 @@ export const useDate = () => {
    * Convert Intl.DateTimeFormatOptions to date-fns format string
    */
   const optionsToFormatString = (options: Intl.DateTimeFormatOptions): string => {
-    const parts: string[] = []
+    const dateParts: string[] = []
+    const timeParts: string[] = []
 
     // Month
     if (options.month === 'short') {
-      parts.push('MMM')
+      dateParts.push('MMM')
     } else if (options.month === 'long') {
-      parts.push('MMMM')
-    } else if (options.month === 'numeric' || options.month === '2-digit') {
-      parts.push('M')
+      dateParts.push('MMMM')
+    } else if (options.month === 'numeric') {
+      dateParts.push('M')
+    } else if (options.month === '2-digit') {
+      dateParts.push('MM')
     }
 
     // Day
-    if (options.day === 'numeric' || options.day === '2-digit') {
-      parts.push('d')
+    if (options.day === 'numeric') {
+      dateParts.push('d')
+    } else if (options.day === '2-digit') {
+      dateParts.push('dd')
     }
 
     // Year
     if (options.year === 'numeric') {
-      parts.push('yyyy')
+      dateParts.push('yyyy')
     } else if (options.year === '2-digit') {
-      parts.push('yy')
+      dateParts.push('yy')
     }
 
     // Time components
     if (options.hour) {
       const hourFormat = options.hour === '2-digit' ? 'hh' : 'h'
-      parts.push(hourFormat)
+      timeParts.push(hourFormat)
     }
 
     if (options.minute) {
       const minuteFormat = options.minute === '2-digit' ? 'mm' : 'm'
-      parts.push(minuteFormat)
+      timeParts.push(minuteFormat)
     }
 
     // AM/PM
     if (options.hour && options.hour12 !== false) {
-      parts.push('a')
+      timeParts.push('a')
     }
 
-    return parts.join(' ')
+    // Build format string with proper separators
+    let formatStr = ''
+
+    // Date part
+    if (dateParts.length > 0) {
+      if (dateParts.length === 3 && options.month === 'short') {
+        // Format: "MMM d, yyyy" or "MMM d, yy"
+        formatStr = `${dateParts[0]} ${dateParts[1]}, ${dateParts[2]}`
+      } else {
+        formatStr = dateParts.join(' ')
+      }
+    }
+
+    // Time part
+    if (timeParts.length > 0) {
+      // Separate time components from AM/PM
+      const hasAmPm = timeParts[timeParts.length - 1] === 'a'
+      const timeComponents = hasAmPm ? timeParts.slice(0, -1) : timeParts
+      const amPm = hasAmPm ? ' a' : ''
+
+      // Join hour and minute with colon
+      const timeStr = timeComponents.join(':') + amPm
+
+      if (formatStr) {
+        formatStr += ` ${timeStr}`
+      } else {
+        formatStr = timeStr
+      }
+    }
+
+    return formatStr || 'PPpp' // Fallback to date-fns default format
   }
 
   /**
