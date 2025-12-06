@@ -61,8 +61,10 @@ async function fetchInvoices(loadMore = false) {
   }
 }
 
+const { formatDateShort } = useDate()
+
 function formatDate(timestamp: number) {
-  return new Date(timestamp * 1000).toLocaleDateString()
+  return formatDateShort(new Date(timestamp * 1000))
 }
 
 function formatAmount(amount: number, currency: string) {

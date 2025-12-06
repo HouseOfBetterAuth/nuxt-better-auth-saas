@@ -20,6 +20,8 @@ const props = defineProps<{
   showDescription?: boolean
 }>()
 
+const { formatDateShort } = useDate()
+
 // Helper to calculate the recurring amount
 const recurringAmount = computed(() => {
   if (!props.planConfig)
@@ -52,7 +54,7 @@ const additionalSeatsCount = computed(() => {
         You are removing {{ currentSeats - targetSeats }} seat(s).
         <span v-if="preview.periodEnd">
           Your new rate will be <strong>${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}</strong>
-          starting on {{ new Date(preview.periodEnd * 1000).toLocaleDateString() }}.
+          starting on {{ formatDateShort(new Date(preview.periodEnd * 1000)) }}.
         </span>
       </template>
     </p>

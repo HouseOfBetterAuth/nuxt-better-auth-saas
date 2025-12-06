@@ -25,6 +25,8 @@ const props = defineProps<{
   isTrialing?: boolean
 }>()
 
+const { formatDateShort } = useDate()
+
 // Calculate credit from unused monthly time
 const creditAmount = computed(() => {
   if (!props.preview?.lines)
@@ -187,7 +189,7 @@ const currentIntervalLabel = computed(() => {
       >
         <div class="flex justify-between">
           <span>Next billing date:</span>
-          <strong>{{ new Date(preview.periodEnd * 1000).toLocaleDateString() }}</strong>
+          <strong>{{ formatDateShort(new Date(preview.periodEnd * 1000)) }}</strong>
         </div>
       </div>
     </div>
@@ -202,7 +204,7 @@ const currentIntervalLabel = computed(() => {
         v-if="preview.periodEnd"
         class="mt-1"
       >
-        Change scheduled for <strong>{{ new Date(preview.periodEnd * 1000).toLocaleDateString() }}</strong>.
+        Change scheduled for <strong>{{ formatDateShort(new Date(preview.periodEnd * 1000)) }}</strong>.
       </p>
     </div>
   </div>

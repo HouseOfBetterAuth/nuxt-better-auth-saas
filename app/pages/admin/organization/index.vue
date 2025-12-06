@@ -4,6 +4,7 @@ import type { Organization } from '~~/shared/utils/types'
 import { h, resolveComponent } from 'vue'
 
 const { t } = useI18n()
+const { formatDateShort } = useDate()
 const UButton = resolveComponent('UButton')
 const UAvatar = resolveComponent('UAvatar')
 const UIcon = resolveComponent('UIcon')
@@ -104,7 +105,7 @@ const columns: AdminTableColumn<any>[] = [
   {
     accessorKey: 'createdAt',
     header: t('global.page.createdAt'),
-    cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString()
+    cell: ({ row }) => formatDateShort(new Date(row.original.createdAt))
   }
 ]
 

@@ -16,6 +16,7 @@ interface AuditLog {
 }
 
 const { t } = useI18n()
+const { formatDateShort } = useDate()
 
 const filters: AdminTableFilter[] = reactive([
   {
@@ -91,7 +92,7 @@ const columns: AdminTableColumn<AuditLog>[] = [
   {
     accessorKey: 'createdAt',
     header: t('global.page.createdAt'),
-    cell: dateColumn
+    cell: createDateColumn(formatDateShort)
   }
 ]
 

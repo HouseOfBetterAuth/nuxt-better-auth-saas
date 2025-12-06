@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { WorkspaceHeaderState } from '~/components/chat/workspaceHeader'
 
+const { formatDateRelative } = useDate()
+
 interface DraftEntry {
   id: string
   title: string
@@ -100,12 +102,7 @@ const contentEntry = computed<DraftEntry | null>(() => {
 // Update workspace header when content loads
 watch(contentEntry, (entry) => {
   if (entry) {
-    const updatedAtLabel = entry.updatedAt
-      ? new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short'
-        }).format(entry.updatedAt)
-      : '—'
+    const updatedAtLabel = formatDateRelative(entry.updatedAt, { includeTime: true })
 
     workspaceHeader.value = {
       title: entry.title,
@@ -137,17 +134,6 @@ watchEffect(() => {
     workspaceHeaderLoading.value = pending.value
   }
 })
-
-const formatUpdatedAt = (date: Date | null) => {
-  if (!date) {
-    return '—'
-  }
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  })
-}
 </script>
 
 <template>
@@ -190,7 +176,7 @@ const formatUpdatedAt = (date: Date | null) => {
           </UBadge>
         </div>
         <div class="text-xs text-muted-500 flex flex-wrap items-center gap-1">
-          <span>{{ formatUpdatedAt(contentEntry.updatedAt) }}</span>
+          <span>{{ formatDateRelative(contentEntry.updatedAt) }}</span>
           <span>·</span>
           <span class="capitalize">
             {{ contentEntry.contentType || 'content' }}

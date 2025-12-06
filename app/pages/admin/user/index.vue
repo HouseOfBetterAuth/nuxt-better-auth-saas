@@ -5,6 +5,7 @@ import BanUserModal from './components/BanUserModal.vue'
 import CreateUserModal from './components/CreateUserModal.vue'
 
 const { t } = useI18n()
+const { formatDateShort } = useDate()
 const { client, user: currentUser } = useAuth()
 const toast = useToast()
 const isUserModalOpen = ref(false)
@@ -168,7 +169,7 @@ const columns: AdminTableColumn<User>[] = [
   {
     accessorKey: 'createdAt',
     header: t('global.page.createdAt'),
-    cell: dateColumn
+    cell: createDateColumn(formatDateShort)
   },
   {
     id: 'actions',

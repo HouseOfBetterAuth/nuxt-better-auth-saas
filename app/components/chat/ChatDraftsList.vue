@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { formatDateRelative } = useDate()
+
 interface DraftEntry {
   id: string
   title: string
@@ -107,17 +109,6 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
   if (deltaX < -SWIPE_THRESHOLD && Math.abs(deltaY) < SWIPE_VERTICAL_THRESHOLD)
     handleArchiveEntry(entry)
 }
-
-const formatUpdatedAt = (date: Date | null) => {
-  if (!date) {
-    return '—'
-  }
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  })
-}
 </script>
 
 <template>
@@ -192,7 +183,7 @@ const formatUpdatedAt = (date: Date | null) => {
             v-if="!entry.isPending"
             class="text-sm text-muted-400 flex flex-wrap items-center gap-1"
           >
-            <span>{{ formatUpdatedAt(entry.updatedAt) }}</span>
+            <span>{{ formatDateRelative(entry.updatedAt) }}</span>
             <span>·</span>
             <span class="capitalize">
               {{ entry.contentType || 'content' }}

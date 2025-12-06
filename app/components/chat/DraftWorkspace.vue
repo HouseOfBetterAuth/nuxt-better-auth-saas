@@ -5,6 +5,24 @@ import { useClipboard } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PromptComposer from './PromptComposer.vue'
 
+const props = withDefaults(defineProps<{
+  contentId: string
+  organizationSlug?: string | null
+  backTo?: string | null
+  showBackButton?: boolean
+  initialPayload?: ContentResponse | null
+}>(), {
+  showBackButton: true,
+  initialPayload: null
+})
+
+const emit = defineEmits<{
+  (event: 'close'): void
+  (event: 'ready'): void
+}>()
+
+const { formatDateRelative } = useDate()
+
 type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
 
 interface ContentVersionSection {
@@ -109,21 +127,6 @@ interface ContentResponse {
   workspaceSummary?: string | null
 }
 
-const props = withDefaults(defineProps<{
-  contentId: string
-  organizationSlug?: string | null
-  backTo?: string | null
-  showBackButton?: boolean
-  initialPayload?: ContentResponse | null
-}>(), {
-  showBackButton: true,
-  initialPayload: null
-})
-const emit = defineEmits<{
-  (event: 'close'): void
-  (event: 'ready'): void
-}>()
-
 const currentRoute = useRoute()
 const router = useRouter()
 const _slug = computed(() => {
@@ -222,12 +225,7 @@ async function loadHeaderData() {
 
     // Use cached data immediately - no API call needed!
     const updatedAt = cached.content?.updatedAt
-    const updatedAtLabel = updatedAt
-      ? new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short'
-        }).format(new Date(updatedAt))
-      : '—'
+    const updatedAtLabel = formatDateRelative(updatedAt, { includeTime: true })
 
     const contentType = cached.currentVersion?.frontmatter?.contentType || cached.content?.contentType || null
     const title = cached.content?.title || 'Untitled draft'
@@ -499,28 +497,8 @@ const mentionableSections = computed(() => sections.value.map(section => ({
 })))
 const messageBodyClass = 'text-[15px] leading-6 text-muted-800 dark:text-muted-100'
 
-// Date formatting utilities (must be declared before computed properties)
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short'
-})
-
-function formatDate(value: string | Date | null | undefined) {
-  if (!value) {
-    return '—'
-  }
-
-  const date = typeof value === 'string' ? new Date(value) : value
-  if (!date || Number.isNaN(date.getTime())) {
-    return '—'
-  }
-
-  return dateFormatter.format(date)
-}
-
 const contentUpdatedAtLabel = computed(() => {
-  const value = contentRecord.value?.updatedAt
-  return value ? formatDate(value) : '—'
+  return formatDateRelative(contentRecord.value?.updatedAt, { includeTime: true })
 })
 
 const diffStats = computed(() => {

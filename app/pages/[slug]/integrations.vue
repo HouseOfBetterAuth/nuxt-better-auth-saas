@@ -2,6 +2,8 @@
 import { GITHUB_INTEGRATION_SCOPES } from '#shared/constants/githubScopes'
 import { GOOGLE_INTEGRATION_SCOPES } from '#shared/constants/googleScopes'
 
+const { formatDateRelative } = useDate()
+
 definePageMeta({
   layout: 'settings'
 })
@@ -505,7 +507,7 @@ if (import.meta.client) {
               <p>
                 Last updated:
                 <strong>
-                  {{ youtubeIntegration?.updatedAt ? new Date(youtubeIntegration.updatedAt).toLocaleString() : '—' }}
+                  {{ formatDateRelative(youtubeIntegration?.updatedAt, { includeTime: true }) }}
                 </strong>
               </p>
             </div>
@@ -578,7 +580,7 @@ if (import.meta.client) {
               <p>
                 Last updated:
                 <strong>
-                  {{ githubIntegration?.updatedAt ? new Date(githubIntegration.updatedAt).toLocaleString() : '—' }}
+                  {{ formatDateRelative(githubIntegration?.updatedAt, { includeTime: true }) }}
                 </strong>
               </p>
             </div>
@@ -651,7 +653,7 @@ if (import.meta.client) {
               <p>
                 Last updated:
                 <strong>
-                  {{ googleDriveIntegration?.updatedAt ? new Date(googleDriveIntegration.updatedAt).toLocaleString() : '—' }}
+                  {{ formatDateRelative(googleDriveIntegration?.updatedAt, { includeTime: true }) }}
                 </strong>
               </p>
             </div>

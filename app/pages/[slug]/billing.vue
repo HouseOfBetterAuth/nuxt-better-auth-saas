@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { PLANS } from '~~/shared/utils/plans'
 
+const { formatDateShort } = useDate()
+
 definePageMeta({
   layout: 'settings'
 })
@@ -164,13 +166,13 @@ const trialInfo = computed(() => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
   return {
     daysLeft: diffDays > 0 ? diffDays : 0,
-    endDate: trialEnd.toLocaleDateString()
+    endDate: formatDateShort(trialEnd)
   }
 })
 
 const nextChargeDate = computed(() => {
   if (activeSub.value?.periodEnd) {
-    return new Date(activeSub.value.periodEnd).toLocaleDateString()
+    return formatDateShort(new Date(activeSub.value.periodEnd))
   }
   return null
 })

@@ -56,9 +56,11 @@ const currentSubPlanConfig = computed(() => {
   return match
 })
 
+const { formatDateShort } = useDate()
+
 const nextChargeDate = computed(() => {
   if ((activeStripeSubscription.value as any)?.periodEnd) {
-    return new Date((activeStripeSubscription.value as any).periodEnd).toLocaleDateString()
+    return formatDateShort(new Date((activeStripeSubscription.value as any).periodEnd))
   }
   return null
 })

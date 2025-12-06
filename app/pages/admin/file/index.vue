@@ -13,6 +13,7 @@ type FileWithUser = FileRecord & {
 }
 
 const { t } = useI18n()
+const { formatDateShort } = useDate()
 const toast = useToast()
 const { refresh } = useAdminTable()
 
@@ -161,7 +162,7 @@ const columns: AdminTableColumn<FileWithUser>[] = [
   {
     accessorKey: 'createdAt',
     header: t('fileManager.uploadedAt'),
-    cell: dateColumn
+    cell: createDateColumn(formatDateShort)
   },
   {
     id: 'actions',
