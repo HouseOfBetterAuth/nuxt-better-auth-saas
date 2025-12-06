@@ -32,7 +32,8 @@ const {
   sessionContentId,
   resetSession,
   selectedContentType,
-  stopResponse
+  stopResponse,
+  logs
 } = useChatSession()
 
 const prompt = ref('')
