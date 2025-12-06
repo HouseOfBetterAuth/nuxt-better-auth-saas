@@ -31,7 +31,8 @@ const {
   isBusy,
   sessionContentId,
   resetSession,
-  selectedContentType
+  selectedContentType,
+  stopResponse
 } = useChatSession()
 
 const prompt = ref('')
@@ -97,6 +98,7 @@ const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = shallowRef<any | null>(null)
 const workspaceLoading = ref(false)
 const archivingDraftId = ref<string | null>(null)
+const pendingDrafts = ref<Array<{ id: string, contentType: string | null }>>([])
 const draftQuotaState = useState<DraftQuotaUsagePayload | null>('draft-quota-usage', () => null)
 const workspacePayloadCache = useState<Record<string, { payload: any | null, timestamp: number }>>('workspace-payload-cache', () => ({}))
 const WORKSPACE_CACHE_TTL_MS = 30_000
@@ -177,7 +179,7 @@ watch(draftQuotaUsage, (value) => {
   }
 }, { immediate: true, deep: true })
 
-const contentEntries = computed(() => {
+const fetchedContentEntries = computed(() => {
   const list = Array.isArray(workspaceDraftsPayload.value?.contents) ? workspaceDraftsPayload.value?.contents : []
   return list.map((entry: any) => {
     // Support new lightweight format with _computed fields
@@ -236,6 +238,54 @@ const contentEntries = computed(() => {
       deletions: Number.isFinite(deletions) ? deletions : undefined
     }
   })
+})
+
+const pendingContentEntries = computed(() => {
+  const existingIds = new Set(fetchedContentEntries.value.map(entry => entry.id))
+
+  return pendingDrafts.value
+    .filter(entry => entry.id && !existingIds.has(entry.id))
+    .map(entry => ({
+      id: entry.id,
+      title: '',
+      slug: '',
+      status: 'generating',
+      updatedAt: null,
+      contentType: entry.contentType || 'content',
+      additions: 0,
+      deletions: 0,
+      isPending: true
+    }))
+})
+
+const contentEntries = computed(() => {
+  return [
+    ...pendingContentEntries.value,
+    ...fetchedContentEntries.value
+  ]
+})
+
+watch(sessionContentId, (value, previous) => {
+  if (!value || value === previous)
+    return
+
+  const alreadyPresent = fetchedContentEntries.value.some(entry => entry.id === value)
+    || pendingDrafts.value.some(entry => entry.id === value)
+
+  if (alreadyPresent)
+    return
+
+  pendingDrafts.value = [
+    { id: value, contentType: selectedContentType.value || null },
+    ...pendingDrafts.value
+  ]
+
+  debouncedRefreshDrafts()
+})
+
+watch(fetchedContentEntries, (entries) => {
+  const presentIds = new Set(entries.map(entry => entry.id))
+  pendingDrafts.value = pendingDrafts.value.filter(entry => !presentIds.has(entry.id))
 })
 
 const activeWorkspaceEntry = computed(() => contentEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
@@ -679,6 +729,24 @@ const archiveDraft = async (entry: { id: string, title?: string | null }) => {
   }
 }
 
+const stopWorkingDraft = (entry: { id: string }) => {
+  if (!entry?.id || entry.id !== sessionContentId.value) {
+    return
+  }
+
+  const stopped = stopResponse()
+  pendingDrafts.value = pendingDrafts.value.filter(draft => draft.id !== entry.id)
+
+  if (stopped) {
+    toast.add({
+      title: 'Generation stopped',
+      description: 'Draft generation halted.',
+      color: 'neutral',
+      icon: 'i-lucide-square'
+    })
+  }
+}
+
 const closeWorkspace = async () => {
   const previousWorkspaceId = activeWorkspaceId.value
   await activateWorkspace(null)
@@ -1005,6 +1073,7 @@ if (import.meta.client) {
           :archiving-draft-id="archivingDraftId"
           @open-workspace="openWorkspace"
           @archive-entry="archiveDraft"
+          @stop-entry="stopWorkingDraft"
         />
       </div>
     </div>

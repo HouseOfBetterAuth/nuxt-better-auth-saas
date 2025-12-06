@@ -8,6 +8,7 @@ interface DraftEntry {
   contentType: string
   additions?: number
   deletions?: number
+  isPending?: boolean
 }
 
 interface Props {
@@ -21,6 +22,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   openWorkspace: [entry: DraftEntry]
   archiveEntry: [entry: DraftEntry]
+  stopEntry: [entry: DraftEntry]
 }>()
 
 const activeTab = ref(0)
@@ -71,6 +73,10 @@ const handleOpenWorkspace = (entry: DraftEntry) => {
 
 const handleArchiveEntry = (entry: DraftEntry) => {
   emit('archiveEntry', entry)
+}
+
+const handleStopEntry = (entry: DraftEntry) => {
+  emit('stopEntry', entry)
 }
 
 const onTouchStart = (entry: DraftEntry, event: TouchEvent) => {
@@ -133,14 +139,26 @@ const formatUpdatedAt = (date: Date | null) => {
       >
         <button
           type="button"
-          class="w-full text-left py-4 pr-12 pl-1 space-y-2 hover:bg-muted/30 transition-colors text-sm"
+          class="w-full text-left py-4 pr-12 pl-1 space-y-2 hover:bg-muted/30 transition-colors text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          :disabled="entry.isPending"
           @click="handleOpenWorkspace(entry)"
         >
           <div class="flex items-center justify-between gap-3">
-            <p class="text-sm font-semibold leading-tight truncate text-white">
+            <p
+              v-if="!entry.isPending"
+              class="text-sm font-semibold leading-tight truncate text-white"
+            >
               {{ entry.title }}
             </p>
+            <div
+              v-else
+              class="flex-1"
+            >
+              <div class="h-5 w-44 rounded bg-white/10 animate-pulse" />
+            </div>
+
             <UBadge
+              v-if="!entry.isPending"
               color="neutral"
               variant="soft"
               class="capitalize rounded-full px-3 py-1.5 gap-1.5 flex items-center"
@@ -153,8 +171,25 @@ const formatUpdatedAt = (date: Date | null) => {
                 {{ entry.status || 'draft' }}
               </span>
             </UBadge>
+            <div
+              v-else
+              class="flex items-center gap-2 text-primary-200 font-semibold capitalize"
+            >
+              <span class="animate-pulse">Working</span>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                icon="i-lucide-square"
+                aria-label="Stop generation"
+                @click.stop="handleStopEntry(entry)"
+              />
+            </div>
           </div>
-          <div class="text-sm text-muted-400 flex flex-wrap items-center gap-1">
+          <div
+            v-if="!entry.isPending"
+            class="text-sm text-muted-400 flex flex-wrap items-center gap-1"
+          >
             <span>{{ formatUpdatedAt(entry.updatedAt) }}</span>
             <span>·</span>
             <span class="capitalize">
@@ -171,6 +206,12 @@ const formatUpdatedAt = (date: Date | null) => {
             <span class="text-rose-500 dark:text-rose-400">
               -{{ entry.deletions ?? 0 }}
             </span>
+          </div>
+          <div
+            v-else
+            class="text-sm text-muted-400 flex flex-wrap items-center gap-2"
+          >
+            <div class="h-4 w-28 rounded bg-white/5 animate-pulse" />
           </div>
         </button>
         <div class="absolute inset-y-0 right-0 flex items-center pr-2">

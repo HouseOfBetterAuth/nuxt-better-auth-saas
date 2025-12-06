@@ -102,6 +102,7 @@ export function useChatSession() {
   const sessionId = useState<string | null>('chat/session-id', () => null)
   const sessionContentId = useState<string | null>('chat/session-content-id', () => null)
   const logs = useState<ChatLogEntry[]>('chat/logs', () => [])
+  const activeController = useState<AbortController | null>('chat/active-controller', () => null)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
@@ -121,14 +122,21 @@ export function useChatSession() {
   }
 
   async function callChatEndpoint(body: Record<string, any>) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
     status.value = 'submitted'
     errorMessage.value = null
+
+    if (activeController.value) {
+      activeController.value.abort()
+    }
+    activeController.value = controller
 
     try {
       status.value = 'streaming'
       const response = await $fetch<ChatResponse>('/api/chat', {
         method: 'POST',
-        body: withSelectedContentType(body)
+        body: withSelectedContentType(body),
+        signal: controller?.signal
       })
 
       sessionId.value = response.sessionId ?? sessionId.value
@@ -154,6 +162,10 @@ export function useChatSession() {
       status.value = 'ready'
       return response
     } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        status.value = 'ready'
+        return null
+      }
       status.value = 'error'
       const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Something went wrong.'
       errorMessage.value = errorMsg
@@ -167,6 +179,10 @@ export function useChatSession() {
       })
 
       return null
+    } finally {
+      if (activeController.value === controller) {
+        activeController.value = null
+      }
     }
   }
 
@@ -264,6 +280,14 @@ export function useChatSession() {
     return response
   }
 
+  function stopResponse() {
+    if (activeController.value) {
+      activeController.value.abort()
+      return true
+    }
+    return false
+  }
+
   function resetSession() {
     messages.value = []
     status.value = 'ready'
@@ -283,6 +307,7 @@ export function useChatSession() {
     sessionId,
     sessionContentId,
     createContentFromConversation,
+    stopResponse,
     logs,
     hydrateSession,
     loadSessionForContent,
