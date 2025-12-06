@@ -1199,6 +1199,16 @@ export const generateContentDraftFromSource = async (
     }
 
     sourceContent = row
+
+    // Log for debugging
+    console.log('[generateContentDraftFromSource] Source content found:', {
+      id: sourceContent.id,
+      ingestStatus: sourceContent.ingestStatus,
+      sourceTextLength: sourceContent.sourceText?.length || 0,
+      hasSourceText: !!sourceContent.sourceText?.trim(),
+      sourceType: sourceContent.sourceType,
+      externalId: sourceContent.externalId
+    })
   }
 
   let existingContent: typeof schema.content.$inferSelect | null = null
@@ -1221,6 +1231,13 @@ export const generateContentDraftFromSource = async (
   }
 
   if (!sourceContentId || !sourceContent?.sourceText?.trim()) {
+    console.error('[generateContentDraftFromSource] Missing sourceText:', {
+      sourceContentId,
+      hasSourceContent: !!sourceContent,
+      sourceTextLength: sourceContent?.sourceText?.length || 0,
+      sourceTextPreview: sourceContent?.sourceText?.substring(0, 100) || 'null/empty',
+      ingestStatus: sourceContent?.ingestStatus
+    })
     throw createError({
       statusCode: 400,
       statusMessage: 'A source transcript is required to create a draft'

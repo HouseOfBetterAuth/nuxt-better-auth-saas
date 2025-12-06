@@ -372,8 +372,8 @@ export default defineEventHandler(async (event) => {
       sourceType: classification.sourceType,
       externalId: classification.externalId,
       metadata: classification.metadata ?? { originalUrl: rawUrl },
-      title: null,
-      sourceText: null
+      title: null
+      // Don't pass sourceText - let ingestion set it, or preserve existing value
     })
 
     if (!record) {
