@@ -12,7 +12,7 @@ interface WhatsNewCard {
 const route = useRoute()
 const slug = computed(() => {
   const slugParam = route.params.slug
-  return Array.isArray(slugParam) ? slugParam[0] : (slugParam as string | undefined) || ''
+  return (Array.isArray(slugParam) ? slugParam[0] : slugParam) || ''
 })
 
 const cards = computed<WhatsNewCard[]>(() => [

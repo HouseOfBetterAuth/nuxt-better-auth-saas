@@ -101,17 +101,17 @@ function _classifyTranscriptFailure(message: string, statusCode?: number) {
   if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts') || lowerMessage.includes('caption track not found')) {
     return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
   }
-  if (lowerMessage.includes('block') || lowerMessage.includes('forbidden') || statusCode === 403) {
-    return { reasonCode: 'blocked' as const, userMessage: 'Access to this video\'s captions is restricted.' }
-  }
   if (lowerMessage.includes('private') || lowerMessage.includes('unavailable')) {
     return { reasonCode: 'private_or_unavailable' as const, userMessage: 'This video is private or unavailable.' }
   }
-  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many') || statusCode === 429) {
-    return { reasonCode: 'rate_limited' as const, userMessage: 'Too many requests, please try again later.', canRetry: true }
-  }
   if (lowerMessage.includes('permission denied') || lowerMessage.includes('insufficient permission') || (statusCode === 403 && lowerMessage.includes('caption'))) {
     return { reasonCode: 'permission_denied' as const, userMessage: 'You can only get transcripts for videos you own. This video belongs to another channel.' }
+  }
+  if (lowerMessage.includes('block') || lowerMessage.includes('forbidden') || statusCode === 403) {
+    return { reasonCode: 'blocked' as const, userMessage: 'Access to this video\'s captions is restricted.' }
+  }
+  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many') || statusCode === 429) {
+    return { reasonCode: 'rate_limited' as const, userMessage: 'Too many requests, please try again later.', canRetry: true }
   }
   if (lowerMessage.includes('authentication failed') || lowerMessage.includes('access token') || lowerMessage.includes('invalid credentials') || statusCode === 401) {
     return { reasonCode: 'auth_failed' as const, userMessage: 'YouTube authentication failed. Please reconnect your account.' }

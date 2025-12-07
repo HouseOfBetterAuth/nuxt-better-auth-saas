@@ -695,13 +695,6 @@ const createFrontmatterFromContentPlan = (params: {
 
 const cleanFrontmatterTitle = (title: string, fallbacks: string[]) => {
   const normalized = (title || '').replace(/\s+/g, ' ').trim()
-  const lowered = normalized.toLowerCase()
-  if (lowered.startsWith('transcript attachment')) {
-    const after = normalized.replace(/^transcript attachment[:\-\s]*/i, '').trim()
-    if (after.length > 8) {
-      return after
-    }
-  }
   for (const value of [normalized, ...fallbacks]) {
     const candidate = (value || '').replace(/\s+/g, ' ').trim()
     if (candidate.length) {
