@@ -1,9 +1,31 @@
 import { createError } from 'h3'
 import { runtimeConfig } from './runtimeConfig'
 
+export interface ChatCompletionToolFunction {
+  name: string
+  description?: string
+  parameters?: Record<string, any>
+}
+
+export interface ChatCompletionToolDefinition {
+  type: 'function'
+  function: ChatCompletionToolFunction
+}
+
+export interface ChatCompletionToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string
+  }
+}
+
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+  tool_call_id?: string
+  tool_calls?: ChatCompletionToolCall[]
 }
 
 interface CallChatCompletionsOptions {
@@ -35,12 +57,19 @@ const OPENAI_BLOG_MAX_OUTPUT_TOKENS = parseNumberWithFallback(
 
 const gatewayBase = `https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/quill/compat`
 
-export async function callChatCompletions({
+interface CallChatCompletionsRawOptions extends CallChatCompletionsOptions {
+  tools?: ChatCompletionToolDefinition[]
+  toolChoice?: 'auto' | 'none' | { type: 'function', function: { name: string } }
+}
+
+export async function callChatCompletionsRaw({
   model = OPENAI_BLOG_MODEL,
   messages,
   temperature = OPENAI_BLOG_TEMPERATURE,
-  maxTokens = OPENAI_BLOG_MAX_OUTPUT_TOKENS
-}: CallChatCompletionsOptions): Promise<string> {
+  maxTokens = OPENAI_BLOG_MAX_OUTPUT_TOKENS,
+  tools,
+  toolChoice
+}: CallChatCompletionsRawOptions) {
   try {
     if (!OPENAI_API_KEY) {
       throw createError({
@@ -70,6 +99,20 @@ export async function callChatCompletions({
       ? [messages[systemMessageIndex], ...messages.slice(0, systemMessageIndex), ...messages.slice(systemMessageIndex + 1)]
       : messages
 
+    const body: Record<string, any> = {
+      model: modelName,
+      messages: orderedMessages,
+      temperature,
+      max_completion_tokens: maxTokens
+    }
+
+    if (tools?.length) {
+      body.tools = tools
+      if (toolChoice) {
+        body.tool_choice = toolChoice
+      }
+    }
+
     const response = await $fetch<any>(url, {
       method: 'POST',
       headers: {
@@ -77,16 +120,10 @@ export async function callChatCompletions({
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'cf-aig-authorization': `Bearer ${CF_AI_GATEWAY_TOKEN}`
       },
-      body: {
-        model: modelName,
-        messages: orderedMessages,
-        temperature,
-        max_completion_tokens: maxTokens
-      }
+      body
     })
 
-    const content = response?.choices?.[0]?.message?.content
-    return typeof content === 'string' ? content : String(content ?? '')
+    return response
   } catch (error: any) {
     console.error('AI Gateway request failed', {
       model,
@@ -103,6 +140,23 @@ export async function callChatCompletions({
       }
     })
   }
+}
+
+export async function callChatCompletions({
+  model = OPENAI_BLOG_MODEL,
+  messages,
+  temperature = OPENAI_BLOG_TEMPERATURE,
+  maxTokens = OPENAI_BLOG_MAX_OUTPUT_TOKENS
+}: CallChatCompletionsOptions): Promise<string> {
+  const response = await callChatCompletionsRaw({
+    model,
+    messages,
+    temperature,
+    maxTokens
+  })
+
+  const content = response?.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content : String(content ?? '')
 }
 
 interface ComposeBlogOptions {

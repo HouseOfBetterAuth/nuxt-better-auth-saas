@@ -1,8 +1,10 @@
+import type { ChatToolInvocation } from '~~/server/services/chat/tools'
 import type { upsertSourceContent } from '~~/server/services/sourceContent'
-import type { ChatRequestBody } from '~~/server/types/api'
+import type { ChatAction, ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { and, eq } from 'drizzle-orm'
 import * as schema from '~~/server/database/schema'
+import { runChatAgentTurn } from '~~/server/services/chat/agent'
 import {
   addLogEntryToChatSession,
   addMessageToChatSession,
@@ -118,6 +120,47 @@ async function composeWorkspaceCompletionMessages(
   }
 }
 
+function convertToolInvocationToAction(invocation: ChatToolInvocation): ChatAction | null {
+  if (!invocation) {
+    return null
+  }
+
+  if (invocation.name === 'generate_content') {
+    const args = invocation.arguments || {}
+    return {
+      type: 'generate_content',
+      contentId: args.contentId ?? null,
+      sourceContentId: args.sourceContentId ?? null,
+      transcript: args.sourceText ?? args.transcript ?? null,
+      title: args.title ?? null,
+      slug: args.slug ?? null,
+      status: args.status ?? undefined,
+      primaryKeyword: args.primaryKeyword ?? null,
+      targetLocale: args.targetLocale ?? null,
+      contentType: args.contentType ?? undefined,
+      systemPrompt: args.systemPrompt ?? null,
+      temperature: args.temperature ?? null
+    }
+  }
+
+  if (invocation.name === 'patch_section') {
+    const args = invocation.arguments || {}
+    if (!args.contentId) {
+      return null
+    }
+    return {
+      type: 'patch_section',
+      contentId: args.contentId,
+      sectionId: args.sectionId ?? null,
+      sectionTitle: args.sectionTitle ?? null,
+      instructions: args.instructions ?? null,
+      temperature: args.temperature ?? null
+    }
+  }
+
+  return null
+}
+
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
   const db = await useDB(event)
@@ -166,6 +209,7 @@ export default defineEventHandler(async (event) => {
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
   const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
   const readySourceIds = new Set<string>()
+  let agentAssistantReply: string | null = null
 
   const trackReadySource = (
     source: typeof schema.sourceContent.$inferSelect | null | undefined,
@@ -246,6 +290,47 @@ export default defineEventHandler(async (event) => {
       if (sessionSource) {
         trackReadySource(sessionSource)
       }
+    }
+  }
+
+  if (!body.action && trimmedMessage) {
+    const previousMessages = await getSessionMessages(db, session.id, organizationId)
+    const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
+      role: message.role === 'assistant'
+        ? 'assistant'
+        : message.role === 'system'
+          ? 'system'
+          : 'user',
+      content: message.content
+    }))
+
+    const contextBlocks: string[] = []
+    if (session.contentId) {
+      contextBlocks.push(`Current draft ID: ${session.contentId}`)
+    }
+    if (session.sourceContentId) {
+      contextBlocks.push(`Active source ID: ${session.sourceContentId}`)
+    }
+
+    try {
+      const agentResult = await runChatAgentTurn({
+        conversationHistory,
+        userMessage: trimmedMessage,
+        contextBlocks
+      })
+
+      if (agentResult.toolInvocation) {
+        const inferredAction = convertToolInvocationToAction(agentResult.toolInvocation)
+        if (inferredAction) {
+          body.action = inferredAction
+        } else if (agentResult.assistantMessage) {
+          agentAssistantReply = agentResult.assistantMessage
+        }
+      } else if (agentResult.assistantMessage) {
+        agentAssistantReply = agentResult.assistantMessage
+      }
+    } catch (error) {
+      console.error('Agent turn failed, falling back to legacy chat handling', error)
     }
   }
 
@@ -589,11 +674,13 @@ export default defineEventHandler(async (event) => {
     contextParts.push(`Updated ${sectionLabel} in the draft.`)
   }
 
-  const shouldSkipAssistantResponse = false
+  const shouldSkipAssistantResponse = Boolean(!body.action && agentAssistantReply)
 
   // Generate a single coherent assistant message using LLM
   let assistantMessageBody = ''
-  if (!shouldSkipAssistantResponse && (contextParts.length > 0 || trimmedMessage)) {
+  if (shouldSkipAssistantResponse) {
+    assistantMessageBody = agentAssistantReply || ''
+  } else if (contextParts.length > 0 || trimmedMessage) {
     const { callChatCompletions } = await import('~~/server/utils/aiGateway')
     const contextText = contextParts.length > 0 ? `Context:\n${contextParts.join('\n\n')}` : ''
     const userMessage = wrapPromptSnippet('User message', trimmedMessage, 1500) || 'User sent a message or action.'
@@ -634,7 +721,7 @@ Keep it conversational and helpful.`
         assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
       }
     }
-  } else if (!shouldSkipAssistantResponse) {
+  } else {
     assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
   }
 
