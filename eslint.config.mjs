@@ -7,6 +7,8 @@ export default withNuxt(
     // ...@antfu/eslint-config options
     // Vue ESLint Rule: https://eslint.vuejs.org/rules/
     markdown: false,
+    unicorn: false,
+    jsdoc: false,
     rules: {
       'style/comma-dangle': ['warn', 'never'],
       'style/brace-style': 'off',
