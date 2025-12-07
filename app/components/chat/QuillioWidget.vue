@@ -50,7 +50,6 @@ const selectedContentTypeOption = computed(() => {
   }
   return CONTENT_TYPE_OPTIONS.find(option => option.value === selectedContentType.value) ?? CONTENT_TYPE_OPTIONS[0]
 })
-const linkedSources = ref<Array<{ id: string, type: 'transcript', value: string }>>([])
 const MAX_USER_MESSAGE_LENGTH = 500
 const LONG_PRESS_DELAY_MS = 500
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10
@@ -385,15 +384,6 @@ async function handleWriteDraftFromSource(sourceId?: string | null) {
   prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
 }
 
-const handleWhatsNewSelect = (payload: { id: 'youtube' | 'transcript' | 'seo', command?: string }) => {
-  if (!payload) {
-    return
-  }
-  if (payload.command) {
-    prompt.value = payload.command
-  }
-}
-
 const openQuotaModal = (payload?: { limit?: number | null, used?: number | null, remaining?: number | null, label?: string | null } | null) => {
   const fallback = draftQuotaUsage.value
 
@@ -531,18 +521,8 @@ if (import.meta.client) {
 
 const handlePromptSubmit = async (value?: string) => {
   const input = typeof value === 'string' ? value : prompt.value
-  let trimmed = input.trim()
+  const trimmed = input.trim()
   if (!trimmed) {
-    return
-  }
-  const normalized = normalizePromptCommands(trimmed)
-  if (!normalized) {
-    return
-  }
-  trimmed = normalized
-  const transcriptHandled = await maybeHandleTranscriptSubmission(trimmed)
-  if (transcriptHandled) {
-    prompt.value = ''
     return
   }
   promptSubmitting.value = true
@@ -556,108 +536,6 @@ const handlePromptSubmit = async (value?: string) => {
 }
 
 const handlePublishDraft = handlePublishDraftComposable
-
-function createLocalId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return Math.random().toString(36).slice(2)
-}
-
-function addLinkedSource(entry: { type: 'transcript', value: string }) {
-  linkedSources.value = [
-    ...linkedSources.value,
-    {
-      id: createLocalId(),
-      type: entry.type,
-      value: entry.value
-    }
-  ]
-}
-
-const transcriptPrefixPattern = /^transcript attachment:\s*/i
-const transcriptCommandPattern = /^@transcript\s*/i
-const youtubeCommandPattern = /^@youtube(?:\s+|$)/i
-
-function shouldTreatAsTranscript(input: string) {
-  const value = input.trim()
-  if (!value) {
-    return false
-  }
-  if (transcriptPrefixPattern.test(value)) {
-    return true
-  }
-  if (transcriptCommandPattern.test(value)) {
-    return true
-  }
-  const timestampMatches = value.match(/\b\d{2}:\d{2}:\d{2}\b/g)?.length ?? 0
-  const hashHeadingMatches = value.split(/\n+/).filter(line => line.trim().startsWith('#')).length
-  return value.length > 800 && (timestampMatches >= 3 || hashHeadingMatches >= 2)
-}
-
-function extractTranscriptBody(input: string) {
-  return input
-    .replace(transcriptPrefixPattern, '')
-    .replace(transcriptCommandPattern, '')
-    .trim()
-}
-
-function normalizePromptCommands(input: string): string | null {
-  if (youtubeCommandPattern.test(input)) {
-    const url = input.replace(/^@youtube\s*/i, '').trim()
-    if (!url) {
-      toast.add({
-        color: 'warning',
-        title: 'Add a YouTube link',
-        description: 'Use @youtube followed by a full video URL to start drafting.'
-      })
-      return null
-    }
-    return url
-  }
-  return input
-}
-
-async function submitTranscript(text: string) {
-  if (!text) {
-    return
-  }
-  const transcriptMessage = [
-    'Transcript attachment:',
-    text
-  ].join('\n\n')
-  const summary = `Transcript attached (${text.length.toLocaleString()} characters)`
-
-  promptSubmitting.value = true
-  try {
-    await sendMessage(transcriptMessage, { displayContent: summary })
-    addLinkedSource({ type: 'transcript', value: text })
-  } catch (error: any) {
-    console.error('Failed to send transcript message', error)
-    const errorMsg = error?.data?.message || error?.message || 'Unable to send transcript. Please try again.'
-    messages.value.push({
-      id: createLocalId(),
-      role: 'assistant',
-      parts: [{ type: 'text', text: `❌ ${errorMsg}` }],
-      createdAt: new Date()
-    })
-  } finally {
-    promptSubmitting.value = false
-  }
-}
-
-async function maybeHandleTranscriptSubmission(raw: string) {
-  if (!shouldTreatAsTranscript(raw)) {
-    return false
-  }
-  const text = extractTranscriptBody(raw)
-  await submitTranscript(text || raw.trim())
-  return true
-}
-
-function removeLinkedSource(id: string) {
-  linkedSources.value = linkedSources.value.filter(entry => entry.id !== id)
-}
 
 const loadWorkspaceDetail = async (contentId: string) => {
   if (!contentId) {
@@ -762,7 +640,6 @@ const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
 
 const resetConversation = () => {
   prompt.value = ''
-  linkedSources.value = []
   resetSession()
 }
 
@@ -1117,32 +994,6 @@ if (import.meta.client) {
           </div>
 
           <div class="w-full space-y-6 mt-8">
-            <!-- Show linked sources if any -->
-            <div
-              v-if="linkedSources.length"
-              class="flex flex-wrap gap-2 mb-2"
-            >
-              <UBadge
-                v-for="source in linkedSources"
-                :key="source.id"
-                size="sm"
-                color="primary"
-                class="flex items-center gap-1"
-              >
-                <UIcon
-                  name="i-lucide-file-text"
-                />
-                Transcript
-                <UButton
-                  variant="link"
-                  size="xs"
-                  icon="i-lucide-x"
-                  @click.stop="removeLinkedSource(source.id)"
-                />
-              </UBadge>
-            </div>
-
-            <!-- Add more information -->
             <!-- Main chat input -->
             <div class="w-full flex justify-center">
               <div class="w-full">
@@ -1196,7 +1047,7 @@ if (import.meta.client) {
               v-if="shouldShowWhatsNew"
               class="w-full mt-8"
             >
-              <ChatWhatsNewRow @select="handleWhatsNewSelect" />
+              <ChatWhatsNewRow />
             </div>
           </div>
         </template>

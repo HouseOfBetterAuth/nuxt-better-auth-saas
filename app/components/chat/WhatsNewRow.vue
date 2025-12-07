@@ -1,28 +1,32 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
+
 interface WhatsNewCard {
   id: 'youtube' | 'transcript' | 'seo'
   title: string
   icon: string
-  command?: string
   disabled?: boolean
+  href?: string
 }
 
-const emit = defineEmits<{
-  (e: 'select', payload: { id: WhatsNewCard['id'], command?: string }): void
-}>()
+const route = useRoute()
+const slug = computed(() => {
+  const slugParam = route.params.slug
+  return Array.isArray(slugParam) ? slugParam[0] : (slugParam as string | undefined) || ''
+})
 
-const cards: WhatsNewCard[] = [
+const cards = computed<WhatsNewCard[]>(() => [
   {
     id: 'youtube',
     title: 'Blog from YouTube',
     icon: 'i-simple-icons-youtube',
-    command: '@youtube '
+    href: slug.value ? `/${slug.value}/integrations` : undefined
   },
   {
     id: 'transcript',
     title: 'Blog from Transcript',
     icon: 'i-lucide-file-text',
-    command: '@transcript '
+    disabled: true
   },
   {
     id: 'seo',
@@ -30,14 +34,7 @@ const cards: WhatsNewCard[] = [
     icon: 'i-lucide-sparkles',
     disabled: true
   }
-]
-
-const handleSelect = (card: WhatsNewCard) => {
-  if (card.disabled) {
-    return
-  }
-  emit('select', { id: card.id, command: card.command })
-}
+])
 </script>
 
 <template>
@@ -54,8 +51,8 @@ const handleSelect = (card: WhatsNewCard) => {
         variant="ghost"
         color="neutral"
         :disabled="card.disabled"
+        :to="card.href"
         class="group flex items-center gap-3 rounded-2xl px-5 py-4 text-left justify-start h-auto bg-muted/50"
-        @click="handleSelect(card)"
       >
         <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/30">
           <UIcon

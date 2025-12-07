@@ -416,7 +416,7 @@ if (import.meta.client) {
         const messages = {
           youtube: {
             title: 'YouTube connected',
-            description: 'Captions can now be ingested automatically.'
+            description: 'You can now get transcripts from your own YouTube videos automatically.'
           },
           google_drive: {
             title: 'Google Drive connected',
@@ -450,7 +450,7 @@ if (import.meta.client) {
           Integrations
         </h1>
         <p class="text-muted-500">
-          Connect Codex to YouTube, Google Drive, and GitHub so transcripts, docs, and repos can be ingested automatically.
+          Connect Codex to YouTube, Google Drive, and GitHub. Get transcripts from your own YouTube videos, import Google Docs, and sync GitHub repositories automatically.
         </p>
       </div>
 
@@ -476,7 +476,7 @@ if (import.meta.client) {
                   YouTube
                 </p>
                 <p class="text-sm text-muted-500">
-                  Required for pulling captions from shared videos.
+                  Get transcripts from your own YouTube videos automatically.
                 </p>
               </div>
             </div>
@@ -511,6 +511,14 @@ if (import.meta.client) {
                 </strong>
               </p>
             </div>
+
+            <UAlert
+              icon="i-lucide-info"
+              color="neutral"
+              variant="subtle"
+              title="Note"
+              description="You can only get transcripts from videos you own. Videos from other channels are not accessible."
+            />
 
             <div class="flex flex-wrap gap-3">
               <UButton

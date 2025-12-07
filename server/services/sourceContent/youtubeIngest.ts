@@ -2,7 +2,6 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { FetchError } from 'ofetch'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import * as schema from '../../database/schema'
 import { createChunksFromSourceContentText } from './chunkSourceContent'
 
@@ -13,12 +12,14 @@ export type TranscriptFailureReason =
   | 'blocked'
   | 'private_or_unavailable'
   | 'rate_limited'
-  | 'client_config'
   | 'no_account'
   | 'permission_denied'
   | 'auth_failed'
   | 'empty_transcript'
   | 'internal_error'
+  | 'quota_exceeded'
+  | 'video_not_found'
+  | 'invalid_credentials'
   | 'unknown'
 
 export interface YouTubeTranscriptErrorData {
@@ -48,19 +49,15 @@ interface YoutubeOEmbedResponse {
   provider_url?: string
 }
 
-interface TranscriptIoResponseEntry {
-  id?: string
-  text?: string
-  title?: string
-  tracks?: Array<{
-    language?: string | null
-    kind?: string | null
-    transcript?: Array<{ text?: string }>
-  }>
-  languages?: Array<{ label?: string | null, languageCode?: string | null }>
+interface YouTubeCaptionTrack {
+  id: string
+  snippet: {
+    videoId: string
+    language: string
+    name?: string
+    trackKind?: string
+  }
 }
-
-let transcriptIoCooldownUntil = 0
 
 function hasYouTubeScopes(scope: string | null | undefined) {
   if (!scope) {
@@ -92,55 +89,34 @@ function _stripVttToPlainText(vtt: string) {
     .trim()
 }
 
-function _joinTranscriptSegments(segments: Array<{ text?: string }> | undefined) {
-  if (!Array.isArray(segments) || !segments.length) {
-    return ''
-  }
-  return segments
-    .map(segment => typeof segment.text === 'string' ? segment.text.trim() : '')
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function getRetryAfterSeconds(error: FetchError | undefined) {
-  const headerValue = (error as any)?.response?.headers?.get?.('retry-after') || (error as any)?.response?.headers?.get?.('Retry-After')
-  if (!headerValue) {
-    return null
-  }
-  const parsed = Number.parseInt(String(headerValue), 10)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function _classifyTranscriptFailure(message: string) {
+function _classifyTranscriptFailure(message: string, statusCode?: number) {
   const lowerMessage = message.toLowerCase()
 
-  if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts')) {
+  if (statusCode === 403 && lowerMessage.includes('quota')) {
+    return { reasonCode: 'quota_exceeded' as const, userMessage: 'YouTube API quota exceeded. Please try again later.', canRetry: true }
+  }
+  if (statusCode === 404 || lowerMessage.includes('not found') || lowerMessage.includes('video not found')) {
+    return { reasonCode: 'video_not_found' as const, userMessage: 'This video was not found.' }
+  }
+  if (lowerMessage.includes('no captions') || lowerMessage.includes('no transcripts') || lowerMessage.includes('caption track not found')) {
     return { reasonCode: 'no_captions' as const, userMessage: 'This video doesn\'t have captions available.', canRetry: false }
   }
-  if (lowerMessage.includes('bot') || lowerMessage.includes('sign in to confirm')) {
-    return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking automated requests. Try linking your YouTube account for better access.', suggestAccountLink: true }
+  if (lowerMessage.includes('block') || lowerMessage.includes('forbidden') || statusCode === 403) {
+    return { reasonCode: 'blocked' as const, userMessage: 'Access to this video\'s captions is restricted.' }
   }
-  if (lowerMessage.includes('block') || lowerMessage.includes('forbidden')) {
-    return { reasonCode: 'blocked' as const, userMessage: 'YouTube is blocking requests from our servers.' }
-  }
-  if (lowerMessage.includes('private') || lowerMessage.includes('unavailable') || lowerMessage.includes('not found')) {
+  if (lowerMessage.includes('private') || lowerMessage.includes('unavailable')) {
     return { reasonCode: 'private_or_unavailable' as const, userMessage: 'This video is private or unavailable.' }
   }
-  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many')) {
+  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many') || statusCode === 429) {
     return { reasonCode: 'rate_limited' as const, userMessage: 'Too many requests, please try again later.', canRetry: true }
   }
-  if (lowerMessage.includes('client configuration')) {
-    return { reasonCode: 'client_config' as const, userMessage: 'Unable to extract YouTube client configuration.' }
+  if (lowerMessage.includes('permission denied') || lowerMessage.includes('insufficient permission') || (statusCode === 403 && lowerMessage.includes('caption'))) {
+    return { reasonCode: 'permission_denied' as const, userMessage: 'You can only get transcripts for videos you own. This video belongs to another channel.' }
   }
-  if (lowerMessage.includes('permission denied')) {
-    return { reasonCode: 'permission_denied' as const, userMessage: 'You don\'t have access to this video\'s captions.' }
-  }
-  if (lowerMessage.includes('authentication failed') || lowerMessage.includes('access token')) {
+  if (lowerMessage.includes('authentication failed') || lowerMessage.includes('access token') || lowerMessage.includes('invalid credentials') || statusCode === 401) {
     return { reasonCode: 'auth_failed' as const, userMessage: 'YouTube authentication failed. Please reconnect your account.' }
   }
-  if (lowerMessage.includes('empty content')) {
+  if (lowerMessage.includes('empty content') || lowerMessage.includes('empty transcript')) {
     return { reasonCode: 'empty_transcript' as const, userMessage: 'The transcript was empty or could not be read.' }
   }
 
@@ -166,180 +142,244 @@ function createTranscriptError(params: {
   })
 }
 
-function mapTranscriptIoError(statusCode?: number) {
-  if (statusCode === 429) {
-    return { reasonCode: 'rate_limited' as const, userMessage: 'Too many transcript requests, please wait a few seconds and try again.', canRetry: true }
-  }
-  if (statusCode === 404) {
-    return { reasonCode: 'private_or_unavailable' as const, userMessage: 'Unable to find captions for this video.' }
-  }
-  if (statusCode === 401 || statusCode === 403) {
-    return { reasonCode: 'blocked' as const, userMessage: 'Transcript provider rejected the request. Please try again later.' }
-  }
-  if (statusCode === 400) {
-    return { reasonCode: 'private_or_unavailable' as const, userMessage: 'Invalid YouTube video ID for transcript provider.' }
-  }
-  return { reasonCode: 'unknown' as const, userMessage: 'Transcript provider failed to return captions.' }
-}
-
-class TranscriptProviderError extends Error {
-  failure: { reasonCode: TranscriptFailureReason, userMessage: string, canRetry?: boolean }
-  statusCode?: number
-
-  constructor(message: string, failure: { reasonCode: TranscriptFailureReason, userMessage: string, canRetry?: boolean }, statusCode?: number) {
-    super(message)
-    this.failure = failure
-    this.statusCode = statusCode
-  }
-}
-
-function extractTranscriptIoText(entry: TranscriptIoResponseEntry) {
-  // First, try direct text property
-  if (entry && typeof entry.text === 'string' && entry.text.trim()) {
-    return entry.text.trim()
+async function fetchTranscriptViaOfficialAPI(
+  db: NodePgDatabase<typeof schema>,
+  organizationId: string,
+  userId: string,
+  videoId: string
+): Promise<{ text: string, format: string, language: string | null, trackKind: string | null, metadata: any }> {
+  // Check for YouTube account
+  const account = await findYouTubeAccount(db, organizationId, userId)
+  if (!account) {
+    throw createTranscriptError({
+      reasonCode: 'no_account',
+      userMessage: 'No YouTube account linked. Please link your YouTube account from Settings -> Integrations to enable transcript fetching.',
+      videoId,
+      suggestAccountLink: true
+    })
   }
 
-  // Then, try all tracks to find one with transcript content
-  if (Array.isArray(entry?.tracks) && entry.tracks.length > 0) {
-    // Try to find a track with transcript segments that have actual text
-    for (const track of entry.tracks) {
-      if (Array.isArray(track.transcript) && track.transcript.length > 0) {
-        const joined = _joinTranscriptSegments(track.transcript)
-        if (joined && joined.trim().length > 0) {
-          return joined
-        }
-      }
-    }
-  }
-
-  return ''
-}
-
-async function fetchTranscriptViaTranscriptIo(videoId: string) {
-  const token = runtimeConfig.youtubeTranscriptIoToken
-  console.log('[youtube-transcript.io] Token check:', { hasToken: !!token })
-  if (!token) {
-    throw new TranscriptProviderError('Transcript provider is not configured.', { reasonCode: 'internal_error', userMessage: 'Transcript provider is not configured.' })
-  }
-
-  if (Date.now() < transcriptIoCooldownUntil) {
-    const waitMs = Math.max(0, transcriptIoCooldownUntil - Date.now())
-    const waitSeconds = Math.ceil(waitMs / 1000)
-    throw new TranscriptProviderError(
-      `Transcript provider temporarily rate limited. Please wait ~${waitSeconds}s before retrying.`,
-      { reasonCode: 'rate_limited', userMessage: `Transcript provider is busy. Please wait about ${waitSeconds} seconds and try again.`, canRetry: true }
-    )
-  }
-
+  // Get access token
+  let accessToken: string
   try {
-    const response = await $fetch<TranscriptIoResponseEntry[]>('https://www.youtube-transcript.io/api/transcripts', {
-      method: 'POST',
+    accessToken = await ensureAccessToken(db, account)
+  } catch (error) {
+    const errorMessage = (error as Error).message || 'Failed to get access token.'
+    throw createTranscriptError({
+      reasonCode: 'auth_failed',
+      userMessage: 'YouTube authentication failed. Please reconnect your account.',
+      videoId,
+      workerError: errorMessage,
+      suggestAccountLink: true
+    })
+  }
+
+  // Fetch video metadata for better error context (title, channel name)
+  let videoMetadata: { title: string, channelTitle: string } | null = null
+  try {
+    const videoResponse = await $fetch<{ items?: Array<{ snippet?: { title?: string, channelTitle?: string } }> }>('https://youtube.googleapis.com/youtube/v3/videos', {
       headers: {
-        'Authorization': `Basic ${token}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${accessToken}`
       },
-      body: { ids: [videoId] }
+      query: {
+        part: 'snippet',
+        id: videoId
+      }
     })
 
-    const entry = Array.isArray(response) ? response[0] : null
-    if (!entry) {
-      throw new TranscriptProviderError('Transcript provider returned an empty response.', { reasonCode: 'unknown', userMessage: 'Transcript provider returned an empty response.' })
-    }
-
-    // Log entry structure for debugging when transcript extraction fails
-    const hasText = typeof entry.text === 'string' && entry.text.trim().length > 0
-    const hasTracks = Array.isArray(entry.tracks) && entry.tracks.length > 0
-    const hasLanguages = Array.isArray(entry.languages) && entry.languages.length > 0
-    const tracksWithTranscript = Array.isArray(entry.tracks)
-      ? entry.tracks.filter(track => Array.isArray(track.transcript) && track.transcript.length > 0)
-      : []
-
-    const text = extractTranscriptIoText(entry)
-    if (!text) {
-      // Log detailed information about why extraction failed
-      console.warn('[youtube-transcript.io] Transcript extraction failed:', {
-        videoId,
-        hasText,
-        hasTracks,
-        hasLanguages,
-        tracksCount: entry.tracks?.length ?? 0,
-        tracksWithTranscriptCount: tracksWithTranscript.length,
-        entryStructure: {
-          hasText,
-          hasTracks,
-          entryId: entry.id,
-          entryTitle: entry.title,
-          tracks: entry.tracks?.map(t => ({
-            language: t.language,
-            kind: t.kind,
-            transcriptLength: Array.isArray(t.transcript) ? t.transcript.length : 0,
-            transcriptSample: Array.isArray(t.transcript) && t.transcript.length > 0
-              ? t.transcript.slice(0, 3).map(s => ({ text: typeof s?.text === 'string' ? s.text.substring(0, 50) : s?.text }))
-              : null
-          })),
-          languages: entry.languages,
-          // Log a sanitized version of the full entry for debugging (remove any sensitive data)
-          fullEntry: JSON.stringify(entry, null, 2).substring(0, 2000) // Limit to first 2000 chars
-        }
-      })
-
-      // Determine if this is a "no captions" case vs other issue
-      const reasonCode: TranscriptFailureReason = (hasTracks && tracksWithTranscript.length === 0) || (hasLanguages && !hasText)
-        ? 'no_captions'
-        : 'empty_transcript'
-
-      const userMessage = reasonCode === 'no_captions'
-        ? 'This video doesn\'t have captions available. Please check if the video has captions enabled on YouTube.'
-        : 'Transcript provider returned no transcript text. Please try again or check if the video has captions enabled.'
-
-      throw new TranscriptProviderError('Transcript provider returned no transcript text.', { reasonCode, userMessage, canRetry: false })
-    }
-
-    const firstTrack = Array.isArray(entry.tracks) ? entry.tracks.find(track => Array.isArray(track.transcript) && track.transcript.length) ?? entry.tracks[0] : undefined
-    const primaryLanguage = entry.languages?.[0]?.languageCode || firstTrack?.language || null
-
-    return {
-      text,
-      format: 'text',
-      language: primaryLanguage,
-      trackKind: firstTrack?.kind || null,
-      metadata: {
-        method: 'youtube-transcript-io',
-        provider: 'youtube_transcript_io',
-        video_id: videoId,
-        title: entry.title,
-        languages: entry.languages,
-        track_languages: entry.tracks?.map(track => track.language).filter(Boolean)
+    const videoItem = videoResponse?.items?.[0]
+    if (videoItem?.snippet) {
+      videoMetadata = {
+        title: videoItem.snippet.title || 'Untitled Video',
+        channelTitle: videoItem.snippet.channelTitle || 'Unknown Channel'
       }
     }
   } catch (error) {
-    if (error instanceof TranscriptProviderError) {
-      throw error
-    }
-    const statusCode = (error as FetchError)?.statusCode
-    const errorMessage = (error as Error).message || 'Failed to fetch transcript via external provider.'
-    const errorData = (error as FetchError)?.data
+    // Non-fatal - we'll continue without metadata
+    console.warn('[youtube-ingest] Failed to fetch video metadata for context:', error)
+  }
 
-    // Log the actual error for debugging
-    console.error('[youtube-transcript.io] Error details:', {
-      statusCode,
-      message: errorMessage,
-      data: errorData,
-      error
+  // Verify video ownership before attempting to access captions
+  // YouTube API only allows downloading captions for videos the authenticated user owns
+  try {
+    const ownershipResponse = await $fetch<{ items?: Array<{ id: string }> }>('https://youtube.googleapis.com/youtube/v3/videos', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      query: {
+        part: 'id',
+        id: videoId,
+        mine: true // Only videos owned by authenticated user
+      }
     })
 
-    const retryAfterSeconds = getRetryAfterSeconds(error as FetchError)
-    if (statusCode === 429) {
-      const cooldownMs = Math.max(1000, (retryAfterSeconds ?? 10) * 1000)
-      transcriptIoCooldownUntil = Date.now() + cooldownMs
+    if (!ownershipResponse?.items || ownershipResponse.items.length === 0) {
+      const videoContext = videoMetadata
+        ? `"${videoMetadata.title}" (${videoMetadata.channelTitle})`
+        : 'this video'
+      throw createTranscriptError({
+        reasonCode: 'permission_denied',
+        userMessage: `You can only get transcripts for videos you own. ${videoContext} belongs to another channel.`,
+        videoId,
+        canRetry: false
+      })
     }
-    const failure = mapTranscriptIoError(statusCode)
-    if (statusCode === 429) {
-      const waitSeconds = retryAfterSeconds ?? Math.ceil(Math.max(0, transcriptIoCooldownUntil - Date.now()) / 1000)
-      failure.userMessage = `Transcript provider is rate limiting us. Please wait about ${waitSeconds} seconds and try again.`
-      failure.canRetry = true
+  } catch (error) {
+    // If it's already a TranscriptError, re-throw it
+    if ((error as any)?.data?.transcriptFailed) {
+      throw error
     }
-    throw new TranscriptProviderError(errorMessage, failure, statusCode)
+    // For other errors (network, API issues), continue to attempt caption access
+    // The caption API will return a proper error if ownership is still an issue
+    const fetchError = error as FetchError
+    const statusCode = fetchError?.statusCode
+    if (statusCode === 403 || statusCode === 404) {
+      const videoContext = videoMetadata
+        ? `"${videoMetadata.title}" (${videoMetadata.channelTitle})`
+        : 'this video'
+      throw createTranscriptError({
+        reasonCode: 'permission_denied',
+        userMessage: `You can only get transcripts for videos you own. ${videoContext} belongs to another channel.`,
+        videoId,
+        canRetry: false
+      })
+    }
+    // For other errors, log but continue - let the caption API handle it
+    console.warn('[youtube-ingest] Video ownership check failed, continuing to caption API:', error)
+  }
+
+  // List available caption tracks
+  let captionTracks: YouTubeCaptionTrack[]
+  try {
+    const captionsResponse = await $fetch<{ items: YouTubeCaptionTrack[] }>('https://youtube.googleapis.com/youtube/v3/captions', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      query: {
+        part: 'snippet',
+        videoId
+      }
+    })
+
+    captionTracks = captionsResponse?.items || []
+  } catch (error) {
+    const fetchError = error as FetchError
+    const statusCode = fetchError?.statusCode
+    const errorMessage = (error as Error).message || 'Failed to list caption tracks.'
+    const failure = _classifyTranscriptFailure(errorMessage, statusCode)
+
+    // Add video context to error message if available
+    const videoContext = videoMetadata
+      ? ` for "${videoMetadata.title}"`
+      : ''
+    const enhancedMessage = failure.userMessage + videoContext
+
+    throw createTranscriptError({
+      ...failure,
+      userMessage: enhancedMessage,
+      videoId,
+      workerError: errorMessage,
+      suggestAccountLink: failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
+    })
+  }
+
+  // Check caption availability with better messaging
+  if (!captionTracks || captionTracks.length === 0) {
+    const videoContext = videoMetadata
+      ? `"${videoMetadata.title}" doesn't have captions available.`
+      : 'This video doesn\'t have captions available.'
+    const suggestion = 'Please enable captions in YouTube Studio (Settings > Subtitles) or add manual captions to your video.'
+
+    throw createTranscriptError({
+      reasonCode: 'no_captions',
+      userMessage: `${videoContext} ${suggestion}`,
+      videoId,
+      canRetry: false
+    })
+  }
+
+  // Select best caption track: prefer auto-generated, then manual
+  const autoTrack = captionTracks.find(track => track.snippet?.trackKind === 'ASR' || track.snippet?.name?.toLowerCase().includes('auto'))
+  const manualTrack = captionTracks.find(track => track.snippet?.trackKind === 'standard')
+  const selectedTrack = autoTrack || manualTrack || captionTracks[0]
+
+  if (!selectedTrack?.id) {
+    const videoContext = videoMetadata
+      ? `"${videoMetadata.title}" has no valid caption tracks available.`
+      : 'No valid caption track found for this video.'
+    const suggestion = 'Please enable auto-generated captions or add manual captions in YouTube Studio.'
+
+    throw createTranscriptError({
+      reasonCode: 'no_captions',
+      userMessage: `${videoContext} ${suggestion}`,
+      videoId,
+      canRetry: false
+    })
+  }
+
+  // Download caption track as VTT
+  let vttContent: string
+  try {
+    vttContent = await $fetch<string>(`https://youtube.googleapis.com/youtube/v3/captions/${selectedTrack.id}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      query: {
+        tfmt: 'vtt'
+      }
+    })
+  } catch (error) {
+    const fetchError = error as FetchError
+    const statusCode = fetchError?.statusCode
+    const errorMessage = (error as Error).message || 'Failed to download caption track.'
+    const failure = _classifyTranscriptFailure(errorMessage, statusCode)
+
+    // Add video context to error message if available
+    const videoContext = videoMetadata
+      ? ` for "${videoMetadata.title}"`
+      : ''
+    const enhancedMessage = failure.userMessage + videoContext
+
+    throw createTranscriptError({
+      ...failure,
+      userMessage: enhancedMessage,
+      videoId,
+      workerError: errorMessage,
+      suggestAccountLink: failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
+    })
+  }
+
+  // Parse VTT to plain text
+  const text = _stripVttToPlainText(vttContent)
+  if (!text || text.trim().length === 0) {
+    throw createTranscriptError({
+      reasonCode: 'empty_transcript',
+      userMessage: 'The transcript was empty or could not be read.',
+      videoId,
+      canRetry: false
+    })
+  }
+
+  return {
+    text,
+    format: 'text',
+    language: selectedTrack.snippet?.language || null,
+    trackKind: selectedTrack.snippet?.trackKind || null,
+    metadata: {
+      method: 'youtube_api_v3',
+      provider: 'youtube_api_v3',
+      video_id: videoId,
+      caption_id: selectedTrack.id,
+      language: selectedTrack.snippet?.language,
+      track_kind: selectedTrack.snippet?.trackKind,
+      track_name: selectedTrack.snippet?.name,
+      available_tracks: captionTracks.map(track => ({
+        id: track.id,
+        language: track.snippet?.language,
+        kind: track.snippet?.trackKind,
+        name: track.snippet?.name
+      }))
+    }
   }
 }
 
@@ -529,17 +569,13 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
   const existingYoutubeMetadata = getBaseYoutubeMetadata(source.metadata)
   let transcriptText: string | null = null
   let youtubeMetadata = { ...existingYoutubeMetadata }
-  let transcriptResult: Awaited<ReturnType<typeof fetchTranscriptViaTranscriptIo>> | null = null
+  let transcriptResult: Awaited<ReturnType<typeof fetchTranscriptViaOfficialAPI>> | null = null
   const previewMetadata = await fetchYoutubePreview(videoId)
 
   try {
-    transcriptResult = await fetchTranscriptViaTranscriptIo(videoId)
+    transcriptResult = await fetchTranscriptViaOfficialAPI(db, options.organizationId, options.userId, videoId)
   } catch (error) {
-    const providerError = error as TranscriptProviderError | Error
-    const failure = providerError instanceof TranscriptProviderError
-      ? providerError.failure
-      : mapTranscriptIoError((providerError as FetchError)?.statusCode)
-    const errorMessage = providerError.message || 'Unable to fetch transcript from provider.'
+    const errorMessage = (error as Error).message || 'Unable to fetch transcript from YouTube API.'
 
     await db
       .update(schema.sourceContent)
@@ -547,7 +583,7 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
         ingestStatus: 'failed',
         metadata: {
           ...baseMetadata,
-          ingestMethod: 'youtube_transcript_io',
+          ingestMethod: 'youtube_api_v3',
           youtube: {
             ...youtubeMetadata,
             lastError: errorMessage,
@@ -558,22 +594,12 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
       })
       .where(eq(schema.sourceContent.id, sourceContentId))
 
-    const shouldSuggestAccountLink = failure.reasonCode === 'auth_failed' || failure.reasonCode === 'permission_denied'
-    const accountLinkHint = shouldSuggestAccountLink
-      ? 'Link your YouTube account from Settings -> Integrations so we can fall back to the official API for higher accuracy captions.'
-      : undefined
-
-    throw createTranscriptError({
-      ...failure,
-      videoId,
-      workerError: errorMessage,
-      suggestAccountLink: shouldSuggestAccountLink,
-      accountLinkHint
-    })
+    // Re-throw the error (it's already a createTranscriptError if from our function)
+    throw error
   }
 
   transcriptText = transcriptResult.text
-  const providerMethod = transcriptResult.metadata?.method || 'youtube-transcript-io'
+  const providerMethod = transcriptResult.metadata?.method || 'youtube_api_v3'
   youtubeMetadata = {
     ...youtubeMetadata,
     transcriptMethod: providerMethod,
@@ -583,7 +609,7 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
     workerMetadata: transcriptResult.metadata,
     lastIngestedAt: new Date().toISOString()
   }
-  const ingestMethod = 'youtube_transcript_io'
+  const ingestMethod = 'youtube_api_v3'
 
   if (previewMetadata) {
     youtubeMetadata.preview = {
@@ -601,7 +627,6 @@ export async function ingestYouTubeVideoAsSourceContent(options: IngestYouTubeOp
   const resolvedTitle =
     normalizeMetadataString(baseMetadata.title) ||
     normalizeMetadataString(youtubeMetadata.preview?.title) ||
-    normalizeMetadataString(transcriptResult.metadata?.title) ||
     normalizeMetadataString(source.title)
 
   const metadata = {

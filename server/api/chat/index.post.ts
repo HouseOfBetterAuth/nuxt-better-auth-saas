@@ -1,4 +1,4 @@
-import type { YouTubeTranscriptErrorData } from '~~/server/services/sourceContent/youtubeIngest'
+import type { upsertSourceContent } from '~~/server/services/sourceContent'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { and, eq } from 'drizzle-orm'
@@ -14,16 +14,13 @@ import {
 import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
 import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
 import { buildSourceSummaryPreview, buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
-import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
-import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount, ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
+import { ensureAccessToken, fetchYouTubeVideoMetadata, findYouTubeAccount } from '~~/server/services/sourceContent/youtubeIngest'
 import { getAuthSession, requireAuth } from '~~/server/utils/auth'
-import { classifyUrl, extractUrls } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
-import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
+import { createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { validateEnum, validateNumber, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
 
@@ -51,26 +48,6 @@ function wrapPromptSnippet(label: string, value?: string, maxLength = 1000) {
     return ''
   }
   return `${label}:\n"""${sanitized}"""`
-}
-
-function buildYouTubeTranscriptErrorMessage(errorData: YouTubeTranscriptErrorData | undefined, hasYouTubeAccount: boolean) {
-  const reason = (errorData?.userMessage || 'Unable to fetch transcript.').trim()
-  const suggestions: string[] = []
-
-  if (!hasYouTubeAccount || errorData?.suggestAccountLink) {
-    const hint = (typeof errorData?.accountLinkHint === 'string' && errorData.accountLinkHint.trim())
-      ? errorData.accountLinkHint.trim()
-      : 'Link your YouTube account from Settings -> Integrations to unlock more accurate captions using the official API.'
-    suggestions.push(`💡 Tip: ${hint}`)
-  }
-
-  if (errorData?.canRetry !== false) {
-    suggestions.push('Please try again or check if the video has captions enabled.')
-  }
-
-  const suggestionText = suggestions.length ? ` ${suggestions.join(' ')}` : ''
-
-  return `❌ Error: I can't get the transcript for this video. ${reason}${suggestionText}`
 }
 
 function toSummaryBullets(text: string | null | undefined) {
@@ -180,9 +157,6 @@ export default defineEventHandler(async (event) => {
     throw createValidationError('Message or action is required')
   }
 
-  const urls = extractUrls(message)
-  const isLinkOnlyMessage = urls.length === 1 && trimmedMessage && trimmedMessage === urls[0]?.trim()
-  const seenKeys = new Set<string>()
   const processedSources: Array<{
     source: Awaited<ReturnType<typeof upsertSourceContent>>
     url: string
@@ -192,8 +166,6 @@ export default defineEventHandler(async (event) => {
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
   const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
   const readySourceIds = new Set<string>()
-  // Track source IDs that were suggested/processed for potential future use
-  const suggestedSourceIds = new Set<string>()
 
   const trackReadySource = (
     source: typeof schema.sourceContent.$inferSelect | null | undefined,
@@ -207,132 +179,6 @@ export default defineEventHandler(async (event) => {
     readySourceIds.add(source.id)
     if (options?.isNew) {
       newlyReadySources.push(source)
-    }
-  }
-
-  for (const rawUrl of urls) {
-    const classification = classifyUrl(rawUrl)
-    if (!classification) {
-      continue
-    }
-
-    const key = `${classification.sourceType}:${classification.externalId ?? classification.url}`
-    if (seenKeys.has(key)) {
-      continue
-    }
-
-    let record = await upsertSourceContent(db, {
-      organizationId,
-      userId: user.id,
-      sourceType: classification.sourceType,
-      externalId: classification.externalId,
-      metadata: classification.metadata ?? { originalUrl: rawUrl },
-      title: null
-      // Don't pass sourceText - let ingestion set it, or preserve existing value
-    })
-
-    if (!record) {
-      continue
-    }
-
-    if (classification.sourceType === 'youtube' && classification.externalId && runtimeConfig.enableYoutubeIngestion) {
-      try {
-        record = await ingestYouTubeVideoAsSourceContent({
-          db,
-          sourceContentId: record.id,
-          organizationId,
-          userId: user.id,
-          videoId: classification.externalId
-        })
-        trackReadySource(record, { isNew: true })
-      } catch (error: any) {
-        const errorData = error?.data as YouTubeTranscriptErrorData | undefined
-        if (errorData?.transcriptFailed) {
-          const hasYouTubeAccount = !!(await findYouTubeAccount(db, organizationId, user.id))
-          ingestionErrors.push({
-            content: buildYouTubeTranscriptErrorMessage(errorData, hasYouTubeAccount),
-            payload: {
-              transcriptFailed: true,
-              videoId: classification.externalId,
-              reasonCode: errorData?.reasonCode ?? null
-            }
-          })
-          continue
-        }
-        throw error
-      }
-    } else if (classification.sourceType === 'youtube' && !runtimeConfig.enableYoutubeIngestion) {
-      throw createServiceUnavailableError('YouTube ingestion is disabled. Enable it in configuration to process YouTube links.')
-    }
-
-    processedSources.push({
-      source: record,
-      url: rawUrl,
-      sourceType: classification.sourceType
-    })
-    if (record?.id) {
-      suggestedSourceIds.add(record.id)
-    }
-
-    seenKeys.add(key)
-  }
-
-  // Detect transcripts in message
-  const transcriptPrefix = 'Transcript attachment:'
-  if (trimmedMessage.startsWith(transcriptPrefix)) {
-    const transcriptText = trimmedMessage.slice(transcriptPrefix.length).trim()
-    if (transcriptText.length > 200) {
-      // Create transcript source
-      const manualSource = await createSourceContentFromTranscript({
-        db,
-        organizationId,
-        userId: user.id,
-        transcript: transcriptText,
-        metadata: { createdVia: 'chat_message_auto_detect' },
-        onProgress: async () => {
-          // Progress messages will be handled by the assistant message
-        }
-      })
-
-      if (manualSource) {
-        processedSources.push({
-          source: manualSource,
-          url: '',
-          sourceType: 'manual_transcript'
-        })
-        if (manualSource?.id) {
-          suggestedSourceIds.add(manualSource.id)
-        }
-        trackReadySource(manualSource, { isNew: true })
-      }
-    }
-  } else if (trimmedMessage.length > 500 && !urls.length) {
-    // Auto-detect potential transcripts: long messages without URLs
-    // Check for transcript-like patterns (speaker labels, timestamps, etc.)
-    const hasTranscriptPatterns = /^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*:|\[?\d{1,2}:\d{2}(?::\d{2})?\]?)/m.test(trimmedMessage)
-    if (hasTranscriptPatterns) {
-      const manualSource = await createSourceContentFromTranscript({
-        db,
-        organizationId,
-        userId: user.id,
-        transcript: trimmedMessage,
-        metadata: { createdVia: 'chat_message_auto_detect' },
-        onProgress: async () => {
-          // Progress messages will be handled by the assistant message
-        }
-      })
-
-      if (manualSource) {
-        processedSources.push({
-          source: manualSource,
-          url: '',
-          sourceType: 'manual_transcript'
-        })
-        if (manualSource?.id) {
-          suggestedSourceIds.add(manualSource.id)
-        }
-        trackReadySource(manualSource, { isNew: true })
-      }
     }
   }
 
@@ -743,11 +589,7 @@ export default defineEventHandler(async (event) => {
     contextParts.push(`Updated ${sectionLabel} in the draft.`)
   }
 
-  const shouldSkipAssistantResponse = newlyReadySources.length > 0
-    && !generationResult
-    && !patchSectionResult
-    && !body.action?.type
-    && isLinkOnlyMessage
+  const shouldSkipAssistantResponse = false
 
   // Generate a single coherent assistant message using LLM
   let assistantMessageBody = ''
