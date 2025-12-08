@@ -2,13 +2,10 @@
 
 <script setup lang="ts">
 definePageMeta({
-  auth: false,
-  layout: false
+  auth: false
 })
 
 const { t } = useI18n()
-const route = useRoute()
-const layoutName = computed(() => (route.query.draft ? 'workspace' : 'default'))
 
 const title = `${t('global.appName')}: ${t('home.slogan')}`
 const desc = t('home.slogan')
@@ -35,7 +32,6 @@ useSeoMeta({
 </script>
 
 <template>
-  <NuxtLayout :name="layoutName">
-    <ChatQuillioWidget />
-  </NuxtLayout>
+  <!-- Chat is now in layout, so this page just needs to exist for routing -->
+  <div />
 </template>

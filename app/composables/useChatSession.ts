@@ -116,6 +116,9 @@ export function useChatSession() {
   const requestStartedAt = useState<Date | null>('chat/request-started-at', () => null)
   const activeController = useState<AbortController | null>('chat/active-controller', () => null)
   const agentContext = useState<AgentContext | null>('chat/agent-context', () => null)
+  const prompt = useState<string>('chat/prompt', () => '')
+  const currentActivity = useState<'llm_thinking' | 'tool_executing' | 'streaming_message' | null>('chat/current-activity', () => null)
+  const currentToolName = useState<string | null>('chat/current-tool-name', () => null)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
@@ -135,6 +138,8 @@ export function useChatSession() {
     requestStartedAt.value = new Date()
     status.value = 'submitted'
     errorMessage.value = null
+    currentActivity.value = 'llm_thinking' // Initial state - LLM is thinking about the request
+    currentToolName.value = null
 
     if (activeController.value) {
       activeController.value.abort()
@@ -148,83 +153,279 @@ export function useChatSession() {
         payload.sessionId = sessionId.value
       }
 
-      const response = await $fetch<ChatResponse>('/api/chat', {
+      // Use streaming by default
+      const url = '/api/chat?stream=true'
+      const response = await fetch(url, {
         method: 'POST',
-        body: payload,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify(payload),
         signal: controller?.signal
       })
 
-      sessionId.value = response.sessionId ?? sessionId.value
-      sessionContentId.value = response.sessionContentId ?? sessionContentId.value ?? null
-
-      const normalizedMessages = normalizeMessages(response.messages)
-
-      if (normalizedMessages.length > 0) {
-        const serverHasUserMessage = normalizedMessages.some(message => message.role === 'user')
-
-        if (serverHasUserMessage) {
-          const lastMessage = messages.value[messages.value.length - 1]
-          if (lastMessage?.role === 'user') {
-            messages.value = messages.value.slice(0, -1)
-          }
-        }
-
-        // Merge new messages with existing ones
-        // Create a map of existing messages by ID for quick lookup
-        const existingMessageMap = new Map(messages.value.map(msg => [msg.id, msg]))
-
-        // Add or update messages from the response
-        for (const newMessage of normalizedMessages) {
-          existingMessageMap.set(newMessage.id, newMessage)
-        }
-
-        // Convert back to array and sort by createdAt
-        messages.value = Array.from(existingMessageMap.values()).sort((a, b) =>
-          a.createdAt.getTime() - b.createdAt.getTime()
-        )
-      } else if (response.assistantMessage) {
-        messages.value = [
-          ...messages.value,
-          {
-            id: createId(),
-            role: 'assistant' as const,
-            parts: [{ type: 'text' as const, text: response.assistantMessage }] as NonEmptyArray<{ type: 'text', text: string }>,
-            createdAt: new Date()
-          }
-        ]
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.statusMessage || errorData.message || `HTTP ${response.status}`)
       }
 
-      logs.value = normalizeLogs(response.logs)
+      if (!response.body) {
+        throw new Error('No response body')
+      }
 
-      // Update agentContext if provided
-      if (response.agentContext) {
-        agentContext.value = {
-          readySources: response.agentContext.readySources?.map(source => ({
-            ...source,
-            createdAt: toDate(source.createdAt),
-            updatedAt: toDate(source.updatedAt)
-          })),
-          ingestFailures: response.agentContext.ingestFailures || [],
-          lastAction: response.agentContext.lastAction || null,
-          toolHistory: response.agentContext.toolHistory?.map(tool => ({
-            ...tool,
-            timestamp: toDate(tool.timestamp)
-          })) || []
+      // Parse SSE stream
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let currentAssistantMessageId: string | null = null
+      let currentAssistantMessageText = ''
+      let pendingEventType: string | null = null
+
+      // Remove the user message we just added (server will send it back)
+      const lastUserMessage = messages.value[messages.value.length - 1]
+      if (lastUserMessage?.role === 'user') {
+        messages.value = messages.value.slice(0, -1)
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+
+          if (done) {
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            const trimmedLine = line.trim()
+            if (!trimmedLine) {
+              // Empty line indicates end of event, reset pending event type
+              pendingEventType = null
+              continue
+            }
+
+            if (trimmedLine.startsWith('event: ')) {
+              pendingEventType = trimmedLine.slice(7).trim()
+              continue
+            }
+
+            if (trimmedLine.startsWith('data: ')) {
+              const jsonStr = trimmedLine.slice(6)
+              if (jsonStr === '[DONE]') {
+                pendingEventType = null
+                continue
+              }
+
+              const eventType = pendingEventType
+              pendingEventType = null
+
+              try {
+                const eventData = JSON.parse(jsonStr)
+
+                switch (eventType) {
+                  case 'message:chunk': {
+                    // LLM is generating text
+                    currentActivity.value = 'streaming_message'
+                    currentToolName.value = null
+
+                    if (!currentAssistantMessageId) {
+                      currentAssistantMessageId = eventData.messageId || createId()
+                      currentAssistantMessageText = ''
+                      // Create new assistant message
+                      if (currentAssistantMessageId) {
+                        messages.value.push({
+                          id: currentAssistantMessageId,
+                          role: 'assistant' as const,
+                          parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<{ type: 'text', text: string }>,
+                          createdAt: new Date()
+                        })
+                      }
+                    }
+                    currentAssistantMessageText += eventData.chunk || ''
+                    // Update the message
+                    if (currentAssistantMessageId) {
+                      const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
+                      if (messageIndex >= 0 && messages.value[messageIndex]?.parts?.[0]) {
+                        messages.value[messageIndex].parts[0].text = currentAssistantMessageText
+                      }
+                    }
+                    break
+                  }
+
+                  case 'message:complete': {
+                    if (eventData.messageId && eventData.message) {
+                      const messageIndex = messages.value.findIndex(m => m.id === eventData.messageId)
+                      const message = messageIndex >= 0 ? messages.value[messageIndex] : null
+                      if (message?.parts?.[0]) {
+                        message.parts[0].text = eventData.message
+                      }
+                    }
+                    currentAssistantMessageId = null
+                    currentAssistantMessageText = ''
+                    // Message complete, but might still be processing tools
+                    if (currentActivity.value === 'streaming_message') {
+                      currentActivity.value = null
+                    }
+                    break
+                  }
+
+                  case 'tool:start': {
+                    // Tool execution started
+                    currentActivity.value = 'tool_executing'
+                    currentToolName.value = eventData.toolName || null
+                    break
+                  }
+
+                  case 'tool:complete': {
+                    // Tool execution completed
+                    currentActivity.value = null
+                    currentToolName.value = null
+                    break
+                  }
+
+                  case 'session:update': {
+                    if (eventData.sessionId) {
+                      sessionId.value = eventData.sessionId ?? sessionId.value
+                    }
+                    if (eventData.sessionContentId !== undefined) {
+                      sessionContentId.value = eventData.sessionContentId ?? null
+                    }
+                    break
+                  }
+
+                  case 'log:entry': {
+                    const logEntry = {
+                      id: eventData.id || createId(),
+                      type: eventData.type || 'unknown',
+                      message: eventData.message || '',
+                      payload: eventData.payload ?? null,
+                      createdAt: toDate(eventData.createdAt || new Date())
+                    }
+                    logs.value = [...logs.value, logEntry]
+
+                    // Update activity state based on log type
+                    const logType = logEntry.type?.toLowerCase() || ''
+                    if (logType.startsWith('tool_')) {
+                      if (logType === 'tool_started') {
+                        currentActivity.value = 'tool_executing'
+                        currentToolName.value = (logEntry.payload as any)?.toolName || null
+                      } else if (logType === 'tool_succeeded' || logType === 'tool_failed') {
+                        // Tool completed, but might have more tools or LLM response coming
+                        // Don't clear activity yet - wait for next event
+                      }
+                    } else if (logType === 'user_message') {
+                      // User message sent, LLM will start thinking
+                      currentActivity.value = 'llm_thinking'
+                      currentToolName.value = null
+                    }
+                    break
+                  }
+
+                  case 'agentContext:update': {
+                    agentContext.value = {
+                      readySources: eventData.readySources?.map((source: any) => ({
+                        ...source,
+                        createdAt: toDate(source.createdAt),
+                        updatedAt: toDate(source.updatedAt)
+                      })) || [],
+                      ingestFailures: eventData.ingestFailures || [],
+                      lastAction: eventData.lastAction || null,
+                      toolHistory: eventData.toolHistory?.map((tool: any) => ({
+                        ...tool,
+                        timestamp: toDate(tool.timestamp)
+                      })) || []
+                    }
+                    break
+                  }
+
+                  case 'messages:complete': {
+                    if (Array.isArray(eventData.messages)) {
+                      const normalizedMessages = normalizeMessages(eventData.messages)
+                      const existingMessageMap = new Map(messages.value.map(msg => [msg.id, msg]))
+                      for (const newMessage of normalizedMessages) {
+                        existingMessageMap.set(newMessage.id, newMessage)
+                      }
+                      messages.value = Array.from(existingMessageMap.values()).sort((a, b) =>
+                        a.createdAt.getTime() - b.createdAt.getTime()
+                      )
+                    }
+                    break
+                  }
+
+                  case 'logs:complete': {
+                    if (Array.isArray(eventData.logs)) {
+                      logs.value = normalizeLogs(eventData.logs)
+                    }
+                    break
+                  }
+
+                  case 'session:final': {
+                    if (eventData.sessionId) {
+                      sessionId.value = eventData.sessionId ?? sessionId.value
+                    }
+                    if (eventData.sessionContentId !== undefined) {
+                      sessionContentId.value = eventData.sessionContentId ?? null
+                    }
+                    break
+                  }
+
+                  case 'done': {
+                    // Stream complete
+                    break
+                  }
+
+                  case 'error': {
+                    const errorMsg = eventData.message || eventData.error || 'An error occurred'
+                    errorMessage.value = errorMsg
+                    messages.value.push({
+                      id: createId(),
+                      role: 'assistant' as const,
+                      parts: [{ type: 'text' as const, text: `❌ Error: ${errorMsg}` }] as NonEmptyArray<{ type: 'text', text: string }>,
+                      createdAt: new Date()
+                    })
+                    break
+                  }
+
+                  default: {
+                    // Unknown event type, log for debugging
+                    if (eventType) {
+                      console.warn('Unknown SSE event type:', eventType, eventData)
+                    }
+                    break
+                  }
+                }
+              } catch (parseError) {
+                console.error('Failed to parse SSE data:', jsonStr, parseError)
+              }
+            }
+          }
         }
+      } finally {
+        reader.releaseLock()
       }
 
       status.value = 'ready'
       requestStartedAt.value = null
-      return response
+      currentActivity.value = null
+      currentToolName.value = null
+      return null // Streaming doesn't return a response object
     } catch (error: any) {
-      if (error?.name === 'AbortError') {
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
         status.value = 'ready'
         requestStartedAt.value = null
+        currentActivity.value = null
+        currentToolName.value = null
         return null
       }
       status.value = 'error'
       requestStartedAt.value = null
-      const errorMsg = error?.data?.statusMessage || error?.data?.message || error?.message || 'Something went wrong.'
+      currentActivity.value = null
+      currentToolName.value = null
+      const errorMsg = error?.message || error?.data?.statusMessage || error?.data?.message || 'Something went wrong.'
       errorMessage.value = errorMsg
 
       // Also add error as a chat message so user can see it
@@ -336,6 +537,9 @@ export function useChatSession() {
     logs.value = []
     requestStartedAt.value = null
     agentContext.value = null
+    prompt.value = ''
+    currentActivity.value = null
+    currentToolName.value = null
   }
 
   return {
@@ -353,6 +557,9 @@ export function useChatSession() {
     agentContext,
     hydrateSession,
     loadSessionForContent,
-    resetSession
+    resetSession,
+    prompt,
+    currentActivity,
+    currentToolName
   }
 }

@@ -11,7 +11,8 @@ import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
 
 import { callChatCompletions } from '~~/server/utils/aiGateway'
-import { ensureEmailVerifiedDraftCapacity } from '~~/server/utils/auth'
+// Conversation quota is checked at chat session creation, not here
+// Content generation can happen as part of existing conversations
 import {
   CONTENT_TYPES,
   ensureUniqueContentSlug,
@@ -77,7 +78,7 @@ export const generateContentDraftFromSource = async (
     overrides,
     systemPrompt,
     temperature,
-    event
+    event: _event
   } = input
 
   if (!organizationId || !userId) {
@@ -200,7 +201,8 @@ export const generateContentDraftFromSource = async (
       })
     }
 
-    await ensureEmailVerifiedDraftCapacity(db, organizationId, user, event)
+    // Conversation quota is checked at chat session creation, not here
+    // Content generation can happen as part of existing conversations
   }
 
   // Track pipeline stages as they complete

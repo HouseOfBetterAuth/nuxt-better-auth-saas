@@ -43,7 +43,7 @@ const open = defineModel<boolean>('open', {
           :plan-label="props.planLabel"
         >
           <p class="text-sm text-muted-600 dark:text-muted-400">
-            {{ props.message || `You've reached the ${props.limit ?? 'current'} draft limit. ${props.planLabel || 'Your current plan'} has a draft quota. Upgrade to unlock more drafts or archive drafts to keep going.` }}
+            {{ props.message || `You've reached the ${props.limit ?? 'current'} conversation limit. ${props.planLabel || 'Your current plan'} has a conversation quota. Upgrade to unlock more conversations or archive conversations to keep going.` }}
           </p>
         </slot>
 

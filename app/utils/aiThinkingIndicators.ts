@@ -9,7 +9,7 @@ interface IndicatorPreset {
   message: string
 }
 
-const PRESETS: Record<string, IndicatorPreset> = {
+const PRESETS = {
   thinking: {
     label: 'Thinking',
     message: 'Analyzing your request...'
@@ -34,7 +34,7 @@ const PRESETS: Record<string, IndicatorPreset> = {
     label: 'Finishing up',
     message: 'Wrapping up the latest draft updates...'
   }
-}
+} as const satisfies Record<string, IndicatorPreset>
 
 const LOG_TYPE_TO_PRESET: Record<string, keyof typeof PRESETS> = {
   user_message: 'thinking'
@@ -73,6 +73,8 @@ export function resolveAiThinkingIndicator(input: {
   logs?: AiThinkingLogEntry[] | null
   fallbackMessage?: string
   activeSince?: Date | string | number | null
+  currentActivity?: 'llm_thinking' | 'tool_executing' | 'streaming_message' | null
+  currentToolName?: string | null
 }): IndicatorPreset {
   const activeSinceTime = normalizeTimestamp(input.activeSince)
   const scopedLogs = activeSinceTime
@@ -84,11 +86,31 @@ export function resolveAiThinkingIndicator(input: {
 
   const latestLog = getLatestLog(scopedLogs)
 
-  // Handle tool_* log types with custom messages
+  // Priority 1: Use currentActivity state (most accurate for streaming)
+  if (input.currentActivity === 'tool_executing' && input.currentToolName) {
+    const toolDisplayName = input.currentToolName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+    return {
+      label: 'Running',
+      message: `Running ${toolDisplayName}...`
+    }
+  }
+
+  if (input.currentActivity === 'streaming_message') {
+    return {
+      label: 'Generating',
+      message: 'Generating response...'
+    }
+  }
+
+  if (input.currentActivity === 'llm_thinking') {
+    return PRESETS.thinking
+  }
+
+  // Priority 2: Handle tool_* log types with custom messages
   if (latestLog?.type && latestLog.type.toLowerCase().startsWith('tool_')) {
     const payload = latestLog as any
     const toolName = payload?.payload?.toolName || 'tool'
-    const toolDisplayName = toolName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    const toolDisplayName = toolName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
     const logTypeLower = latestLog.type.toLowerCase()
 
     if (logTypeLower === 'tool_started') {
@@ -119,12 +141,18 @@ export function resolveAiThinkingIndicator(input: {
 
   const presetFromLog = latestLog?.type ? LOG_TYPE_TO_PRESET[(latestLog.type || '').toLowerCase()] : null
 
-  if (presetFromLog && PRESETS[presetFromLog])
-    return PRESETS[presetFromLog]
+  if (presetFromLog && PRESETS[presetFromLog]) {
+    const preset = PRESETS[presetFromLog]
+    if (preset)
+      return preset
+  }
 
   const presetFromStatus = input.status ? STATUS_TO_PRESET[(input.status || '').toLowerCase()] : null
-  if (presetFromStatus && PRESETS[presetFromStatus])
-    return PRESETS[presetFromStatus]
+  if (presetFromStatus && PRESETS[presetFromStatus]) {
+    const preset = PRESETS[presetFromStatus]
+    if (preset)
+      return preset
+  }
 
   if (input.fallbackMessage) {
     return {

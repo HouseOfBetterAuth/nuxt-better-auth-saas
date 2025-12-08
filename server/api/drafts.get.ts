@@ -1,7 +1,7 @@
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { getDraftQuotaUsage, requireAuth } from '~~/server/utils/auth'
+import { getConversationQuotaUsage, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
@@ -18,20 +18,20 @@ export default defineEventHandler(async (event) => {
   // For anonymous users without an org yet, return empty list with default quota
   let organizationId: string | null = null
   try {
-    const orgResult = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous })
+    const orgResult = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous ? true : undefined })
     organizationId = orgResult.organizationId
   } catch (error) {
     // If user is anonymous and doesn't have an org yet, return empty list with default quota
     // The organization should be created by the session middleware, but if it hasn't yet,
     // we return a default quota based on anonymous profile
     if (user.isAnonymous) {
-      const anonymousLimit = typeof runtimeConfig.public?.draftQuota?.anonymous === 'number'
-        ? runtimeConfig.public.draftQuota.anonymous
-        : 5
+      const anonymousLimit = typeof (runtimeConfig.public as any)?.conversationQuota?.anonymous === 'number'
+        ? (runtimeConfig.public as any).conversationQuota.anonymous
+        : 10
 
       return {
         contents: [],
-        draftQuota: {
+        conversationQuota: {
           limit: anonymousLimit,
           used: 0,
           remaining: anonymousLimit,
@@ -53,7 +53,36 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // For anonymous users, query content across all organizations with the same device fingerprint
+  // This matches the quota calculation behavior and ensures content is visible even if
+  // it was created in a different anonymous organization (e.g., after cookie clear)
+  let organizationIdsToQuery: string[] = [organizationId]
+  if (user.isAnonymous) {
+    // Get device fingerprint to find all matching anonymous organizations
+    const { getDeviceFingerprint } = await import('~~/server/utils/auth')
+    const deviceFingerprint = await getDeviceFingerprint(db, event, user.id)
+
+    if (deviceFingerprint) {
+      // Find all anonymous organizations with matching device fingerprint
+      const anonymousOrgs = await db
+        .select({ id: schema.organization.id })
+        .from(schema.organization)
+        .where(
+          and(
+            sql`${schema.organization.metadata}::jsonb @> ${JSON.stringify({ deviceFingerprint })}::jsonb`,
+            sql`${schema.organization.slug} LIKE 'anonymous-%'`
+          )
+        )
+
+      const orgIds = anonymousOrgs.map(org => org.id)
+      if (orgIds.length > 0) {
+        organizationIdsToQuery = orgIds
+      }
+    }
+  }
+
   // Select only minimal fields needed for list view
+  // Query from all relevant organizations (single org for authenticated, multiple for anonymous)
   const contents = await db
     .select({
       content: {
@@ -88,7 +117,11 @@ export default defineEventHandler(async (event) => {
     .from(schema.content)
     .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
     .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
-    .where(eq(schema.content.organizationId, organizationId))
+    .where(
+      organizationIdsToQuery.length === 1
+        ? eq(schema.content.organizationId, organizationIdsToQuery[0])
+        : inArray(schema.content.organizationId, organizationIdsToQuery)
+    )
     .orderBy(desc(schema.content.updatedAt))
     .limit(100)
 
@@ -129,10 +162,10 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const draftQuota = await getDraftQuotaUsage(db, organizationId, user, event)
+  const conversationQuota = await getConversationQuotaUsage(db, organizationId, user, event)
 
   return {
     contents: transformedContents,
-    draftQuota
+    conversationQuota
   }
 })

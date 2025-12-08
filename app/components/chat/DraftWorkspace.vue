@@ -166,7 +166,6 @@ function handleBackNavigation() {
   emit('close')
 }
 
-const prompt = ref('')
 const toast = useToast()
 const { copy } = useClipboard()
 const {
@@ -178,7 +177,8 @@ const {
   hydrateSession,
   sessionContentId,
   sessionId,
-  agentContext
+  agentContext,
+  prompt
 } = useChatSession()
 const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)

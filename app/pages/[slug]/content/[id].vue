@@ -15,7 +15,7 @@ interface DraftEntry {
 }
 
 definePageMeta({
-  layout: 'workspace'
+  // Uses default layout which adapts based on workspace header state
 })
 
 const route = useRoute()

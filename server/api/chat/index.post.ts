@@ -2,9 +2,9 @@ import type { ChatToolInvocation } from '~~/server/services/chat/tools'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { and, eq } from 'drizzle-orm'
-import { createError } from 'h3'
+import { createError, getHeader, getQuery, setHeader, setResponseStatus } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { runChatAgentWithMultiPass } from '~~/server/services/chat/agent'
+import { runChatAgentWithMultiPass, runChatAgentWithMultiPassStream } from '~~/server/services/chat/agent'
 import {
   addLogEntryToChatSession,
   addMessageToChatSession,
@@ -19,7 +19,7 @@ import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSumma
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
-import { getAuthSession, requireAuth } from '~~/server/utils/auth'
+import { ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
@@ -69,6 +69,11 @@ function toSummaryBullets(text: string | null | undefined) {
   }
   const sentences = normalized.split(/(?<=[.!?])\s+/).map(line => line.trim()).filter(Boolean)
   return sentences.length ? sentences : [normalized]
+}
+
+function writeSSEEvent(event: any, eventType: string, data: any) {
+  const eventData = JSON.stringify(data)
+  return `event: ${eventType}\ndata: ${eventData}\n\n`
 }
 
 async function composeWorkspaceCompletionMessages(
@@ -708,6 +713,11 @@ async function executeChatTool(
  *
  */
 export default defineEventHandler(async (event) => {
+  // Check for streaming request
+  const query = getQuery(event)
+  const acceptHeader = getHeader(event, 'accept') || ''
+  const wantsStream = query.stream === 'true' || acceptHeader.includes('text/event-stream')
+
   const user = await requireAuth(event, { allowAnonymous: true })
   const db = await useDB(event)
 
@@ -760,6 +770,15 @@ export default defineEventHandler(async (event) => {
     throw createValidationError('Message is required')
   }
 
+  // Set SSE headers if streaming
+  if (wantsStream) {
+    setResponseStatus(event, 200)
+    setHeader(event, 'Content-Type', 'text/event-stream')
+    setHeader(event, 'Cache-Control', 'no-cache')
+    setHeader(event, 'Connection', 'keep-alive')
+    setHeader(event, 'X-Accel-Buffering', 'no') // Disable nginx buffering
+  }
+
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
   const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
@@ -800,6 +819,9 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!session) {
+    // Check conversation quota before creating a new session
+    await ensureConversationCapacity(db, organizationId, user, event)
+
     const lastAction = trimmedMessage ? 'message' : null
     session = await getOrCreateChatSessionForContent(db, {
       organizationId,
@@ -962,47 +984,173 @@ export default defineEventHandler(async (event) => {
       contextBlocks.push(`Ingestion failures:\n${failureSummary}`)
     }
 
+    // Helper to write SSE event to response (only used in streaming mode)
+    const writeSSE = wantsStream
+      ? (eventType: string, data: any) => {
+          try {
+            const sseData = writeSSEEvent(event, eventType, data)
+            event.node.res.write(sseData)
+          } catch (error) {
+            console.error('Failed to write SSE event:', error)
+          }
+        }
+      : null
+
+    // Import crypto for UUID generation (only needed in streaming mode)
+    const { randomUUID } = wantsStream ? await import('crypto') : { randomUUID: () => '' }
+
     try {
       // Multi-pass orchestration - handles all tools directly
-      multiPassResult = await runChatAgentWithMultiPass({
-        conversationHistory,
-        userMessage: trimmedMessage,
-        contextBlocks,
-        onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
-          // Log tool retry
-          await addLogEntryToChatSession(db, {
+      if (wantsStream) {
+        // Streaming mode: use streaming agent with SSE callbacks
+        let currentMessageId: string | null = null
+
+        // Send initial session update
+        if (writeSSE) {
+          writeSSE('session:update', {
             sessionId: activeSession.id,
-            organizationId,
-            type: 'tool_retrying',
-            message: `Retrying ${toolInvocation.name} (attempt ${retryCount + 1}/3)...`,
-            payload: {
-              toolName: toolInvocation.name,
-              args: toolInvocation.arguments,
-              retryCount
-            }
-          })
-        },
-        executeTool: async (toolInvocation: ChatToolInvocation) => {
-          // Log tool start
-          await addLogEntryToChatSession(db, {
-            sessionId: activeSession.id,
-            organizationId,
-            type: 'tool_started',
-            message: `Running ${toolInvocation.name}...`,
-            payload: {
-              toolName: toolInvocation.name,
-              args: toolInvocation.arguments
-            }
-          })
-          return await executeChatTool(toolInvocation, {
-            db,
-            organizationId,
-            userId: user.id,
-            sessionId: activeSession.id,
-            event
+            sessionContentId: activeSession.contentId
           })
         }
-      })
+
+        multiPassResult = await runChatAgentWithMultiPassStream({
+          conversationHistory,
+          userMessage: trimmedMessage,
+          contextBlocks,
+          onLLMChunk: (chunk: string) => {
+            currentAssistantMessage += chunk
+            if (!currentMessageId) {
+              currentMessageId = randomUUID()
+            }
+            if (writeSSE) {
+              writeSSE('message:chunk', {
+                messageId: currentMessageId,
+                chunk
+              })
+            }
+          },
+          onToolStart: async (toolName: string) => {
+            // Log tool start
+            const logEntry = await addLogEntryToChatSession(db, {
+              sessionId: activeSession.id,
+              organizationId,
+              type: 'tool_started',
+              message: `Running ${toolName}...`,
+              payload: {
+                toolName
+              }
+            })
+            if (writeSSE) {
+              writeSSE('tool:start', {
+                toolName,
+                timestamp: new Date().toISOString()
+              })
+              if (logEntry) {
+                writeSSE('log:entry', {
+                  id: logEntry.id,
+                  type: logEntry.type,
+                  message: logEntry.message,
+                  payload: logEntry.payload,
+                  createdAt: logEntry.createdAt
+                })
+              }
+            }
+          },
+          onToolComplete: async (toolName: string, result: any) => {
+            if (writeSSE) {
+              writeSSE('tool:complete', {
+                toolName,
+                success: result.success,
+                result: result.result,
+                error: result.error,
+                timestamp: new Date().toISOString()
+              })
+            }
+          },
+          onFinalMessage: (message: string) => {
+            currentAssistantMessage = message
+            if (writeSSE) {
+              writeSSE('message:complete', {
+                messageId: currentMessageId,
+                message
+              })
+            }
+          },
+          onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
+            // Log tool retry
+            const logEntry = await addLogEntryToChatSession(db, {
+              sessionId: activeSession.id,
+              organizationId,
+              type: 'tool_retrying',
+              message: `Retrying ${toolInvocation.name} (attempt ${retryCount + 1}/3)...`,
+              payload: {
+                toolName: toolInvocation.name,
+                args: toolInvocation.arguments,
+                retryCount
+              }
+            })
+            if (writeSSE && logEntry) {
+              writeSSE('log:entry', {
+                id: logEntry.id,
+                type: logEntry.type,
+                message: logEntry.message,
+                payload: logEntry.payload,
+                createdAt: logEntry.createdAt
+              })
+            }
+          },
+          executeTool: async (toolInvocation: ChatToolInvocation) => {
+            return await executeChatTool(toolInvocation, {
+              db,
+              organizationId,
+              userId: user.id,
+              sessionId: activeSession.id,
+              event
+            })
+          }
+        })
+      } else {
+        // Non-streaming mode: use regular agent
+        multiPassResult = await runChatAgentWithMultiPass({
+          conversationHistory,
+          userMessage: trimmedMessage,
+          contextBlocks,
+          onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
+            // Log tool retry
+            await addLogEntryToChatSession(db, {
+              sessionId: activeSession.id,
+              organizationId,
+              type: 'tool_retrying',
+              message: `Retrying ${toolInvocation.name} (attempt ${retryCount + 1}/3)...`,
+              payload: {
+                toolName: toolInvocation.name,
+                args: toolInvocation.arguments,
+                retryCount
+              }
+            })
+          },
+          executeTool: async (toolInvocation: ChatToolInvocation) => {
+            // Log tool start
+            await addLogEntryToChatSession(db, {
+              sessionId: activeSession.id,
+              organizationId,
+              type: 'tool_started',
+              message: `Running ${toolInvocation.name}...`,
+              payload: {
+                toolName: toolInvocation.name,
+                args: toolInvocation.arguments
+              }
+            })
+            return await executeChatTool(toolInvocation, {
+              db,
+              organizationId,
+              userId: user.id,
+              sessionId: activeSession.id,
+              event
+            })
+          }
+        })
+      }
 
       // Process multi-pass results
       if (multiPassResult.toolHistory.length > 0) {
@@ -1019,6 +1167,12 @@ export default defineEventHandler(async (event) => {
                 .returning()
               if (updatedSession) {
                 activeSession = updatedSession
+                if (writeSSE) {
+                  writeSSE('session:update', {
+                    sessionId: activeSession.id,
+                    sessionContentId: activeSession.contentId
+                  })
+                }
               }
             }
             // Track ready source
@@ -1053,12 +1207,18 @@ export default defineEventHandler(async (event) => {
                 .returning()
               if (updatedSession) {
                 activeSession = updatedSession
+                if (writeSSE) {
+                  writeSSE('session:update', {
+                    sessionId: activeSession.id,
+                    sessionContentId: activeSession.contentId
+                  })
+                }
               }
             }
           }
 
           // Log tool execution
-          await addLogEntryToChatSession(db, {
+          const logEntry = await addLogEntryToChatSession(db, {
             sessionId: activeSession.id,
             organizationId,
             type: toolExec.result.success ? 'tool_succeeded' : 'tool_failed',
@@ -1072,6 +1232,18 @@ export default defineEventHandler(async (event) => {
               error: toolExec.result.error
             }
           })
+
+          if (writeSSE) {
+            if (logEntry) {
+              writeSSE('log:entry', {
+                id: logEntry.id,
+                type: logEntry.type,
+                message: logEntry.message,
+                payload: logEntry.payload,
+                createdAt: logEntry.createdAt
+              })
+            }
+          }
 
           // Update session metadata with last successful tool
           if (toolExec.result.success) {
@@ -1326,6 +1498,59 @@ Keep it conversational and helpful.`
     toolHistory
   }
 
+  // Handle streaming vs non-streaming response
+  if (wantsStream) {
+    // Write final messages, logs, and context as SSE events
+    const finalMessages = messages.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+      payload: message.payload
+    }))
+
+    const finalLogs = logs.map(log => ({
+      id: log.id,
+      type: log.type,
+      message: log.message,
+      payload: log.payload,
+      createdAt: log.createdAt
+    }))
+
+    // Send final state
+    const writeSSE = (eventType: string, data: any) => {
+      try {
+        const sseData = writeSSEEvent(event, eventType, data)
+        event.node.res.write(sseData)
+      } catch (error) {
+        console.error('Failed to write SSE event:', error)
+      }
+    }
+
+    writeSSE('messages:complete', {
+      messages: finalMessages
+    })
+
+    writeSSE('logs:complete', {
+      logs: finalLogs
+    })
+
+    writeSSE('agentContext:update', agentContext)
+
+    writeSSE('session:final', {
+      sessionId: activeSession.id,
+      sessionContentId: activeSession.contentId
+    })
+
+    // Send done event and close stream
+    writeSSE('done', {})
+    event.node.res.end()
+
+    // Return null for streaming (response already sent)
+    return null
+  }
+
+  // Non-streaming: return JSON response
   return {
     assistantMessage: assistantMessageBody,
     sources: [],

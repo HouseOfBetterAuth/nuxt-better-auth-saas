@@ -2,7 +2,7 @@ import type { CreateContentRequestBody } from '~~/server/types/content'
 import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/database/schema'
-import { ensureEmailVerifiedDraftCapacity, requireAuth } from '~~/server/utils/auth'
+import { requireAuth } from '~~/server/utils/auth'
 import {
   CONTENT_STATUSES,
   CONTENT_TYPES,
@@ -35,7 +35,8 @@ export default defineEventHandler(async (event) => {
 
   validateRequestBody(body)
 
-  await ensureEmailVerifiedDraftCapacity(db, organizationId, user, event)
+  // Conversation quota is checked at chat session creation, not here
+  // Content creation can happen as part of existing conversations
 
   const title = validateRequiredString(body.title, 'title')
 

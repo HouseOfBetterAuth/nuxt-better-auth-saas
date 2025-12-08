@@ -1,5 +1,5 @@
 <script setup lang="ts">
-interface DraftQuotaUsagePayload {
+interface ConversationQuotaUsagePayload {
   limit: number | null
   used: number | null
   remaining: number | null
@@ -10,7 +10,7 @@ interface DraftQuotaUsagePayload {
 const localePath = useLocalePath()
 const { t } = useI18n()
 const { loggedIn, signOut, user, activeStripeSubscription, organization, session } = useAuth()
-const sharedQuotaUsage = useState<DraftQuotaUsagePayload | null>('draft-quota-usage', () => null)
+const sharedQuotaUsage = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 
 const userInitials = computed(() => {
   if (user.value?.name) {
@@ -102,8 +102,8 @@ const quotaBadgeTooltip = computed(() => {
     return ''
   const label = sharedQuotaUsage.value?.label ?? (loggedIn.value ? 'Current plan' : 'Guest access')
   if (sharedQuotaUsage.value?.unlimited)
-    return `${label}: Unlimited drafts`
-  return `${label}: ${quotaBadgeLabel.value} drafts`
+    return `${label}: Unlimited conversations`
+  return `${label}: ${quotaBadgeLabel.value} conversations`
 })
 
 const emitQuotaEvent = () => {

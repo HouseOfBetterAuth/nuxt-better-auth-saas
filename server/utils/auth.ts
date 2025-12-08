@@ -37,7 +37,7 @@ const trustedOrigins = [
   runtimeConfig.public.baseURL
 ]
 
-const parseDraftQuotaValue = (value: unknown, fallback: number) => {
+const parseConversationQuotaValue = (value: unknown, fallback: number) => {
   if (typeof value === 'number' && Number.isFinite(value))
     return value
   if (typeof value === 'string') {
@@ -48,10 +48,10 @@ const parseDraftQuotaValue = (value: unknown, fallback: number) => {
   return fallback
 }
 
-const DRAFT_QUOTA_SETTINGS = {
-  anonymous: parseDraftQuotaValue(runtimeConfig.public?.draftQuota?.anonymous, 5),
-  verified: parseDraftQuotaValue(runtimeConfig.public?.draftQuota?.verified, 25),
-  paid: parseDraftQuotaValue(runtimeConfig.public?.draftQuota?.paid, 0)
+const CONVERSATION_QUOTA_SETTINGS = {
+  anonymous: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.anonymous, 10),
+  verified: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.verified, 50),
+  paid: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.paid, 0)
 } as const
 const QUOTA_USAGE_THRESHOLDS = [0.5, 0.8, 1] as const
 
@@ -1050,7 +1050,7 @@ const getOrganizationSubscriptionStatus = async (db: NodePgDatabase<typeof schem
   }
 }
 
-const resolveDraftQuotaProfile = (user: User | null, hasActiveSubscription: boolean) => {
+const resolveConversationQuotaProfile = (user: User | null, hasActiveSubscription: boolean) => {
   if (hasActiveSubscription) {
     return { profile: 'paid' as const, label: 'Pro plan' }
   }
@@ -1063,7 +1063,7 @@ const resolveDraftQuotaProfile = (user: User | null, hasActiveSubscription: bool
 const logQuotaUsageSnapshot = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
-  quota: DraftQuotaUsageResult
+  quota: ConversationQuotaUsageResult
 ) => {
   const thresholdsToLog: Array<{ threshold: number, ratio: number, used: number, limit: number }> = []
   try {
@@ -1127,7 +1127,7 @@ const logQuotaUsageSnapshot = async (
   }
 }
 
-export interface DraftQuotaUsageResult {
+export interface ConversationQuotaUsageResult {
   limit: number | null
   used: number
   remaining: number | null
@@ -1143,7 +1143,7 @@ export interface DraftQuotaUsageResult {
  * Uses Better Auth session data when available, falls back to request headers.
  * Follows Better Auth's IP address detection patterns.
  */
-const getDeviceFingerprint = async (
+export const getDeviceFingerprint = async (
   db: NodePgDatabase<typeof schema>,
   event?: H3Event | null,
   userId?: string | null
@@ -1279,15 +1279,15 @@ const ensureDeviceFingerprintInOrg = async (
   }
 }
 
-export const getDraftQuotaUsage = async (
+export const getConversationQuotaUsage = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
   user: User | null,
   event?: H3Event | null
-): Promise<DraftQuotaUsageResult> => {
+): Promise<ConversationQuotaUsageResult> => {
   const { hasActiveSubscription, planLabel } = await getOrganizationSubscriptionStatus(db, organizationId)
-  const { profile, label } = resolveDraftQuotaProfile(user, hasActiveSubscription)
-  const configuredLimit = DRAFT_QUOTA_SETTINGS[profile]
+  const { profile, label } = resolveConversationQuotaProfile(user, hasActiveSubscription)
+  const configuredLimit = CONVERSATION_QUOTA_SETTINGS[profile]
   const unlimited = profile === 'paid' && configuredLimit <= 0
 
   // Ensure device fingerprint is stored for anonymous organizations
@@ -1304,9 +1304,6 @@ export const getDraftQuotaUsage = async (
     const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
     if (deviceFingerprint) {
       // Find all anonymous organizations with matching device fingerprint in metadata
-      // Use JSONB @> operator for safe, efficient querying
-      // Note: For optimal performance, consider adding a GIN index:
-      // CREATE INDEX idx_organization_metadata_gin ON organization USING GIN ((metadata::jsonb) jsonb_path_ops);
       const anonymousOrgs = await db
         .select({ id: schema.organization.id })
         .from(schema.organization)
@@ -1320,50 +1317,51 @@ export const getDraftQuotaUsage = async (
       const orgIds = anonymousOrgs.map(org => org.id)
 
       if (orgIds.length > 0) {
-        // Aggregate content count across all anonymous orgs from this device
-        // Exclude archived content from quota (archived content doesn't count toward limit)
+        // Count chat sessions across all anonymous orgs from this device
+        // Exclude archived/completed sessions from quota
         const [aggregateResult] = await db
           .select({ total: count() })
-          .from(schema.content)
+          .from(schema.contentChatSession)
           .where(and(
-            inArray(schema.content.organizationId, orgIds),
-            sql`${schema.content.status} != 'archived'`
+            inArray(schema.contentChatSession.organizationId, orgIds),
+            sql`${schema.contentChatSession.status} != 'archived'`,
+            sql`${schema.contentChatSession.status} != 'completed'`
           ))
 
         used = Number(aggregateResult?.total ?? 0) || 0
       } else {
         // Fallback to current organization if no device match found
-        // Exclude archived content from quota
         const [countResult] = await db
           .select({ total: count() })
-          .from(schema.content)
+          .from(schema.contentChatSession)
           .where(and(
-            eq(schema.content.organizationId, organizationId),
-            sql`${schema.content.status} != 'archived'`
+            eq(schema.contentChatSession.organizationId, organizationId),
+            sql`${schema.contentChatSession.status} != 'archived'`,
+            sql`${schema.contentChatSession.status} != 'completed'`
           ))
         used = Number(countResult?.total ?? 0) || 0
       }
     } else {
       // Fallback to current organization if device fingerprint unavailable
-      // Exclude archived content from quota
       const [countResult] = await db
         .select({ total: count() })
-        .from(schema.content)
+        .from(schema.contentChatSession)
         .where(and(
-          eq(schema.content.organizationId, organizationId),
-          sql`${schema.content.status} != 'archived'`
+          eq(schema.contentChatSession.organizationId, organizationId),
+          sql`${schema.contentChatSession.status} != 'archived'`,
+          sql`${schema.contentChatSession.status} != 'completed'`
         ))
       used = Number(countResult?.total ?? 0) || 0
     }
   } else {
     // For non-anonymous users, use organization-based quota
-    // Exclude archived content from quota (archived content doesn't count toward limit)
     const [countResult] = await db
       .select({ total: count() })
-      .from(schema.content)
+      .from(schema.contentChatSession)
       .where(and(
-        eq(schema.content.organizationId, organizationId),
-        sql`${schema.content.status} != 'archived'`
+        eq(schema.contentChatSession.organizationId, organizationId),
+        sql`${schema.contentChatSession.status} != 'archived'`,
+        sql`${schema.contentChatSession.status} != 'completed'`
       ))
     used = Number(countResult?.total ?? 0) || 0
   }
@@ -1394,21 +1392,21 @@ export const getDraftQuotaUsage = async (
   return quota
 }
 
-export const ensureEmailVerifiedDraftCapacity = async (
+export const ensureConversationCapacity = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
   user: User,
   event?: H3Event | null
 ): Promise<{ limit: number, used: number, remaining: number } | null> => {
-  const quota = await getDraftQuotaUsage(db, organizationId, user, event)
+  const quota = await getConversationQuotaUsage(db, organizationId, user, event)
   if (!quota || quota.unlimited || quota.limit === null) {
     return null
   }
 
   if (quota.used >= quota.limit) {
     const statusMessage = quota.profile === 'anonymous'
-      ? 'Draft limit reached. Please create an account to continue creating drafts.'
-      : 'Draft limit reached. Please upgrade your plan to continue creating drafts.'
+      ? 'Conversation limit reached. Please create an account to continue chatting.'
+      : 'Conversation limit reached. Please upgrade your plan to continue chatting.'
     throw createError({
       statusCode: 403,
       statusMessage,

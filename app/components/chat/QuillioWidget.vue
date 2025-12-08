@@ -37,10 +37,11 @@ const {
   stopResponse,
   logs,
   requestStartedAt,
-  agentContext
+  agentContext,
+  prompt,
+  currentActivity,
+  currentToolName
 } = useChatSession()
-
-const prompt = ref('')
 const promptSubmitting = ref(false)
 const showQuotaModal = ref(false)
 const quotaModalData = ref<{ limit: number | null, used: number | null, remaining: number | null, planLabel: string | null } | null>(null)
@@ -84,7 +85,7 @@ function getEventCoordinates(event?: Event | null): { x: number, y: number } | n
   return null
 }
 
-const parseDraftLimitValue = (value: unknown, fallback: number) => {
+const parseConversationLimitValue = (value: unknown, fallback: number) => {
   if (typeof value === 'number' && Number.isFinite(value))
     return value
   if (typeof value === 'string') {
@@ -95,15 +96,15 @@ const parseDraftLimitValue = (value: unknown, fallback: number) => {
   return fallback
 }
 
-const guestDraftLimit = computed(() => parseDraftLimitValue(runtimeConfig.public?.draftQuota?.anonymous, 5))
-const verifiedDraftLimit = computed(() => parseDraftLimitValue(runtimeConfig.public?.draftQuota?.verified, 25))
+const guestConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.anonymous, 10))
+const verifiedConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.verified, 50))
 
 const activeWorkspaceId = ref<string | null>(null)
 const workspaceDetail = shallowRef<any | null>(null)
 const workspaceLoading = ref(false)
 const archivingDraftId = ref<string | null>(null)
 const pendingDrafts = ref<Array<{ id: string, contentType: string | null }>>([])
-const draftQuotaState = useState<DraftQuotaUsagePayload | null>('draft-quota-usage', () => null)
+const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 const workspacePayloadCache = useState<Record<string, { payload: any | null, timestamp: number }>>('workspace-payload-cache', () => ({}))
 const WORKSPACE_CACHE_TTL_MS = 30_000
 
@@ -140,7 +141,7 @@ const prefetchWorkspacePayload = (contentId?: string | null) => {
       })
   })
 }
-interface DraftQuotaUsagePayload {
+interface ConversationQuotaUsagePayload {
   limit: number | null
   used: number | null
   remaining: number | null
@@ -151,7 +152,7 @@ interface DraftQuotaUsagePayload {
 
 interface WorkspaceResponse {
   contents: any[]
-  draftQuota?: DraftQuotaUsagePayload | null
+  conversationQuota?: ConversationQuotaUsagePayload | null
 }
 
 const {
@@ -196,12 +197,14 @@ const updateLocalDraftStatus = (draftId: string, status: string) => {
 }
 const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
 
-const draftQuotaUsage = computed<DraftQuotaUsagePayload | null>(() => workspaceDraftsPayload.value?.draftQuota ?? null)
-const quotaPlanLabel = computed(() => draftQuotaUsage.value?.label ?? (loggedIn.value ? 'Current plan' : 'Guest access'))
+const conversationQuotaUsage = computed<ConversationQuotaUsagePayload | null>(() =>
+  workspaceDraftsPayload.value?.conversationQuota ?? null
+)
+const quotaPlanLabel = computed(() => conversationQuotaUsage.value?.label ?? (loggedIn.value ? 'Current plan' : 'Guest access'))
 
-watch(draftQuotaUsage, (value) => {
+watch(conversationQuotaUsage, (value) => {
   if (value) {
-    draftQuotaState.value = {
+    conversationQuotaState.value = {
       limit: value.limit ?? null,
       used: value.used ?? null,
       remaining: value.remaining ?? null,
@@ -209,7 +212,7 @@ watch(draftQuotaUsage, (value) => {
       unlimited: value.unlimited ?? false
     }
   } else {
-    draftQuotaState.value = null
+    conversationQuotaState.value = null
   }
 }, { immediate: true, deep: true })
 
@@ -304,7 +307,9 @@ const aiThinkingIndicator = computed(() => resolveAiThinkingIndicator({
   status: status.value,
   logs: logs.value,
   activeSince: requestStartedAt.value,
-  fallbackMessage: 'Working on your draft...'
+  fallbackMessage: 'Working on your draft...',
+  currentActivity: currentActivity.value,
+  currentToolName: currentToolName.value
 }))
 const displayMessages = computed<ChatMessage[]>(() => {
   const baseMessages = messages.value.slice()
@@ -340,7 +345,7 @@ useDraftAction({
 })
 
 const openQuotaModal = (payload?: { limit?: number | null, used?: number | null, remaining?: number | null, label?: string | null } | null) => {
-  const fallback = draftQuotaUsage.value
+  const fallback = conversationQuotaUsage.value
 
   // Preserve unlimited plan semantics when there is no explicit override
   if (!payload && fallback?.unlimited) {
@@ -357,7 +362,7 @@ const openQuotaModal = (payload?: { limit?: number | null, used?: number | null,
   const baseLimit = typeof payload?.limit === 'number'
     ? payload.limit
     : (typeof fallback?.limit === 'number' ? fallback.limit : null)
-  const normalizedLimit = baseLimit ?? (loggedIn.value ? verifiedDraftLimit.value : guestDraftLimit.value)
+  const normalizedLimit = baseLimit ?? (loggedIn.value ? verifiedConversationLimit.value : guestConversationLimit.value)
 
   // Derive usedValue from payload, fallback, or remaining if provided, otherwise default to 0
   let usedValue: number | null = null
@@ -388,38 +393,38 @@ const openQuotaModal = (payload?: { limit?: number | null, used?: number | null,
 
 const quotaModalMessage = computed(() => {
   if (!loggedIn.value) {
-    return `Make an account to unlock ${verifiedDraftLimit.value} total drafts or archive drafts to continue writing.`
+    return `Make an account to unlock ${verifiedConversationLimit.value} total conversations or archive conversations to continue chatting.`
   }
-  if (draftQuotaUsage.value?.unlimited) {
-    return 'Your current plan includes unlimited drafts.'
+  if (conversationQuotaUsage.value?.unlimited) {
+    return 'Your current plan includes unlimited conversations.'
   }
-  return 'Starter plans have a draft limit. Upgrade to unlock unlimited drafts or archive drafts to continue writing.'
+  return 'Starter plans have a conversation limit. Upgrade to unlock unlimited conversations or archive conversations to continue chatting.'
 })
 
 const quotaModalTitle = computed(() => {
-  const limit = quotaModalData.value?.limit ?? draftQuotaUsage.value?.limit ?? null
-  const used = quotaModalData.value?.used ?? draftQuotaUsage.value?.used ?? null
+  const limit = quotaModalData.value?.limit ?? conversationQuotaUsage.value?.limit ?? null
+  const used = quotaModalData.value?.used ?? conversationQuotaUsage.value?.used ?? null
   if (typeof limit === 'number') {
     const remaining = Math.max(0, limit - (typeof used === 'number' ? used : 0))
-    return `You have ${remaining}/${limit} drafts remaining.`
+    return `You have ${remaining}/${limit} conversations remaining.`
   }
-  if (draftQuotaUsage.value?.unlimited) {
-    return 'Unlimited drafts unlocked.'
+  if (conversationQuotaUsage.value?.unlimited) {
+    return 'Unlimited conversations unlocked.'
   }
-  return loggedIn.value ? 'Upgrade to unlock more drafts.' : 'Create an account for more drafts.'
+  return loggedIn.value ? 'Upgrade to unlock more conversations.' : 'Create an account for more conversations.'
 })
 
 const quotaPrimaryLabel = computed(() => {
   if (!loggedIn.value)
     return 'Sign up'
-  if (draftQuotaUsage.value?.unlimited)
+  if (conversationQuotaUsage.value?.unlimited)
     return 'Close'
   return 'Upgrade'
 })
 
 const handleQuotaModalPrimary = () => {
   showQuotaModal.value = false
-  if (draftQuotaUsage.value?.unlimited) {
+  if (conversationQuotaUsage.value?.unlimited) {
     // For unlimited plans, just close the modal
     return
   }
@@ -1110,9 +1115,9 @@ if (import.meta.client) {
     <QuotaLimitModal
       v-model:open="showQuotaModal"
       :title="quotaModalTitle"
-      :limit="quotaModalData?.limit ?? draftQuotaUsage?.limit ?? null"
-      :used="quotaModalData?.used ?? draftQuotaUsage?.used ?? null"
-      :remaining="quotaModalData?.remaining ?? draftQuotaUsage?.remaining ?? null"
+      :limit="quotaModalData?.limit ?? conversationQuotaUsage?.limit ?? null"
+      :used="quotaModalData?.used ?? conversationQuotaUsage?.used ?? null"
+      :remaining="quotaModalData?.remaining ?? conversationQuotaUsage?.remaining ?? null"
       :plan-label="quotaModalData?.planLabel ?? quotaPlanLabel"
       :message="quotaModalMessage"
       :primary-label="quotaPrimaryLabel"

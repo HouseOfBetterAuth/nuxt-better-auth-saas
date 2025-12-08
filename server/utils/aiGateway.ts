@@ -82,6 +82,34 @@ export interface ChatCompletionResponse {
   }
 }
 
+export interface ChatCompletionChunk {
+  id: string
+  model: string
+  created: number
+  choices: Array<{
+    index: number
+    delta: {
+      content?: string | null
+      tool_calls?: Array<{
+        index?: number
+        id?: string
+        type?: string
+        function?: {
+          name?: string
+          arguments?: string
+        }
+      }>
+      role?: string
+    }
+    finish_reason?: string | null
+  }>
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
 export async function callChatCompletionsRaw({
   model = OPENAI_BLOG_MODEL,
   messages,
@@ -146,6 +174,157 @@ export async function callChatCompletionsRaw({
     return response
   } catch (error: any) {
     console.error('AI Gateway request failed', {
+      model,
+      temperature,
+      maxTokens,
+      error: error?.message || error
+    })
+
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'Failed to reach AI Gateway',
+      data: {
+        message: error?.message || 'Unknown AI Gateway error'
+      }
+    })
+  }
+}
+
+export async function* callChatCompletionsStream({
+  model = OPENAI_BLOG_MODEL,
+  messages,
+  temperature = OPENAI_BLOG_TEMPERATURE,
+  maxTokens = OPENAI_BLOG_MAX_OUTPUT_TOKENS,
+  tools,
+  toolChoice
+}: CallChatCompletionsRawOptions): AsyncGenerator<ChatCompletionChunk, void, unknown> {
+  try {
+    if (!OPENAI_API_KEY) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'OpenAI API key not configured',
+        data: {
+          message: 'NUXT_OPENAI_API_KEY environment variable is required'
+        }
+      })
+    }
+
+    if (!CF_AI_GATEWAY_TOKEN) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Cloudflare AI Gateway token not configured',
+        data: {
+          message: 'NUXT_CF_AI_GATEWAY_TOKEN environment variable is required'
+        }
+      })
+    }
+
+    const modelName = model.startsWith('openai/') ? model : `openai/${model}`
+    const url = `${gatewayBase}/chat/completions`
+
+    const systemMessageIndex = messages.findIndex(message => message.role === 'system')
+    const orderedMessages = systemMessageIndex > 0
+      ? [messages[systemMessageIndex], ...messages.slice(0, systemMessageIndex), ...messages.slice(systemMessageIndex + 1)]
+      : messages
+
+    const body: Record<string, any> = {
+      model: modelName,
+      messages: orderedMessages,
+      temperature,
+      max_completion_tokens: maxTokens,
+      stream: true
+    }
+
+    if (tools?.length) {
+      body.tools = tools
+      if (toolChoice) {
+        body.tool_choice = toolChoice
+      }
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'cf-aig-authorization': `Bearer ${CF_AI_GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify(body)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw createError({
+        statusCode: response.status,
+        statusMessage: 'AI Gateway request failed',
+        data: {
+          message: errorText || 'Unknown AI Gateway error'
+        }
+      })
+    }
+
+    if (!response.body) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: 'No response body from AI Gateway',
+        data: {
+          message: 'Stream response body is null'
+        }
+      })
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (!trimmedLine || trimmedLine === 'data: [DONE]') {
+            continue
+          }
+
+          if (trimmedLine.startsWith('data: ')) {
+            const jsonStr = trimmedLine.slice(6)
+            try {
+              const chunk: ChatCompletionChunk = JSON.parse(jsonStr)
+              yield chunk
+            } catch (parseError) {
+              console.error('Failed to parse SSE chunk:', jsonStr, parseError)
+            }
+          }
+        }
+      }
+
+      // Process any remaining buffer
+      if (buffer.trim()) {
+        const trimmedLine = buffer.trim()
+        if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
+          const jsonStr = trimmedLine.slice(6)
+          try {
+            const chunk: ChatCompletionChunk = JSON.parse(jsonStr)
+            yield chunk
+          } catch (parseError) {
+            console.error('Failed to parse final SSE chunk:', jsonStr, parseError)
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error: any) {
+    console.error('AI Gateway streaming request failed', {
       model,
       temperature,
       maxTokens,
