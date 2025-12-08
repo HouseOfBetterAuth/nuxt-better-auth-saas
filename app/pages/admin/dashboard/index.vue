@@ -33,7 +33,6 @@ const stats = ref([
     icon: 'smile'
   }
 ])
-
 </script>
 
 <template>

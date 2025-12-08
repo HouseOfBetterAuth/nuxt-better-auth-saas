@@ -105,7 +105,6 @@ function normalizeLogs(list: ChatResponse['logs']) {
   }))
 }
 
-
 export function useChatSession() {
   const messages = useState<ChatMessage[]>('chat/messages', () => [])
   const status = useState<ChatStatus>('chat/status', () => 'ready')
@@ -196,7 +195,7 @@ export function useChatSession() {
       }
 
       logs.value = normalizeLogs(response.logs)
-      
+
       // Update agentContext if provided
       if (response.agentContext) {
         agentContext.value = {
@@ -213,7 +212,7 @@ export function useChatSession() {
           })) || []
         }
       }
-      
+
       status.value = 'ready'
       requestStartedAt.value = null
       return response
@@ -319,7 +318,6 @@ export function useChatSession() {
 
     return workspace
   }
-
 
   function stopResponse() {
     if (activeController.value) {

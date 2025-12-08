@@ -11,7 +11,7 @@
     "coverage": "vitest run --coverage",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
+    "postinstall": "node scripts/fix-eslint-config.js && nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "auth:schema": "pnpm dlx @better-auth/cli generate --config server/utils/auth.ts --output server/database/schema/auth.ts -y",
@@ -52,7 +52,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^5.4.1",
+    "@antfu/eslint-config": "^6.5.0",
     "@better-auth/cli": "^1.4.1",
     "@iconify-json/lucide": "^1.2.74",
     "@iconify-json/simple-icons": "^1.2.59",

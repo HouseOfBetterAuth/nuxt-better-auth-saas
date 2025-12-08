@@ -384,7 +384,7 @@ export const createBetterAuth = () => betterAuth({
                 .update(schema.session)
                 .set({ activeOrganizationId: activeOrgId })
                 .where(eq(schema.session.id, session.id))
-              
+
               // Also update user's lastActiveOrganizationId for consistency
               await db
                 .update(schema.user)

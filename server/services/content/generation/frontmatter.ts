@@ -1,8 +1,8 @@
+import type * as schema from '~~/server/database/schema'
+import type { ContentFrontmatter, ContentGenerationOverrides, ContentOutline } from './types'
 import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
 import { CONTENT_STATUSES, CONTENT_TYPES, slugifyTitle } from '~~/server/utils/content'
 import { validateEnum } from '~~/server/utils/validation'
-import type { ContentFrontmatter, ContentGenerationOverrides, ContentOutline } from './types'
 import { normalizeContentKeywords, normalizeContentSchemaTypes } from './utils'
 
 const CONTENT_TYPE_SCHEMA_EXTENSIONS: Partial<Record<typeof CONTENT_TYPES[number], string[]>> = {

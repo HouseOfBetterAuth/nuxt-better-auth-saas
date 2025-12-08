@@ -1,7 +1,6 @@
 /**
  * Standard API error response format
  */
-import type { ContentStatus, ContentType } from './content'
 
 export interface ApiErrorResponse {
   statusCode: number

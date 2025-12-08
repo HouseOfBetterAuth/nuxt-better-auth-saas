@@ -1043,7 +1043,13 @@ if (import.meta.client) {
                     </USelectMenu>
                   </template>
                   <template #submit>
-                    <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" submitted-color="primary" streaming-color="primary" />
+                    <UChatPromptSubmit
+                      :status="promptSubmitting ? 'submitted' : uiStatus"
+                      submitted-color="primary"
+                      submitted-variant="solid"
+                      streaming-color="primary"
+                      streaming-variant="solid"
+                    />
                   </template>
                 </PromptComposer>
               </div>

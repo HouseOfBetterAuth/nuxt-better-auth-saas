@@ -525,7 +525,7 @@ async function executeChatTool(
         resolvedSectionId = validateRequiredString(args.sectionId, 'sectionId')
       } else if (args.sectionTitle) {
         const sectionTitle = validateRequiredString(args.sectionTitle, 'sectionTitle')
-        
+
         // Query content version to find section by title
         const [contentRecord] = await db
           .select({

@@ -53,7 +53,6 @@ export function useDraftAction(options: DraftActionOptions) {
     return typeof selectedContentType === 'function' ? selectedContentType() : selectedContentType.value
   }
 
-
   async function handleWriteDraftFromSource(sourceId?: string | null) {
     if (!sourceId) {
       toast.add({

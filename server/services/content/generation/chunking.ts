@@ -1,4 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { ContentChunk, ContentOutlineSection } from './types'
 import { asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
@@ -11,7 +12,6 @@ import {
   queryVectorMatches,
   upsertVectors
 } from '~~/server/services/vectorize'
-import type { ContentChunk, ContentOutlineSection } from './types'
 import {
   calculateChunkRelevanceScore,
   calculateCosineSimilarity,

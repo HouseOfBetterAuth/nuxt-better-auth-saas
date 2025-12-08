@@ -4,45 +4,11 @@
 // After Phase 12, generation.ts will be deleted and functions moved here
 
 export {
+  enrichMdxWithMetadata,
   generateContentDraftFromSource as generateContentFromSource,
-  updateContentSectionWithAI as updateContentSection,
   reEnrichContentVersion as refreshContentVersionMetadata,
-  enrichMdxWithMetadata
+  updateContentSectionWithAI as updateContentSection
 } from '../generation'
-
-// Re-export types
-export type {
-  ContentGenerationInput,
-  ContentGenerationResult,
-  ContentGenerationOverrides,
-  ContentPlanDetails,
-  SectionUpdateInput,
-  SectionUpdateResult
-} from './types'
-
-// Export granular functions for LLM tools
-export {
-  generateContentOutline
-} from './planning'
-
-export {
-  findRelevantChunksForSection,
-  ensureSourceContentChunksExist,
-  createTextChunks,
-  buildChunkPreviewText
-} from './chunking'
-
-export {
-  generateContentSectionsFromOutline,
-  normalizeContentSections,
-  extractSectionContent
-} from './sections'
-
-export {
-  createFrontmatterFromOutline,
-  enrichFrontmatterWithMetadata,
-  extractFrontmatterFromVersion
-} from './frontmatter'
 
 export {
   assembleMarkdownFromSections,
@@ -51,10 +17,44 @@ export {
 } from './assembly'
 
 export {
-  generateStructuredDataJsonLd
-} from './structured-data'
+  buildChunkPreviewText,
+  createTextChunks,
+  ensureSourceContentChunksExist,
+  findRelevantChunksForSection
+} from './chunking'
+
+export {
+  createFrontmatterFromOutline,
+  enrichFrontmatterWithMetadata,
+  extractFrontmatterFromVersion
+} from './frontmatter'
 
 export {
   createGenerationMetadata,
   createSectionUpdateMetadata
 } from './metadata'
+
+// Export granular functions for LLM tools
+export {
+  generateContentOutline
+} from './planning'
+
+export {
+  extractSectionContent,
+  generateContentSectionsFromOutline,
+  normalizeContentSections
+} from './sections'
+
+export {
+  generateStructuredDataJsonLd
+} from './structured-data'
+
+// Re-export types
+export type {
+  ContentGenerationInput,
+  ContentGenerationOverrides,
+  ContentGenerationResult,
+  ContentPlanDetails,
+  SectionUpdateInput,
+  SectionUpdateResult
+} from './types'

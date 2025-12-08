@@ -1,27 +1,4 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, asc, desc, eq } from 'drizzle-orm'
-import { createError } from 'h3'
-import { v7 as uuidv7 } from 'uuid'
-import * as schema from '~~/server/database/schema'
-import { createChunksFromSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
-import {
-  buildVectorId,
-  embedText,
-  embedTexts,
-  isVectorizeConfigured,
-  queryVectorMatches,
-  upsertVectors
-} from '~~/server/services/vectorize'
-import { callChatCompletions } from '~~/server/utils/aiGateway'
-import { ensureEmailVerifiedDraftCapacity } from '~~/server/utils/auth'
-import {
-  CONTENT_STATUSES,
-  CONTENT_TYPES,
-  ensureUniqueContentSlug,
-  resolveIngestMethodFromSourceContent,
-  slugifyTitle
-} from '~~/server/utils/content'
-import { validateEnum } from '~~/server/utils/validation'
 import type {
   ContentChunk,
   ContentFrontmatter,
@@ -35,6 +12,24 @@ import type {
   SectionUpdateInput,
   SectionUpdateResult
 } from './generation/types'
+import { and, desc, eq } from 'drizzle-orm'
+import { createError } from 'h3'
+import { v7 as uuidv7 } from 'uuid'
+import * as schema from '~~/server/database/schema'
+
+import { callChatCompletions } from '~~/server/utils/aiGateway'
+import { ensureEmailVerifiedDraftCapacity } from '~~/server/utils/auth'
+import {
+  CONTENT_TYPES,
+  ensureUniqueContentSlug,
+  resolveIngestMethodFromSourceContent
+} from '~~/server/utils/content'
+import { validateEnum } from '~~/server/utils/validation'
+import {
+  assembleMarkdownFromSections,
+  enrichMarkdownWithMetadata,
+  extractMarkdownFromEnrichedMdx
+} from './generation/assembly'
 import {
   buildChunkPreviewText,
   createTextChunks,
@@ -48,14 +43,8 @@ import {
   formatFrontmatterAsYaml,
   orderFrontmatterKeys
 } from './generation/frontmatter'
-import { generateContentOutline, MAX_OUTLINE_SECTIONS } from './generation/planning'
-import {
-  assembleMarkdownFromSections,
-  enrichMarkdownWithMetadata,
-  extractMarkdownFromEnrichedMdx
-} from './generation/assembly'
 import { createGenerationMetadata, createSectionUpdateMetadata } from './generation/metadata'
-import { generateStructuredDataJsonLd } from './generation/structured-data'
+import { generateContentOutline, MAX_OUTLINE_SECTIONS } from './generation/planning'
 import {
   CONTENT_SECTION_SYSTEM_PROMPT,
   CONTENT_SECTION_UPDATE_SYSTEM_PROMPT,
@@ -64,6 +53,7 @@ import {
   MAX_SECTION_CONTEXT_CHUNKS,
   normalizeContentSections
 } from './generation/sections'
+import { generateStructuredDataJsonLd } from './generation/structured-data'
 import {
   calculateChunkRelevanceScore,
   calculateCosineSimilarity,

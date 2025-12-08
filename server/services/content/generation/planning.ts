@@ -1,8 +1,7 @@
-import { createError } from 'h3'
-import { CONTENT_TYPES } from '~~/server/utils/content'
-import { callChatCompletions } from '~~/server/utils/aiGateway'
-import { slugifyTitle } from '~~/server/utils/content'
+import type { CONTENT_TYPES, slugifyTitle } from '~~/server/utils/content'
 import type { ContentChunk, ContentOutline } from './types'
+import { createError } from 'h3'
+import { callChatCompletions } from '~~/server/utils/aiGateway'
 import { buildChunkPreviewText } from './chunking'
 import { normalizeContentSchemaTypes, parseAIResponseAsJSON } from './utils'
 

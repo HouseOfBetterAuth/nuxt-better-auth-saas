@@ -1115,7 +1115,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </UAlert>
-          
+
           <!-- Ingestion Failures -->
           <UAlert
             v-if="agentContext.ingestFailures && agentContext.ingestFailures.length > 0"
@@ -1196,7 +1196,13 @@ onBeforeUnmount(() => {
               @submit="_handleSubmit"
             >
               <template #submit>
-                <UChatPromptSubmit :status="uiStatus" submitted-color="primary" streaming-color="primary" />
+                <UChatPromptSubmit
+                  :status="uiStatus"
+                  submitted-color="primary"
+                  submitted-variant="solid"
+                  streaming-color="primary"
+                  streaming-variant="solid"
+                />
               </template>
             </PromptComposer>
           </div>

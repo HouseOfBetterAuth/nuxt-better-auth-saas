@@ -81,11 +81,11 @@ export class ChatTestRunner {
     sectionTitle?: string
   ) {
     // Send natural language with section context - agent will use patch_section tool
-    const sectionContext = sectionTitle 
+    const sectionContext = sectionTitle
       ? `Update the section titled "${sectionTitle}"`
       : `Update section ${sectionId}`
     const message = `${sectionContext}. ${instructions}`
-    
+
     const response = await this.sendMessage(message)
 
     return response

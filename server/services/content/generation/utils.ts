@@ -1,5 +1,5 @@
-import { createError } from 'h3'
 import type { ContentChunk } from './types'
+import { createError } from 'h3'
 
 const BASE_SCHEMA_TYPE = 'BlogPosting'
 

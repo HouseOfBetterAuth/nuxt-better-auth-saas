@@ -1,4 +1,4 @@
-import * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/database/schema'
 
 export const createGenerationMetadata = (
   sourceContent: typeof schema.sourceContent.$inferSelect | null,

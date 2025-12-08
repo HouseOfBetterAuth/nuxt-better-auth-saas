@@ -1,5 +1,5 @@
 /* eslint-disable perfectionist/sort-imports */
-import type { ChatCompletionMessage, ChatCompletionToolCall } from '~~/server/utils/aiGateway'
+import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { callChatCompletionsRaw } from '~~/server/utils/aiGateway'
 
 import type { ChatToolInvocation } from './tools'
@@ -56,7 +56,7 @@ export async function runChatAgentWithMultiPass({
 }: ChatAgentInput & {
   executeTool: (invocation: ChatToolInvocation) => Promise<ToolExecutionResult>
 }): Promise<MultiPassAgentResult> {
-  let currentHistory: ChatCompletionMessage[] = [...conversationHistory]
+  const currentHistory: ChatCompletionMessage[] = [...conversationHistory]
   const toolHistory: MultiPassAgentResult['toolHistory'] = []
   let iteration = 0
   const toolRetryCounts = new Map<string, number>() // Track retries per tool
