@@ -153,7 +153,7 @@ export function useChatSession() {
         payload.sessionId = sessionId.value
       }
 
-      // Use streaming by default
+      // Chat API is streaming-only (SSE)
       const url = '/api/chat?stream=true'
       const response = await fetch(url, {
         method: 'POST',
@@ -185,19 +185,6 @@ export function useChatSession() {
       // This ensures consistent behavior regardless of which event types the server emits
       // If both are present, dedicated events (tool:start/tool:complete) control the state
       let activitySetByDedicatedEvent = false
-
-      // Mark the user message as sending (don't remove it - server will echo it back)
-      // Track the client message ID for deduplication
-      const lastUserMessage = messages.value[messages.value.length - 1]
-      let clientUserMessageId: string | null = null
-      if (lastUserMessage?.role === 'user') {
-        clientUserMessageId = lastUserMessage.id
-        // Mark message as sending using payload
-        lastUserMessage.payload = {
-          ...(lastUserMessage.payload || {}),
-          _isSending: true
-        }
-      }
 
       try {
         while (true) {
@@ -239,26 +226,31 @@ export function useChatSession() {
 
                 switch (eventType) {
                   case 'message:chunk': {
-                    // LLM is generating text
+                    // LLM is generating text - server sends chunks for live display
                     currentActivity.value = 'streaming_message'
                     currentToolName.value = null
                     activitySetByDedicatedEvent = false // Reset flag when LLM starts streaming
 
-                    if (!currentAssistantMessageId) {
-                      currentAssistantMessageId = eventData.messageId || createId()
-                      currentAssistantMessageText = ''
-                      // Create new assistant message
-                      if (currentAssistantMessageId) {
-                        messages.value.push({
-                          id: currentAssistantMessageId,
-                          role: 'assistant' as const,
-                          parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<{ type: 'text', text: string }>,
-                          createdAt: new Date()
-                        })
-                      }
+                    // Server-provided messageId is required (server generates UUID on first chunk)
+                    if (!eventData.messageId) {
+                      console.warn('message:chunk missing messageId, skipping')
+                      break
                     }
+
+                    // Create TEMPORARY assistant message on first chunk using SERVER-GENERATED messageId
+                    // This is optimistic UI for live streaming; the authoritative message list comes in messages:complete
+                    if (!currentAssistantMessageId && eventData.messageId) {
+                      currentAssistantMessageId = eventData.messageId
+                      currentAssistantMessageText = ''
+                      messages.value.push({
+                        id: eventData.messageId, // Use server-provided ID
+                        role: 'assistant' as const,
+                        parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<{ type: 'text', text: string }>,
+                        createdAt: new Date()
+                      })
+                    }
+                    // Accumulate chunks and update temporary message for live display
                     currentAssistantMessageText += eventData.chunk || ''
-                    // Update the message
                     if (currentAssistantMessageId) {
                       const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
                       if (messageIndex >= 0 && messages.value[messageIndex]?.parts?.[0]) {
@@ -269,6 +261,8 @@ export function useChatSession() {
                   }
 
                   case 'message:complete': {
+                    // LLM text generation finished for current turn (intermediate signal before DB snapshot)
+                    // Update final text, but authoritative message list comes in messages:complete
                     if (eventData.messageId && eventData.message) {
                       const messageIndex = messages.value.findIndex(m => m.id === eventData.messageId)
                       const message = messageIndex >= 0 ? messages.value[messageIndex] : null
@@ -276,9 +270,9 @@ export function useChatSession() {
                         message.parts[0].text = eventData.message
                       }
                     }
+                    // Clear streaming state (tools may still be executing)
                     currentAssistantMessageId = null
                     currentAssistantMessageText = ''
-                    // Message complete, but might still be processing tools
                     if (currentActivity.value === 'streaming_message') {
                       currentActivity.value = null
                       activitySetByDedicatedEvent = false // Reset flag
@@ -363,28 +357,17 @@ export function useChatSession() {
                   }
 
                   case 'messages:complete': {
+                    // AUTHORITATIVE message list from database (single source of truth)
+                    // Client MUST replace its messages array with this snapshot and clear all temporary streaming state
                     if (Array.isArray(eventData.messages)) {
                       const normalizedMessages = normalizeMessages(eventData.messages)
-                      const existingMessageMap = new Map(messages.value.map(msg => [msg.id, msg]))
-
-                      // Merge server messages, replacing any temporary client messages
-                      for (const newMessage of normalizedMessages) {
-                        // If this server message matches our client message ID, replace it
-                        // Otherwise, add/update the message
-                        existingMessageMap.set(newMessage.id, newMessage)
-                      }
-
-                      // Clear transient flags from all messages (server has echoed them back)
-                      for (const msg of existingMessageMap.values()) {
-                        if (msg.payload?._isSending) {
-                          const { _isSending, ...restPayload } = msg.payload
-                          msg.payload = Object.keys(restPayload).length > 0 ? restPayload : null
-                        }
-                      }
-
-                      messages.value = Array.from(existingMessageMap.values()).sort((a, b) =>
+                      // Replace all messages with server's authoritative list (sorted by createdAt)
+                      messages.value = normalizedMessages.sort((a, b) =>
                         a.createdAt.getTime() - b.createdAt.getTime()
                       )
+                      // Clear all temporary streaming state
+                      currentAssistantMessageId = null
+                      currentAssistantMessageText = ''
                     }
                     break
                   }
@@ -407,29 +390,17 @@ export function useChatSession() {
                   }
 
                   case 'done': {
-                    // Stream complete
+                    // Stream completion signal from server
+                    // If messages:complete was not received before this, treat as error/incomplete
+                    // The finally block will clear streaming state
                     break
                   }
 
                   case 'error': {
+                    // Server-side error during processing
+                    // Error messages are also added to database and included in messages:complete
                     const errorMsg = eventData.message || eventData.error || 'An error occurred'
                     errorMessage.value = errorMsg
-
-                    // Clear transient flag from user message if it exists
-                    if (clientUserMessageId) {
-                      const userMsgIndex = messages.value.findIndex(m => m.id === clientUserMessageId)
-                      if (userMsgIndex >= 0 && messages.value[userMsgIndex]?.payload?._isSending) {
-                        const { _isSending, ...restPayload } = messages.value[userMsgIndex].payload || {}
-                        messages.value[userMsgIndex].payload = Object.keys(restPayload).length > 0 ? restPayload : null
-                      }
-                    }
-
-                    messages.value.push({
-                      id: createId(),
-                      role: 'assistant' as const,
-                      parts: [{ type: 'text' as const, text: `❌ Error: ${errorMsg}` }] as NonEmptyArray<{ type: 'text', text: string }>,
-                      createdAt: new Date()
-                    })
                     break
                   }
 
@@ -449,51 +420,40 @@ export function useChatSession() {
         }
       } finally {
         reader.releaseLock()
-        // Clear any remaining transient flags if stream completed without messages:complete event
-        if (clientUserMessageId) {
-          const userMsgIndex = messages.value.findIndex(m => m.id === clientUserMessageId)
-          if (userMsgIndex >= 0 && messages.value[userMsgIndex]?.payload?._isSending) {
-            const { _isSending, ...restPayload } = messages.value[userMsgIndex].payload || {}
-            messages.value[userMsgIndex].payload = Object.keys(restPayload).length > 0 ? restPayload : null
-          }
-        }
+        // Always clear streaming state when stream ends (success or failure)
+        // If messages:complete was received, messages are already replaced with authoritative list
+        // If stream was aborted or failed, temporary messages remain until next successful turn
+        currentAssistantMessageId = null
+        currentAssistantMessageText = ''
       }
 
+      // Stream completed successfully
+      // If messages:complete was received, messages array was replaced with authoritative snapshot
       status.value = 'ready'
       requestStartedAt.value = null
       currentActivity.value = null
       currentToolName.value = null
       return null // Streaming doesn't return a response object
     } catch (error: any) {
-      // Clear transient flag from user message if it exists (preserve user input)
-      const lastUserMessage = messages.value[messages.value.length - 1]
-      if (lastUserMessage?.role === 'user' && lastUserMessage?.payload?._isSending) {
-        const { _isSending, ...restPayload } = lastUserMessage.payload || {}
-        lastUserMessage.payload = Object.keys(restPayload).length > 0 ? restPayload : null
-      }
-
+      // Handle stream errors and aborts
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        // User aborted the request - clear state gracefully
         status.value = 'ready'
         requestStartedAt.value = null
         currentActivity.value = null
         currentToolName.value = null
+        // Note: Temporary streaming messages may remain in UI until next successful turn
         return null
       }
+      // Stream failed (network error, server error, etc.)
       status.value = 'error'
       requestStartedAt.value = null
       currentActivity.value = null
       currentToolName.value = null
       const errorMsg = error?.message || error?.data?.statusMessage || error?.data?.message || 'Something went wrong.'
       errorMessage.value = errorMsg
-
-      // Also add error as a chat message so user can see it
-      messages.value.push({
-        id: createId(),
-        role: 'assistant' as const,
-        parts: [{ type: 'text' as const, text: `❌ Error: ${errorMsg}` }] as NonEmptyArray<{ type: 'text', text: string }>,
-        createdAt: new Date()
-      })
-
+      // Note: If server committed any messages before error, they will be in messages:complete
+      // If stream failed before messages:complete, temporary messages may remain until next turn
       return null
     } finally {
       if (activeController.value === controller) {
@@ -511,13 +471,9 @@ export function useChatSession() {
       return null
     }
 
-    messages.value.push({
-      id: createId(),
-      role: 'user' as const,
-      parts: [{ type: 'text' as const, text: options?.displayContent?.trim() || trimmed }] as NonEmptyArray<{ type: 'text', text: string }>,
-      createdAt: new Date()
-    })
-
+    // User messages are created on the server after processing (not optimistically)
+    // Assistant messages are created optimistically on first message:chunk with server-generated ID
+    // Final authoritative message list (including user message) comes in messages:complete
     return await callChatEndpoint({
       message: trimmed,
       contentId: options?.contentId !== undefined

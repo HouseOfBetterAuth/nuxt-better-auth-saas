@@ -2,9 +2,9 @@ import type { ChatToolInvocation } from '~~/server/services/chat/tools'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { and, eq } from 'drizzle-orm'
-import { createError, getHeader, getQuery, setHeader, setResponseStatus } from 'h3'
+import { createError, setHeader, setResponseStatus } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { runChatAgentWithMultiPass, runChatAgentWithMultiPassStream } from '~~/server/services/chat/agent'
+import { runChatAgentWithMultiPassStream } from '~~/server/services/chat/agent'
 import {
   addLogEntryToChatSession,
   addMessageToChatSession,
@@ -28,32 +28,6 @@ import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { validateEnum, validateNumber, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
-
-// eslint-disable-next-line no-control-regex
-const PROMPT_SANITIZE_PATTERN = /[\u0000-\u001F\u007F]+/g
-
-function sanitizePromptSnippet(value?: string, maxLength = 1000) {
-  if (!value) {
-    return ''
-  }
-  const normalized = value
-    .replace(PROMPT_SANITIZE_PATTERN, ' ')
-    .replace(/```/g, '\\`\\`\\`')
-    .replace(/<\/?system>/gi, '')
-    .trim()
-  if (!normalized) {
-    return ''
-  }
-  return normalized.slice(0, maxLength)
-}
-
-function wrapPromptSnippet(label: string, value?: string, maxLength = 1000) {
-  const sanitized = sanitizePromptSnippet(value, maxLength)
-  if (!sanitized) {
-    return ''
-  }
-  return `${label}:\n"""${sanitized}"""`
-}
 
 function toSummaryBullets(text: string | null | undefined) {
   if (!text) {
@@ -727,22 +701,23 @@ async function executeChatTool(
  * }
  * ```
  *
- * **Output:**
- * ```typescript
- * {
- *   assistantMessage: string - Final assistant response
- *   sessionId: string - Chat session ID
- *   sessionContentId: string | null - Linked content ID
- *   agentContext: {
- *     readySources: Array<{id, title, sourceType, ingestStatus}> - Sources ready for drafting
- *     ingestFailures: Array<{content, payload}> - Ingestion errors
- *     lastAction: string | null - Last successful tool/action name
- *     toolHistory: Array<{toolName, timestamp, status}> - Recent tool executions
- *   }
- *   messages: Array - All messages in the session
- *   logs: Array - All logs including tool_started, tool_succeeded, tool_failed
- * }
- * ```
+ * **Output (SSE Stream):**
+ * This endpoint returns a Server-Sent Events (SSE) stream with the following events:
+ *
+ * - `session:update` - Session state changes (sessionId, sessionContentId)
+ * - `message:chunk` - Incremental LLM text chunks (`{ messageId: string, chunk: string }`)
+ * - `message:complete` - LLM text generation finished (`{ messageId: string, message: string }`)
+ * - `tool:start` - Tool execution started (`{ toolName: string, timestamp: string }`)
+ * - `tool:complete` - Tool execution completed (`{ toolName, success, result, error, timestamp }`)
+ * - `log:entry` - Log entries (`{ id, type, message, payload, createdAt }`)
+ * - `messages:complete` - **Authoritative message list from database** (`{ messages: Array }`)
+ * - `logs:complete` - Authoritative log list from database (`{ logs: Array }`)
+ * - `agentContext:update` - Final agent context (`{ readySources, ingestFailures, lastAction, toolHistory }`)
+ * - `session:final` - Final session state (`{ sessionId, sessionContentId }`)
+ * - `done` - Stream completion signal (`{}`)
+ *
+ * **Important:** The `messages:complete` event contains the authoritative, DB-backed message list.
+ * Clients must replace their local messages array with this snapshot.
  *
  * @example
  * ```typescript
@@ -760,12 +735,17 @@ async function executeChatTool(
  * ```
  *
  */
+/**
+ * Chat API endpoint - Streaming-only (SSE)
+ *
+ * This endpoint is designed for server-driven streaming in the Cursor/Codex style:
+ * - Server is the single source of truth (DB-backed)
+ * - Server streams message chunks as LLM generates text
+ * - Client shows temporary assistant message keyed by server-generated messageId
+ * - After tools + DB writes, server emits messages:complete with authoritative message list
+ * - Client replaces its messages with that snapshot
+ */
 export default defineEventHandler(async (event) => {
-  // Check for streaming request
-  const query = getQuery(event)
-  const acceptHeader = getHeader(event, 'accept') || ''
-  const wantsStream = query.stream === 'true' || acceptHeader.includes('text/event-stream')
-
   const user = await requireAuth(event, { allowAnonymous: true })
   const db = await useDB(event)
 
@@ -818,14 +798,12 @@ export default defineEventHandler(async (event) => {
     throw createValidationError('Message is required')
   }
 
-  // Set SSE headers if streaming
-  if (wantsStream) {
-    setResponseStatus(event, 200)
-    setHeader(event, 'Content-Type', 'text/event-stream')
-    setHeader(event, 'Cache-Control', 'no-cache')
-    setHeader(event, 'Connection', 'keep-alive')
-    setHeader(event, 'X-Accel-Buffering', 'no') // Disable nginx buffering
-  }
+  // Set SSE headers for streaming response
+  setResponseStatus(event, 200)
+  setHeader(event, 'Content-Type', 'text/event-stream')
+  setHeader(event, 'Cache-Control', 'no-cache')
+  setHeader(event, 'Connection', 'keep-alive')
+  setHeader(event, 'X-Accel-Buffering', 'no') // Disable nginx buffering
 
   const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
   const readySources: typeof schema.sourceContent.$inferSelect[] = []
@@ -856,7 +834,7 @@ export default defineEventHandler(async (event) => {
   const initialSessionContentId = requestContentId
 
   // Declare multiPassResult variable for use later
-  let multiPassResult: Awaited<ReturnType<typeof runChatAgentWithMultiPass>> | null = null
+  let multiPassResult: Awaited<ReturnType<typeof runChatAgentWithMultiPassStream>> | null = null
 
   let session: typeof schema.contentChatSession.$inferSelect | null = null
   if (requestSessionId) {
@@ -912,17 +890,20 @@ export default defineEventHandler(async (event) => {
   // Use activeSession variable to avoid null checks
   let activeSession = session
 
-  // Helper to write SSE event to response (only used in streaming mode)
-  const writeSSE = wantsStream
-    ? (eventType: string, data: any) => {
-        try {
-          const sseData = writeSSEEvent(event, eventType, data)
-          event.node.res.write(sseData)
-        } catch (error) {
-          console.error('Failed to write SSE event:', error)
-        }
-      }
-    : null
+  // Helper to write SSE event to response stream
+  const writeSSE = (eventType: string, data: any) => {
+    try {
+      const sseData = writeSSEEvent(event, eventType, data)
+      event.node.res.write(sseData)
+    } catch (error) {
+      console.error('Failed to write SSE event:', error)
+    }
+  }
+
+  // Track message ID for current streaming assistant message
+  // Server generates UUID on first chunk, uses same ID for all chunks and DB save
+  // This ensures the client-side message ID matches the server-side message ID
+  let currentMessageId: string | null = null
 
   // Track any existing source content from the session
   if (activeSession.sourceContentId && !readySourceIds.has(activeSession.sourceContentId)) {
@@ -1044,135 +1025,95 @@ export default defineEventHandler(async (event) => {
       contextBlocks.push(`Ingestion failures:\n${failureSummary}`)
     }
 
-    // Import crypto for UUID generation (only needed in streaming mode)
-    const { randomUUID } = wantsStream ? await import('crypto') : { randomUUID: () => '' }
+    // Import crypto for UUID generation for streaming message IDs
+    const { randomUUID } = await import('crypto')
 
     try {
-      // Multi-pass orchestration - handles all tools directly
-      if (wantsStream) {
-        // Streaming mode: use streaming agent with SSE callbacks
-        let currentMessageId: string | null = null
-        // Track assistant message for potential future use (used in callbacks)
-        let _currentAssistantMessage = ''
+      // Streaming multi-pass orchestration - handles all tools directly
+      // Track assistant message for potential future use (used in callbacks)
+      let _currentAssistantMessage = ''
 
-        // Send initial session update
-        if (writeSSE) {
-          writeSSE('session:update', {
+      // Send initial session update
+      // Event: session:update - Emitted when session state changes (e.g., session created, contentId updated)
+      // Client should update sessionId and sessionContentId state
+      writeSSE('session:update', {
+        sessionId: activeSession.id,
+        sessionContentId: activeSession.contentId
+      })
+
+      multiPassResult = await runChatAgentWithMultiPassStream({
+        conversationHistory,
+        userMessage: trimmedMessage,
+        contextBlocks,
+        onLLMChunk: (chunk: string) => {
+          _currentAssistantMessage += chunk
+          if (!currentMessageId) {
+            currentMessageId = randomUUID()
+          }
+          // Event: message:chunk - Incremental text chunks from LLM during current turn
+          // Client should create temporary assistant message on first chunk (using server messageId)
+          // and update its content as chunks arrive
+          writeSSE('message:chunk', {
+            messageId: currentMessageId,
+            chunk
+          })
+        },
+        onToolStart: async (toolName: string) => {
+          // Log tool start to database
+          await logToolEvent(
+            db,
+            activeSession.id,
+            organizationId,
+            'tool_started',
+            toolName,
+            undefined,
+            undefined,
+            writeSSE
+          )
+        },
+        onToolComplete: async (toolName: string, result: any) => {
+          // Event: tool:complete - Tool execution finished for current turn
+          // Client should update UI to reflect tool completion status
+          writeSSE('tool:complete', {
+            toolName,
+            success: result.success,
+            result: result.result,
+            error: result.error,
+            timestamp: new Date().toISOString()
+          })
+        },
+        onFinalMessage: (message: string) => {
+          _currentAssistantMessage = message
+          // Event: message:complete - LLM text generation finished for current turn (before DB snapshot)
+          // This is an intermediate signal; the authoritative message list comes in messages:complete
+          writeSSE('message:complete', {
+            messageId: currentMessageId,
+            message
+          })
+        },
+        onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
+          // Log tool retry to database
+          await logToolEvent(
+            db,
+            activeSession.id,
+            organizationId,
+            'tool_retrying',
+            toolInvocation.name,
+            toolInvocation.arguments,
+            retryCount,
+            writeSSE
+          )
+        },
+        executeTool: async (toolInvocation: ChatToolInvocation) => {
+          return await executeChatTool(toolInvocation, {
+            db,
+            organizationId,
+            userId: user.id,
             sessionId: activeSession.id,
-            sessionContentId: activeSession.contentId
+            event
           })
         }
-
-        multiPassResult = await runChatAgentWithMultiPassStream({
-          conversationHistory,
-          userMessage: trimmedMessage,
-          contextBlocks,
-          onLLMChunk: (chunk: string) => {
-            _currentAssistantMessage += chunk
-            if (!currentMessageId) {
-              currentMessageId = randomUUID()
-            }
-            if (writeSSE) {
-              writeSSE('message:chunk', {
-                messageId: currentMessageId,
-                chunk
-              })
-            }
-          },
-          onToolStart: async (toolName: string) => {
-            // Log tool start
-            await logToolEvent(
-              db,
-              activeSession.id,
-              organizationId,
-              'tool_started',
-              toolName,
-              undefined,
-              undefined,
-              writeSSE || undefined
-            )
-          },
-          onToolComplete: async (toolName: string, result: any) => {
-            if (writeSSE) {
-              writeSSE('tool:complete', {
-                toolName,
-                success: result.success,
-                result: result.result,
-                error: result.error,
-                timestamp: new Date().toISOString()
-              })
-            }
-          },
-          onFinalMessage: (message: string) => {
-            _currentAssistantMessage = message
-            if (writeSSE) {
-              writeSSE('message:complete', {
-                messageId: currentMessageId,
-                message
-              })
-            }
-          },
-          onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
-            // Log tool retry
-            await logToolEvent(
-              db,
-              activeSession.id,
-              organizationId,
-              'tool_retrying',
-              toolInvocation.name,
-              toolInvocation.arguments,
-              retryCount,
-              writeSSE || undefined
-            )
-          },
-          executeTool: async (toolInvocation: ChatToolInvocation) => {
-            return await executeChatTool(toolInvocation, {
-              db,
-              organizationId,
-              userId: user.id,
-              sessionId: activeSession.id,
-              event
-            })
-          }
-        })
-      } else {
-        // Non-streaming mode: use regular agent
-        multiPassResult = await runChatAgentWithMultiPass({
-          conversationHistory,
-          userMessage: trimmedMessage,
-          contextBlocks,
-          onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
-            // Log tool retry
-            await logToolEvent(
-              db,
-              activeSession.id,
-              organizationId,
-              'tool_retrying',
-              toolInvocation.name,
-              toolInvocation.arguments,
-              retryCount
-            )
-          },
-          executeTool: async (toolInvocation: ChatToolInvocation) => {
-            // Log tool start
-            await logToolEvent(
-              db,
-              activeSession.id,
-              organizationId,
-              'tool_started',
-              toolInvocation.name,
-              toolInvocation.arguments
-            )
-            return await executeChatTool(toolInvocation, {
-              db,
-              organizationId,
-              userId: user.id,
-              sessionId: activeSession.id,
-              event
-            })
-          }
-        })
-      }
+      })
 
       // Process multi-pass results
       if (multiPassResult.toolHistory.length > 0) {
@@ -1189,12 +1130,10 @@ export default defineEventHandler(async (event) => {
                 .returning()
               if (updatedSession) {
                 activeSession = updatedSession
-                if (writeSSE) {
-                  writeSSE('session:update', {
-                    sessionId: activeSession.id,
-                    sessionContentId: activeSession.contentId
-                  })
-                }
+                writeSSE('session:update', {
+                  sessionId: activeSession.id,
+                  sessionContentId: activeSession.contentId
+                })
               }
             }
             // Track ready source
@@ -1229,12 +1168,10 @@ export default defineEventHandler(async (event) => {
                 .returning()
               if (updatedSession) {
                 activeSession = updatedSession
-                if (writeSSE) {
-                  writeSSE('session:update', {
-                    sessionId: activeSession.id,
-                    sessionContentId: activeSession.contentId
-                  })
-                }
+                writeSSE('session:update', {
+                  sessionId: activeSession.id,
+                  sessionContentId: activeSession.contentId
+                })
               }
             }
           }
@@ -1255,16 +1192,16 @@ export default defineEventHandler(async (event) => {
             }
           })
 
-          if (writeSSE) {
-            if (logEntry) {
-              writeSSE('log:entry', {
-                id: logEntry.id,
-                type: logEntry.type,
-                message: logEntry.message,
-                payload: logEntry.payload,
-                createdAt: logEntry.createdAt
-              })
-            }
+          // Event: log:entry - Log entry added to database (tool_started, tool_succeeded, tool_failed, etc.)
+          // Client should append to logs array for UI display
+          if (logEntry) {
+            writeSSE('log:entry', {
+              id: logEntry.id,
+              type: logEntry.type,
+              message: logEntry.message,
+              payload: logEntry.payload,
+              createdAt: logEntry.createdAt
+            })
           }
 
           // Update session metadata with last successful tool
@@ -1286,13 +1223,9 @@ export default defineEventHandler(async (event) => {
             }
           }
         }
-        if (multiPassResult.finalMessage) {
-          agentAssistantReply = multiPassResult.finalMessage
-        }
-      } else {
-        if (multiPassResult.finalMessage) {
-          agentAssistantReply = multiPassResult.finalMessage
-        }
+      }
+      if (multiPassResult.finalMessage) {
+        agentAssistantReply = multiPassResult.finalMessage
       }
     } catch (error) {
       console.error('Agent turn failed', error)
@@ -1371,85 +1304,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const sessionMessages = await getSessionMessages(db, activeSession.id, organizationId)
-  const conversationHistory: ChatCompletionMessage[] = sessionMessages.map(message => ({
-    role: message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user',
-    content: message.content
-  }))
-
-  // Build context for LLM to generate a single coherent assistant message
-  const contextParts: string[] = []
-
-  // Add information about ready sources (ingested and ready for drafting)
-  if (readySources.length > 0) {
-    for (const source of readySources) {
-      const title = typeof source.title === 'string' && source.title.trim() ? source.title.trim() : null
-      const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
-      const intro = title ? `${title} (${typeLabel})` : typeLabel
-      contextParts.push(`Source ready for drafting: ${intro}.`)
-    }
-  }
-
-  // Check if any tools created content (from multiPassResult)
-  if (multiPassResult) {
-    const contentTools = multiPassResult.toolHistory.filter(t =>
-      t.result.success &&
-      (t.toolName === 'generate_content' || t.toolName === 'patch_section') &&
-      t.result.contentId
-    )
-    if (contentTools.length > 0) {
-      contextParts.push('Content has been successfully created or updated and is ready for review.')
-    }
-  }
-
-  const shouldSkipAssistantResponse = Boolean(agentAssistantReply)
-
-  // Generate a single coherent assistant message using LLM
-  let assistantMessageBody = ''
-  if (shouldSkipAssistantResponse) {
-    assistantMessageBody = agentAssistantReply || ''
-  } else if (contextParts.length > 0 || trimmedMessage) {
-    const { callChatCompletions } = await import('~~/server/utils/aiGateway')
-    const contextText = contextParts.length > 0 ? `Context:\n${contextParts.join('\n\n')}` : ''
-    const userMessage = wrapPromptSnippet('User message', trimmedMessage, 1500) || 'User sent a message.'
-
-    const prompt = `${contextText}
-
-${userMessage}
-
-Generate a friendly, conversational assistant response that:
-1. Acknowledges what happened (sources processed, drafts created, sections updated, etc.)
-2. Offers next steps (creating drafts, editing sections, etc.)
-3. Is concise (2-4 sentences) and natural
-4. Explicitly offers to create blog drafts when sources are ready
-
-Keep it conversational and helpful.`
-
-    try {
-      assistantMessageBody = await callChatCompletions({
-        messages: [
-          { role: 'system', content: 'You are a helpful content creation assistant. You help users create blog drafts from sources like YouTube videos and transcripts. Be friendly, concise, and always offer to create drafts when sources are ready.' },
-          ...conversationHistory,
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        maxTokens: 300
-      })
-    } catch (error) {
-      console.error('Failed to generate assistant message with LLM', error)
-      // Fallback message when LLM generation fails
-      assistantMessageBody = 'I completed your request but had trouble generating a response. Please check your workspace for updates.'
-    }
-  } else {
-    assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
-  }
-
-  if (assistantMessageBody) {
+  // Save agent's reply if available (use the same message ID from streaming to avoid duplicates)
+  if (agentAssistantReply) {
     await addMessageToChatSession(db, {
+      id: currentMessageId || undefined, // Use streaming message ID to match client-side message
       sessionId: activeSession.id,
       organizationId,
       role: 'assistant',
-      content: assistantMessageBody
+      content: agentAssistantReply
     })
   }
 
@@ -1520,77 +1382,53 @@ Keep it conversational and helpful.`
     toolHistory
   }
 
-  // Handle streaming vs non-streaming response
-  if (wantsStream) {
-    // Write final messages, logs, and context as SSE events
-    const finalMessages = messages.map(message => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt,
-      payload: message.payload
-    }))
+  // Write final authoritative state as SSE events
+  // These events represent the committed database state after all processing
+  const finalMessages = messages.map(message => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    payload: message.payload
+  }))
 
-    const finalLogs = logs.map(log => ({
-      id: log.id,
-      type: log.type,
-      message: log.message,
-      payload: log.payload,
-      createdAt: log.createdAt
-    }))
+  const finalLogs = logs.map(log => ({
+    id: log.id,
+    type: log.type,
+    message: log.message,
+    payload: log.payload,
+    createdAt: log.createdAt
+  }))
 
-    // Send final state (using existing writeSSE helper defined earlier)
-    // writeSSE is guaranteed to be non-null inside this if (wantsStream) block
-    if (writeSSE) {
-      writeSSE('messages:complete', {
-        messages: finalMessages
-      })
+  // Event: messages:complete - Authoritative message list from database
+  // This is the single source of truth. Client MUST replace its messages array with this snapshot
+  // and clear all temporary streaming state (currentAssistantMessageId, currentAssistantMessageText, etc.)
+  writeSSE('messages:complete', {
+    messages: finalMessages
+  })
 
-      writeSSE('logs:complete', {
-        logs: finalLogs
-      })
+  // Event: logs:complete - Authoritative log list from database
+  // Client should replace its logs array with this snapshot
+  writeSSE('logs:complete', {
+    logs: finalLogs
+  })
 
-      writeSSE('agentContext:update', agentContext)
+  // Event: agentContext:update - Final agent context (readySources, ingestFailures, lastAction, toolHistory)
+  // Client should update agentContext state with this data
+  writeSSE('agentContext:update', agentContext)
 
-      writeSSE('session:final', {
-        sessionId: activeSession.id,
-        sessionContentId: activeSession.contentId
-      })
-
-      // Send done event and close stream
-      writeSSE('done', {})
-      event.node.res.end()
-    } else {
-      // This should never happen in streaming mode, but handle gracefully
-      console.error('writeSSE is null in streaming mode - this should not happen')
-      event.node.res.end()
-    }
-
-    // Return null for streaming (response already sent)
-    return null
-  }
-
-  // Non-streaming: return JSON response
-  return {
-    assistantMessage: assistantMessageBody,
-    sources: [],
-    generation: null,
+  // Event: session:final - Final session state after all processing
+  // Client should update sessionId and sessionContentId with final values
+  writeSSE('session:final', {
     sessionId: activeSession.id,
-    sessionContentId: activeSession.contentId ?? null,
-    agentContext,
-    messages: messages.map(message => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt,
-      payload: message.payload
-    })),
-    logs: logs.map(log => ({
-      id: log.id,
-      type: log.type,
-      message: log.message,
-      payload: log.payload,
-      createdAt: log.createdAt
-    }))
-  }
+    sessionContentId: activeSession.contentId
+  })
+
+  // Event: done - Stream completion signal
+  // Client should treat stream as complete. If messages:complete was not received, treat as error.
+  writeSSE('done', {})
+  event.node.res.end()
+
+  // Return null (response already sent via SSE stream)
+  return null
 })

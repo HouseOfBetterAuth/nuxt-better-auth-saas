@@ -110,6 +110,12 @@ export interface ChatCompletionChunk {
   }
 }
 
+/**
+ * Non-streaming chat completions (used for content generation, not chat API)
+ *
+ * Note: The chat API endpoint uses callChatCompletionsStream exclusively.
+ * This function is used by content generation services (composeBlogFromText, etc.)
+ */
 export async function callChatCompletionsRaw({
   model = OPENAI_BLOG_MODEL,
   messages,

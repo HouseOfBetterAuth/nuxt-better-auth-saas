@@ -98,6 +98,7 @@ export interface AddChatMessageInput {
   role: ChatMessage['role'] | 'system'
   content: string
   payload?: Record<string, any> | null
+  id?: string // Optional: use this ID instead of generating a new one
 }
 
 /**
@@ -121,6 +122,7 @@ export async function addMessageToChatSession(
   const [message] = await db
     .insert(schema.contentChatMessage)
     .values({
+      id: input.id, // Use provided ID if available, otherwise use default (uuidv7)
       sessionId: input.sessionId,
       organizationId: input.organizationId,
       role: input.role,

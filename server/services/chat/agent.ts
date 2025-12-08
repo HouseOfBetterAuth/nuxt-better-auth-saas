@@ -44,8 +44,12 @@ const MAX_TOOL_ITERATIONS = 5
 const MAX_TOOL_RETRIES = 2
 
 /**
- * Runs the agent with multi-pass orchestration, executing tools and feeding results back
- * into the conversation until the agent responds with text or max iterations is reached.
+ * LEGACY: Non-streaming agent (not used by chat API)
+ *
+ * This function is kept for potential internal/testing use only.
+ * The chat API endpoint uses runChatAgentWithMultiPassStream exclusively.
+ *
+ * @deprecated Use runChatAgentWithMultiPassStream for all chat interactions
  */
 export async function runChatAgentWithMultiPass({
   conversationHistory,
