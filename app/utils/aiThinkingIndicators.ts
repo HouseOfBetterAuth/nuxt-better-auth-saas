@@ -37,10 +37,6 @@ const PRESETS: Record<string, IndicatorPreset> = {
 }
 
 const LOG_TYPE_TO_PRESET: Record<string, keyof typeof PRESETS> = {
-  tool_started: 'thinking',
-  tool_succeeded: 'saving',
-  tool_failed: 'thinking',
-  tool_retrying: 'thinking',
   user_message: 'thinking'
 }
 
@@ -87,39 +83,40 @@ export function resolveAiThinkingIndicator(input: {
     : input.logs
 
   const latestLog = getLatestLog(scopedLogs)
-  
+
   // Handle tool_* log types with custom messages
-  if (latestLog?.type && latestLog.type.startsWith('tool_')) {
+  if (latestLog?.type && latestLog.type.toLowerCase().startsWith('tool_')) {
     const payload = latestLog as any
     const toolName = payload?.payload?.toolName || 'tool'
     const toolDisplayName = toolName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-    
-    if (latestLog.type === 'tool_started') {
+    const logTypeLower = latestLog.type.toLowerCase()
+
+    if (logTypeLower === 'tool_started') {
       return {
         label: 'Running',
         message: `Running ${toolDisplayName}...`
       }
     }
-    if (latestLog.type === 'tool_retrying') {
+    if (logTypeLower === 'tool_retrying') {
       return {
         label: 'Retrying',
         message: `Retrying ${toolDisplayName}...`
       }
     }
-    if (latestLog.type === 'tool_failed') {
+    if (logTypeLower === 'tool_failed') {
       return {
         label: 'Error',
         message: `${toolDisplayName} failed. Retrying...`
       }
     }
-    if (latestLog.type === 'tool_succeeded') {
+    if (logTypeLower === 'tool_succeeded') {
       return {
         label: 'Complete',
         message: `${toolDisplayName} completed successfully.`
       }
     }
   }
-  
+
   const presetFromLog = latestLog?.type ? LOG_TYPE_TO_PRESET[(latestLog.type || '').toLowerCase()] : null
 
   if (presetFromLog && PRESETS[presetFromLog])

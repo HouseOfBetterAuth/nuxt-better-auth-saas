@@ -1042,6 +1042,13 @@ export default defineEventHandler(async (event) => {
       }
     } catch (error) {
       console.error('Agent turn failed', error)
+      ingestionErrors.push({
+        content: 'The assistant encountered an error processing your request. Please try again.',
+        payload: {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          type: 'agent_failure'
+        }
+      })
     }
   }
 

@@ -22,7 +22,7 @@ export interface ChatCompletionToolCall {
 }
 
 export interface ChatCompletionMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
   tool_call_id?: string
   tool_calls?: ChatCompletionToolCall[]
@@ -62,6 +62,26 @@ interface CallChatCompletionsRawOptions extends CallChatCompletionsOptions {
   toolChoice?: 'auto' | 'none' | { type: 'function', function: { name: string } }
 }
 
+export interface ChatCompletionResponse {
+  id: string
+  model: string
+  created: number
+  choices: Array<{
+    index: number
+    message: {
+      content?: string | null
+      tool_calls?: ChatCompletionToolCall[]
+      role: string
+    }
+    finish_reason: string | null
+  }>
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
 export async function callChatCompletionsRaw({
   model = OPENAI_BLOG_MODEL,
   messages,
@@ -69,7 +89,7 @@ export async function callChatCompletionsRaw({
   maxTokens = OPENAI_BLOG_MAX_OUTPUT_TOKENS,
   tools,
   toolChoice
-}: CallChatCompletionsRawOptions) {
+}: CallChatCompletionsRawOptions): Promise<ChatCompletionResponse> {
   try {
     if (!OPENAI_API_KEY) {
       throw createError({
@@ -113,7 +133,7 @@ export async function callChatCompletionsRaw({
       }
     }
 
-    const response = await $fetch<any>(url, {
+    const response = await $fetch<ChatCompletionResponse>(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

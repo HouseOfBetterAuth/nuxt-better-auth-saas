@@ -130,6 +130,10 @@ function buildGenerateContentParameters(): ParameterSchema {
         type: ['string', 'null'],
         description: 'Inline transcript or notes to draft from when no sourceContentId exists.'
       },
+      transcript: {
+        type: ['string', 'null'],
+        description: 'Raw transcript text to use for generating content.'
+      },
       title: {
         type: ['string', 'null'],
         description: 'Optional working title for the draft.'
@@ -190,7 +194,8 @@ function buildPatchSectionParameters(): ParameterSchema {
         minimum: 0,
         maximum: 2
       }
-    }
+    },
+    required: ['contentId']
   }
 }
 

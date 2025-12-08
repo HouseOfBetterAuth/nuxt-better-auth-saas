@@ -216,6 +216,9 @@ export const queryVectorMatches = async ({
   // Cloudflare Vectorize requires returnMetadata: 'all' to return metadata in query responses
   // Note: When using returnMetadata: 'all', topK is limited to 20
   const effectiveTopK = topK > 20 ? 20 : topK
+  if (effectiveTopK < topK) {
+    console.warn(`queryVectorMatches: topK capped from ${topK} to ${effectiveTopK} due to Cloudflare Vectorize limitation with returnMetadata`)
+  }
 
   const response = await fetch(
     `${VECTORIZE_BASE}/vectorize/v2/indexes/${encodeURIComponent(CF_VECTORIZE_INDEX)}/query`,

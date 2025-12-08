@@ -217,8 +217,8 @@ const fetchedContentEntries = computed(() => {
   const list = Array.isArray(workspaceDraftsPayload.value?.contents) ? workspaceDraftsPayload.value?.contents : []
   return list.map((entry: any) => {
     if (!entry._computed) {
-      console.error('Entry missing _computed field:', entry)
-      throw new Error('API response missing required _computed field')
+      console.error('Entry missing _computed field, skipping entry:', entry)
+      return null
     }
 
     let updatedAt: Date | null = null
@@ -234,14 +234,14 @@ const fetchedContentEntries = computed(() => {
       status: entry.content.status,
       updatedAt,
       contentType: entry.currentVersion?.frontmatter?.contentType || entry.content.contentType,
-      sectionsCount: entry._computed.sectionsCount || 0,
-      wordCount: entry._computed.wordCount || 0,
+      sectionsCount: entry._computed.sectionsCount ?? 0,
+      wordCount: entry._computed.wordCount ?? 0,
       sourceType: entry.sourceContent?.sourceType ?? null,
       sourceContentId: entry.content.sourceContentId ?? null,
-      additions: entry._computed.additions,
-      deletions: entry._computed.deletions
+      additions: entry._computed.additions ?? 0,
+      deletions: entry._computed.deletions ?? 0
     }
-  })
+  }).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 })
 
 const pendingContentEntries = computed(() => {
@@ -957,7 +957,7 @@ if (import.meta.client) {
                 </template>
               </UChatMessages>
             </div>
-            
+
             <!-- Agent Context Display -->
             <div
               v-if="agentContext && (agentContext.readySources?.length || agentContext.ingestFailures?.length)"
@@ -974,17 +974,20 @@ if (import.meta.client) {
                 <template #description>
                   <div class="space-y-2">
                     <div
-                      v-for="source in agentContext.readySources"
-                      :key="source.id"
+                      v-for="(source, index) in agentContext.readySources"
+                      :key="source.id || source.title || `source-${index}`"
                       class="text-sm"
                     >
                       <strong>{{ source.title || 'Untitled source' }}</strong>
-                      <span class="text-surface-500"> ({{ source.sourceType?.replace('_', ' ') || 'source' }})</span>
+                      <span
+                        v-if="source.sourceType"
+                        class="text-surface-500"
+                      > ({{ source.sourceType.replace('_', ' ') }})</span>
                     </div>
                   </div>
                 </template>
               </UAlert>
-              
+
               <!-- Ingestion Failures -->
               <UAlert
                 v-if="agentContext.ingestFailures && agentContext.ingestFailures.length > 0"
@@ -1000,7 +1003,7 @@ if (import.meta.client) {
                       :key="index"
                       class="text-sm"
                     >
-                      {{ failure.content }}
+                      {{ failure?.content || 'Unknown error' }}
                     </div>
                   </div>
                 </template>

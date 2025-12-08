@@ -1589,7 +1589,7 @@ export const generateContentDraftFromSource = async (
   const sections = await generateSectionsFromOutline({
     outline: plan.outline,
     frontmatter,
-    chunks,
+    chunks: chunks || [],
     instructions: systemPrompt,
     temperature,
     organizationId,

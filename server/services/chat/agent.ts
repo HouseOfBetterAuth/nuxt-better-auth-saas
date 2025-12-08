@@ -50,11 +50,12 @@ export async function runChatAgentWithMultiPass({
   conversationHistory,
   userMessage,
   contextBlocks = [],
+  onRetry,
   executeTool
 }: ChatAgentInput & {
   executeTool: (invocation: ChatToolInvocation) => Promise<ToolExecutionResult>
 }): Promise<MultiPassAgentResult> {
-  let currentHistory = [...conversationHistory]
+  let currentHistory: ChatCompletionMessage[] = [...conversationHistory]
   const toolHistory: MultiPassAgentResult['toolHistory'] = []
   let iteration = 0
   const toolRetryCounts = new Map<string, number>() // Track retries per tool
@@ -142,7 +143,6 @@ export async function runChatAgentWithMultiPass({
       timestamp
     })
 
-
     // If tool failed, increment retry count
     if (!toolResult.success) {
       toolRetryCounts.set(toolKey, retryCount + 1)
@@ -163,9 +163,9 @@ export async function runChatAgentWithMultiPass({
       toolResultMessage = `Tool ${toolInvocation.name} failed${retryInfo}: ${toolResult.error || 'Unknown error'}`
     }
 
-    // Add tool result as assistant message (tool response)
+    // Add tool result as tool message (tool response)
     currentHistory.push({
-      role: 'assistant',
+      role: 'tool',
       content: toolResultMessage,
       tool_call_id: toolCall.id
     })
