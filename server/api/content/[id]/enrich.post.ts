@@ -1,5 +1,5 @@
 import { getRouterParams, readBody } from 'h3'
-import { reEnrichContentVersion } from '~~/server/services/content/generation'
+import { refreshContentVersionMetadata } from '~~/server/services/content/generation'
 import { requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const result = await reEnrichContentVersion(db, {
+  const result = await refreshContentVersionMetadata(db, {
     organizationId,
     userId: user.id,
     contentId: validatedContentId,

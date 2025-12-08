@@ -102,8 +102,8 @@ const menus = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-background text-foreground">
-    <header class="border-b border-neutral-200/70 dark:border-neutral-800/60 bg-background/90 backdrop-blur-sm">
+  <div class="min-h-screen flex flex-col">
+    <header class="border-b border-neutral-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm">
       <div class="px-4 py-3 flex items-center gap-3 max-w-3xl mx-auto w-full">
         <!-- Hamburger Menu (Left) -->
         <USlideover

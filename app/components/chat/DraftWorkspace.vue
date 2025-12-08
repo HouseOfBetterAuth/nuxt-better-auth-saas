@@ -1196,7 +1196,7 @@ onBeforeUnmount(() => {
               @submit="_handleSubmit"
             >
               <template #submit>
-                <UChatPromptSubmit :status="uiStatus" />
+                <UChatPromptSubmit :status="uiStatus" submitted-color="primary" streaming-color="primary" />
               </template>
             </PromptComposer>
           </div>

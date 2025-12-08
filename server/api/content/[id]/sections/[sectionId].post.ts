@@ -1,6 +1,6 @@
 import type { UpdateContentSectionWithAIRequestBody } from '~~/server/types/content'
 import { getRouterParams, readBody } from 'h3'
-import { updateContentSectionWithAI } from '~~/server/services/content/generation'
+import { updateContentSection } from '~~/server/services/content/generation'
 import { requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     ? validateNumber(body.temperature, 'temperature', 0, 2)
     : undefined
 
-  const result = await updateContentSectionWithAI(db, {
+  const result = await updateContentSection(db, {
     organizationId,
     userId: user.id,
     contentId: validatedContentId,

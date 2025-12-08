@@ -16,8 +16,6 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@nuxtjs/i18n',
     '@nuxtjs/seo',
-    'nuxt-echarts',
-    '@scalar/nuxt',
     ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
     ...(process.env.NUXT_NITRO_PRESET !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
@@ -34,11 +32,6 @@ export default defineNuxtConfig({
     bundle: {
       optimizeTranslationDirective: false
     }
-  },
-  echarts: {
-    renderer: ['svg'],
-    charts: ['LineChart', 'BarChart'],
-    components: ['TitleComponent', 'TooltipComponent', 'GridComponent', 'LegendComponent']
   },
   sitemap: {
     exclude: [

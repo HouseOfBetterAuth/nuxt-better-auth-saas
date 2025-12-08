@@ -1,19 +1,12 @@
 <script lang="ts" setup>
 import type { zodLocales } from './utils/types'
 import { useStorage } from '@vueuse/core'
-import { registerTheme } from 'echarts/core'
 import { z } from 'zod'
-// Credit: https://github.com/nuxt/ui/issues/978#issuecomment-3025809129
-import NuxtUITheme from './assets/echarts-theme.json'
 
 const { t } = useI18n()
 
 // Zod locale configuration
 const { locale } = useI18n()
-
-registerTheme('nuxtui-chart', NuxtUITheme)
-// THEME_KEY is auto-imported by nuxt-echarts
-provide(THEME_KEY, 'nuxtui-chart')
 
 const updateZodLocale = (newLocale: string) => {
   const localeKey = newLocale.replace('-', '') as keyof typeof zodLocales

@@ -182,7 +182,7 @@ const onTouchEnd = (entry: DraftEntry, event: TouchEvent) => {
             <div class="flex-1 min-w-0 space-y-1">
               <p
                 v-if="!entry.isPending"
-                class="text-sm font-semibold leading-tight truncate text-white"
+                class="text-sm font-semibold leading-tight truncate"
               >
                 {{ entry.title }}
               </p>

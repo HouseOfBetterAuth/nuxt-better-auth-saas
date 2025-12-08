@@ -299,7 +299,7 @@ useEventListener(textareaRef, 'blur', () => {
             </div>
             <div>
               <slot name="submit">
-                <UChatPromptSubmit :status="props.status || 'idle'" />
+                <UChatPromptSubmit :status="props.status || 'idle'" submitted-color="primary" streaming-color="primary" />
               </slot>
             </div>
           </div>

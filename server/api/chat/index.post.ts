@@ -13,7 +13,7 @@ import {
   getSessionLogs,
   getSessionMessages
 } from '~~/server/services/chatSession'
-import { generateContentDraftFromSource, updateContentSectionWithAI } from '~~/server/services/content/generation'
+import { generateContentFromSource, updateContentSection } from '~~/server/services/content/generation'
 import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
 import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
@@ -452,7 +452,7 @@ async function executeChatTool(
         sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
       }
 
-      const generationResult = await generateContentDraftFromSource(db, {
+      const generationResult = await generateContentFromSource(db, {
         organizationId,
         userId,
         sourceContentId: resolvedSourceContentId ?? null,
@@ -572,7 +572,7 @@ async function executeChatTool(
         }
       }
 
-      const patchResult = await updateContentSectionWithAI(db, {
+      const patchResult = await updateContentSection(db, {
         organizationId,
         userId,
         contentId: args.contentId,
@@ -608,8 +608,8 @@ async function executeChatTool(
     const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
 
     try {
-      const { reEnrichContentVersion } = await import('~~/server/services/content/generation')
-      const result = await reEnrichContentVersion(db, {
+      const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
+      const result = await refreshContentVersionMetadata(db, {
         organizationId,
         userId,
         contentId,
@@ -715,7 +715,21 @@ export default defineEventHandler(async (event) => {
   const authSession = await getAuthSession(event)
   let organizationId: string | null = (authSession?.session as any)?.activeOrganizationId || null
 
-  // If not in session, try to get from database via requireActiveOrganization
+  // Verify organization exists if we got it from session
+  if (organizationId) {
+    const [orgExists] = await db
+      .select({ id: schema.organization.id })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, organizationId))
+      .limit(1)
+
+    if (!orgExists) {
+      // Organization from session doesn't exist (e.g., was deleted), clear it
+      organizationId = null
+    }
+  }
+
+  // If not in session or organization doesn't exist, try to get from database via requireActiveOrganization
   if (!organizationId) {
     try {
       const orgResult = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous ?? false })
@@ -789,7 +803,7 @@ export default defineEventHandler(async (event) => {
     const lastAction = trimmedMessage ? 'message' : null
     session = await getOrCreateChatSessionForContent(db, {
       organizationId,
-      contentId: initialSessionContentId,
+      contentId: initialSessionContentId ?? null, // Explicitly null if undefined
       sourceContentId: null, // Tools will set this when sources are created
       createdByUserId: user.id,
       metadata: {

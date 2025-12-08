@@ -164,7 +164,7 @@ watchEffect(() => {
     >
       <div class="w-full text-left py-4 px-1 space-y-2">
         <div class="flex items-center justify-between gap-3">
-          <p class="font-medium leading-tight truncate text-foreground">
+          <p class="font-medium leading-tight truncate">
             {{ contentEntry.title }}
           </p>
           <UBadge

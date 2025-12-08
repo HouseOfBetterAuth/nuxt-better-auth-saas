@@ -11,8 +11,8 @@ useHead(() => ({
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-background text-foreground">
-    <header class="sticky top-0 z-40 border-b border-muted-200/80 dark:border-muted-800/70 bg-background/95 backdrop-blur-sm shadow-sm">
+  <div class="min-h-screen flex flex-col">
+    <header class="sticky top-0 z-40 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm">
       <div
         class="px-4 py-4 max-w-3xl mx-auto w-full"
       >
@@ -131,7 +131,7 @@ useHead(() => ({
             </div>
             <div
               v-if="workspaceHeader.tabs"
-              class="w-full border-b border-muted-200/80 dark:border-muted-800/70"
+              class="w-full border-b border-gray-200/50 dark:border-gray-800/50"
             >
               <UTabs
                 :items="workspaceHeader.tabs.items"

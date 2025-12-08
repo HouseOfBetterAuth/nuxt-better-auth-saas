@@ -273,6 +273,11 @@ export const createBetterAuth = () => betterAuth({
             .where(eq(schema.user.id, session.userId))
             .limit(1)
 
+          if (users.length === 0) {
+            // User doesn't exist yet, can't set organization
+            return
+          }
+
           let activeOrgId = users[0]?.lastActiveOrganizationId
 
           // 2. Verify user is still a member of that org
@@ -307,42 +312,52 @@ export const createBetterAuth = () => betterAuth({
           if (!activeOrgId) {
             const user = users[0]
             if (user && user.isAnonymous) {
-              // Create a default organization for anonymous users
-              const [newOrg] = await db
-                .insert(schema.organization)
-                .values({
-                  id: uuidv7(),
-                  name: 'Anonymous Workspace',
-                  slug: `anonymous-${user.id}`,
-                  createdAt: new Date()
-                })
-                .returning()
+              // Use a transaction to ensure atomicity
+              try {
+                await db.transaction(async (tx) => {
+                  // Create a default organization for anonymous users
+                  const [newOrg] = await tx
+                    .insert(schema.organization)
+                    .values({
+                      id: uuidv7(),
+                      name: 'Anonymous Workspace',
+                      slug: `anonymous-${user.id}`,
+                      createdAt: new Date()
+                    })
+                    .returning()
 
-              if (!newOrg) {
-                throw createError({
-                  statusCode: 500,
-                  statusMessage: 'Failed to create anonymous organization'
+                  if (!newOrg) {
+                    throw createError({
+                      statusCode: 500,
+                      statusMessage: 'Failed to create anonymous organization'
+                    })
+                  }
+
+                  // Add user as owner of the organization
+                  await tx
+                    .insert(schema.member)
+                    .values({
+                      id: uuidv7(),
+                      userId: user.id,
+                      organizationId: newOrg.id,
+                      role: 'owner',
+                      createdAt: new Date()
+                    })
+
+                  // Update user's active organization
+                  await tx
+                    .update(schema.user)
+                    .set({ lastActiveOrganizationId: newOrg.id })
+                    .where(eq(schema.user.id, user.id))
+
+                  activeOrgId = newOrg.id
                 })
+              } catch (error) {
+                console.error('[Auth] Failed to create anonymous organization:', error)
+                // Don't throw - allow session creation to continue
+                // The organization will be created on next session access
+                activeOrgId = null
               }
-
-              // Add user as owner of the organization
-              await db
-                .insert(schema.member)
-                .values({
-                  id: uuidv7(),
-                  userId: user.id,
-                  organizationId: newOrg.id,
-                  role: 'owner',
-                  createdAt: new Date()
-                })
-
-              // Update user's active organization
-              await db
-                .update(schema.user)
-                .set({ lastActiveOrganizationId: newOrg.id })
-                .where(eq(schema.user.id, user.id))
-
-              activeOrgId = newOrg.id
             }
           }
 
@@ -351,6 +366,91 @@ export const createBetterAuth = () => betterAuth({
               data: {
                 ...session,
                 activeOrganizationId: activeOrgId
+              }
+            }
+          }
+        }
+      },
+      create: {
+        after: async (session) => {
+          // Ensure activeOrganizationId is persisted to the database
+          // This is a fallback in case the before hook didn't set it properly
+          const activeOrgId = (session as any).activeOrganizationId
+          if (activeOrgId) {
+            const db = getDB()
+            try {
+              // Update the session record directly to ensure activeOrganizationId is stored
+              await db
+                .update(schema.session)
+                .set({ activeOrganizationId: activeOrgId })
+                .where(eq(schema.session.id, session.id))
+              
+              // Also update user's lastActiveOrganizationId for consistency
+              await db
+                .update(schema.user)
+                .set({ lastActiveOrganizationId: activeOrgId })
+                .where(eq(schema.user.id, session.userId))
+            } catch (error) {
+              // Log but don't throw - session creation should succeed even if this fails
+              console.error('[Auth] Failed to update session/user activeOrganizationId:', error)
+            }
+          } else {
+            // If no activeOrgId was set, check if user is anonymous and create org
+            const db = getDB()
+            const [user] = await db
+              .select()
+              .from(schema.user)
+              .where(eq(schema.user.id, session.userId))
+              .limit(1)
+
+            if (user?.isAnonymous) {
+              // Check if user already has an organization
+              const [member] = await db
+                .select()
+                .from(schema.member)
+                .where(eq(schema.member.userId, session.userId))
+                .limit(1)
+
+              if (!member) {
+                // Create organization in after hook as fallback
+                try {
+                  await db.transaction(async (tx) => {
+                    const [newOrg] = await tx
+                      .insert(schema.organization)
+                      .values({
+                        id: uuidv7(),
+                        name: 'Anonymous Workspace',
+                        slug: `anonymous-${user.id}`,
+                        createdAt: new Date()
+                      })
+                      .returning()
+
+                    if (newOrg) {
+                      await tx
+                        .insert(schema.member)
+                        .values({
+                          id: uuidv7(),
+                          userId: user.id,
+                          organizationId: newOrg.id,
+                          role: 'owner',
+                          createdAt: new Date()
+                        })
+
+                      await tx
+                        .update(schema.user)
+                        .set({ lastActiveOrganizationId: newOrg.id })
+                        .where(eq(schema.user.id, user.id))
+
+                      // Update the session with activeOrganizationId
+                      await tx
+                        .update(schema.session)
+                        .set({ activeOrganizationId: newOrg.id })
+                        .where(eq(schema.session.id, session.id))
+                    }
+                  })
+                } catch (error) {
+                  console.error('[Auth] Failed to create anonymous organization in after hook:', error)
+                }
               }
             }
           }

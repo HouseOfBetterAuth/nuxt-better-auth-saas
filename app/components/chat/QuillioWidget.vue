@@ -1043,7 +1043,7 @@ if (import.meta.client) {
                     </USelectMenu>
                   </template>
                   <template #submit>
-                    <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" />
+                    <UChatPromptSubmit :status="promptSubmitting ? 'submitted' : uiStatus" submitted-color="primary" streaming-color="primary" />
                   </template>
                 </PromptComposer>
               </div>
@@ -1079,7 +1079,7 @@ if (import.meta.client) {
       :ui="{
         overlay: 'bg-black/60 backdrop-blur-sm',
         wrapper: 'max-w-sm mx-auto',
-        content: 'bg-background text-foreground rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
+        content: 'bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
         header: 'hidden',
         body: 'p-4 space-y-4',
         footer: 'hidden'

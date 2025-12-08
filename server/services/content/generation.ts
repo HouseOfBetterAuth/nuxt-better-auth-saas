@@ -1,5 +1,4 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type { H3Event } from 'h3'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
@@ -22,1377 +21,165 @@ import {
   resolveIngestMethodFromSourceContent,
   slugifyTitle
 } from '~~/server/utils/content'
+import { validateEnum } from '~~/server/utils/validation'
+import type {
+  ContentChunk,
+  ContentFrontmatter,
+  ContentGenerationInput,
+  ContentGenerationOverrides,
+  ContentGenerationResult,
+  ContentOutline,
+  ContentOutlineSection,
+  ContentPlanDetails,
+  ContentSection,
+  SectionUpdateInput,
+  SectionUpdateResult
+} from './generation/types'
+import {
+  buildChunkPreviewText,
+  createTextChunks,
+  ensureSourceContentChunksExist,
+  findRelevantChunksForSection
+} from './generation/chunking'
+import {
+  createFrontmatterFromOutline,
+  enrichFrontmatterWithMetadata,
+  extractFrontmatterFromVersion,
+  formatFrontmatterAsYaml,
+  orderFrontmatterKeys
+} from './generation/frontmatter'
+import { generateContentOutline, MAX_OUTLINE_SECTIONS } from './generation/planning'
+import {
+  assembleMarkdownFromSections,
+  enrichMarkdownWithMetadata,
+  extractMarkdownFromEnrichedMdx
+} from './generation/assembly'
+import { createGenerationMetadata, createSectionUpdateMetadata } from './generation/metadata'
+import { generateStructuredDataJsonLd } from './generation/structured-data'
+import {
+  CONTENT_SECTION_SYSTEM_PROMPT,
+  CONTENT_SECTION_UPDATE_SYSTEM_PROMPT,
+  extractSectionContent,
+  generateContentSectionsFromOutline,
+  MAX_SECTION_CONTEXT_CHUNKS,
+  normalizeContentSections
+} from './generation/sections'
+import {
+  calculateChunkRelevanceScore,
+  calculateCosineSimilarity,
+  countWords,
+  isValidContentFrontmatter,
+  normalizeContentKeywords,
+  normalizeContentSchemaTypes,
+  parseAIResponseAsJSON,
+  tokenizeTextForSearch
+} from './generation/utils'
 
-interface GenerateContentOverrides {
-  title?: string | null
-  slug?: string | null
-  status?: typeof CONTENT_STATUSES[number]
-  primaryKeyword?: string | null
-  targetLocale?: string | null
-  contentType?: typeof CONTENT_TYPES[number]
-  schemaTypes?: string[] | null
+// Re-export types for backward compatibility during migration
+export type {
+  ContentGenerationInput as GenerateContentInput,
+  ContentGenerationResult as GenerateContentResult
 }
 
-export interface GenerateContentInput {
-  organizationId: string
-  userId: string
-  sourceContentId?: string | null
-  sourceText?: string | null
-  contentId?: string | null
-  overrides?: GenerateContentOverrides
-  systemPrompt?: string
-  temperature?: number
-  onPlanReady?: (details: PlanReadyDetails) => Promise<void> | void
-  event?: H3Event | null
-}
+// Type aliases for backward compatibility during migration
+type GenerateContentInput = ContentGenerationInput
+type GenerateContentResult = ContentGenerationResult
 
-export interface GenerateContentResult {
-  content: typeof schema.content.$inferSelect
-  version: typeof schema.contentVersion.$inferSelect
-  markdown: string
-  meta: Record<string, any>
-}
+// Section constants moved to ./sections.ts
+// Using aliases for backward compatibility during migration
+const SECTION_SYSTEM_PROMPT = CONTENT_SECTION_SYSTEM_PROMPT
+const SECTION_PATCH_SYSTEM_PROMPT = CONTENT_SECTION_UPDATE_SYSTEM_PROMPT
+const SECTION_CONTEXT_LIMIT = MAX_SECTION_CONTEXT_CHUNKS
 
-interface PatchContentSectionInput {
-  organizationId: string
-  userId: string
-  contentId: string
-  sectionId: string
-  instructions: string
-  temperature?: number
-}
-
-interface PatchContentSectionResult {
-  content: typeof schema.content.$inferSelect
-  version: typeof schema.contentVersion.$inferSelect
-  markdown: string
-  section: {
-    id: string
-    title: string
-    index: number
-  }
-}
-
-interface PipelineChunk {
-  chunkIndex: number
-  text: string
-  textPreview: string
-  sourceContentId?: string | null
-  embedding?: number[] | null
-}
-
-interface OutlineSection {
-  id: string
-  index: number
-  title: string
-  type: string
-  notes?: string
-}
-
-interface ContentPlanResult {
-  outline: OutlineSection[]
-  seo: {
-    title?: string
-    description?: string
-    keywords?: string[]
-    schemaType?: string
-    schemaTypes?: string[]
-    slugSuggestion?: string
-  }
-}
-
-interface FrontmatterResult {
-  title: string
-  description?: string
-  slug: string
-  slugSuggestion: string
-  tags?: string[]
-  keywords?: string[]
-  status: typeof CONTENT_STATUSES[number]
-  contentType: typeof CONTENT_TYPES[number]
-  schemaTypes: string[]
-  primaryKeyword?: string | null
-  targetLocale?: string | null
-  sourceContentId?: string | null
-}
-
-interface PlanReadyDetails {
-  plan: ContentPlanResult
-  frontmatter: FrontmatterResult
-}
-
-interface GeneratedSection {
-  id: string
-  index: number
-  type: string
-  title: string
-  level: number
-  anchor: string
-  summary?: string | null
-  body: string
-  wordCount: number
-  meta?: Record<string, any>
-}
-
-function isFrontmatterResult(value: unknown): value is FrontmatterResult {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-  const data = value as Record<string, any>
-  return typeof data.title === 'string'
-    && typeof data.slug === 'string'
-    && typeof data.slugSuggestion === 'string'
-    && typeof data.status === 'string'
-    && typeof data.contentType === 'string'
-    && Array.isArray(data.schemaTypes)
-}
-
+// Planning constants moved to ./planning.ts
+// Using aliases for backward compatibility during migration
 const PLAN_SYSTEM_PROMPT = 'You are an editorial strategist who preserves the authentic voice and personality of the original content while creating well-structured articles. Focus on maintaining the speaker\'s unique tone, expressions, and authentic voice over generic SEO optimization. Always respond with valid JSON.'
-const SECTION_SYSTEM_PROMPT = 'You are a skilled writer who preserves the original author\'s unique voice, personality, and authentic expressions while creating well-structured content. Maintain casual language, personal anecdotes, specific details, and the authentic tone from the source material. Write in MDX-compatible markdown. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
-const SECTION_PATCH_SYSTEM_PROMPT = 'You are revising a single section of an existing article. Only update that section using the author instructions and contextual transcript snippets. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
-const PLAN_SECTION_LIMIT = 10
-const SECTION_CONTEXT_LIMIT = 3
+const PLAN_SECTION_LIMIT = MAX_OUTLINE_SECTIONS
 
+// Constants moved to ./frontmatter.ts
 const BASE_SCHEMA_TYPE = 'BlogPosting'
-const CONTENT_TYPE_SCHEMA_EXTENSIONS: Partial<Record<typeof CONTENT_TYPES[number], string[]>> = {
-  recipe: ['Recipe'],
-  how_to: ['HowTo'],
-  faq_page: ['FAQPage'],
-  course: ['Course']
-}
 
-const FRONTMATTER_KEY_ORDER = [
-  'title',
-  'seoTitle',
-  'description',
-  'slug',
-  'contentType',
-  'targetLocale',
-  'status',
-  'primaryKeyword',
-  'keywords',
-  'tags',
-  'schemaTypes',
-  'sourceContentId'
-]
-
-const normalizeSchemaTypes = (
-  ...candidates: Array<string | string[] | null | undefined>
-) => {
-  const set = new Set<string>()
-  const push = (value?: string | null) => {
-    const trimmed = (value ?? '').trim()
-    if (trimmed) {
-      set.add(trimmed)
-    }
-  }
-
-  push(BASE_SCHEMA_TYPE)
-
-  for (const candidate of candidates) {
-    if (!candidate) {
-      continue
-    }
-
-    if (Array.isArray(candidate)) {
-      candidate.forEach(push)
-      continue
-    }
-
-    push(candidate)
-  }
-
-  return Array.from(set)
-}
-
-const normalizeKeywords = (value?: string[] | null) => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value
-    .map(keyword => (typeof keyword === 'string' ? keyword.trim() : ''))
-    .filter((keyword): keyword is string => Boolean(keyword))
-}
-
-const parseJSONResponse = <T>(raw: string, label: string): T => {
-  const trimmed = raw.trim()
-  const tryParse = (value: string) => {
-    try {
-      return JSON.parse(value) as T
-    } catch {
-      return null
-    }
-  }
-
-  let parsed = tryParse(trimmed)
-
-  if (!parsed) {
-    const match = trimmed.match(/```json([\s\S]*?)```/i)
-    if (match && match[1]) {
-      parsed = tryParse(match[1])
-    }
-  }
-
-  if (!parsed) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Failed to parse ${label} response from AI`
-    })
-  }
-
-  return parsed
-}
-
-const createChunksFromTextForRAG = (text: string, chunkSize = 1200, overlap = 200): PipelineChunk[] => {
-  if (!text) {
-    return []
-  }
-
-  const effectiveChunkSize = Number.isFinite(chunkSize) ? Math.max(1, Math.floor(chunkSize)) : 1200
-  const normalizedOverlap = Number.isFinite(overlap) ? Math.floor(overlap) : 0
-  const effectiveOverlap = Math.min(Math.max(normalizedOverlap, 0), effectiveChunkSize - 1)
-  const step = Math.max(1, effectiveChunkSize - effectiveOverlap)
-  // Ensure overlap is always smaller than the chunk size so the sliding window advances.
-
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  const segments: PipelineChunk[] = []
-  let index = 0
-  let start = 0
-
-  while (start < normalized.length) {
-    const end = Math.min(start + effectiveChunkSize, normalized.length)
-    const slice = normalized.slice(start, end).trim()
-    if (slice) {
-      segments.push({
-        chunkIndex: index,
-        text: slice,
-        textPreview: slice.slice(0, 280),
-        sourceContentId: null,
-        embedding: null
-      })
-      index += 1
-    }
-
-    if (end >= normalized.length) {
-      break
-    }
-
-    start += step
-  }
-
-  return segments
-}
-
-const gatherChunkPreview = (chunks: PipelineChunk[], maxChars = 6000) => {
-  if (!chunks.length) {
-    return 'No transcript snippets available.'
-  }
-
-  const parts: string[] = []
-  let current = 0
-
-  for (const chunk of chunks) {
-    const snippet = chunk.textPreview || chunk.text.slice(0, 400)
-    if (!snippet) {
-      continue
-    }
-
-    const label = `Chunk ${chunk.chunkIndex}: ${snippet}`
-    if (current + label.length > maxChars) {
-      break
-    }
-
-    current += label.length
-    parts.push(label)
-  }
-
-  const result = parts.join('\n')
-  if (!result || !result.trim()) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to generate chunk preview - no valid chunks available'
-    })
-  }
-  return result
-}
-
-const tokenize = (input: string) => {
-  if (!input || !input.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Input is required for tokenization'
-    })
-  }
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]+/g, ' ')
-    .split(/\s+/)
-    .filter(token => token.length > 3)
-}
-
-const scoreChunk = (chunk: PipelineChunk, tokens: string[]) => {
-  if (!tokens.length) {
-    return 0
-  }
-
-  const text = chunk.text.toLowerCase()
-  let score = 0
-
-  for (const token of tokens) {
-    if (!token) {
-      continue
-    }
-
-    const occurrences = text.split(token).length - 1
-    score += occurrences
-  }
-
-  return score
-}
-
-const getRelevantChunksForSection = async (params: {
-  chunks: PipelineChunk[]
-  outline: OutlineSection
-  organizationId: string
-  sourceContentId?: string | null
-}): Promise<PipelineChunk[]> => {
-  const { chunks, outline, organizationId, sourceContentId } = params
-
-  if (!chunks.length) {
-    return []
-  }
-
-  let queryEmbedding: number[] | null = null
-
-  if (isVectorizeConfigured && sourceContentId) {
-    queryEmbedding = await embedText(`${outline.title} ${outline.notes ?? ''}`)
-    if (!queryEmbedding || queryEmbedding.length === 0) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to generate embedding for section query'
-      })
-    }
-
-    const matches = await queryVectorMatches({
-      vector: queryEmbedding,
-      topK: SECTION_CONTEXT_LIMIT,
-      filter: {
-        sourceContentId,
-        organizationId
-      }
-    })
-
-    if (matches.length) {
-      const chunkMap = new Map(
-        chunks.map(item => [buildVectorId(item.sourceContentId || sourceContentId, item.chunkIndex), item])
-      )
-
-      const resolvedMatches = matches
-        .map(match => chunkMap.get(match.id))
-        .filter((item): item is PipelineChunk => Boolean(item))
-
-      if (resolvedMatches.length) {
-        return resolvedMatches
-      }
-    }
-  }
-
-  const chunksWithEmbeddings = isVectorizeConfigured
-    ? chunks.filter(chunk => Array.isArray(chunk.embedding) && chunk.embedding.length > 0)
-    : []
-
-  if (isVectorizeConfigured && chunksWithEmbeddings.length) {
-    if (!queryEmbedding) {
-      queryEmbedding = await embedText(`${outline.title} ${outline.notes ?? ''}`)
-      if (!queryEmbedding || queryEmbedding.length === 0) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: 'Failed to generate embedding for section query'
-        })
-      }
-    }
-
-    const scored = chunksWithEmbeddings
-      .map(chunk => ({
-        chunk,
-        score: cosineSimilarity(queryEmbedding!, chunk.embedding as number[])
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, SECTION_CONTEXT_LIMIT)
-
-    if (scored.length && (scored[0]?.score ?? 0) > 0) {
-      return scored.map(item => item.chunk)
-    }
-  }
-
-  const tokens = tokenize(`${outline.title} ${outline.notes ?? ''}`)
-  const scored = chunks.map(chunk => ({ chunk, score: scoreChunk(chunk, tokens) }))
-  scored.sort((a, b) => b.score - a.score)
-
-  const top = scored.filter(item => item.score > 0).slice(0, SECTION_CONTEXT_LIMIT)
-  if (top.length > 0) {
-    return top.map(item => item.chunk)
-  }
-
-  return scored.slice(0, SECTION_CONTEXT_LIMIT).map(item => item.chunk)
-}
-
-const computeWordCount = (value: string) => {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .length
-}
-
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (!vecA.length || !vecB.length || vecA.length !== vecB.length) {
-    return 0
-  }
-
-  let dot = 0
-  let normA = 0
-  let normB = 0
-
-  for (let i = 0; i < vecA.length; i += 1) {
-    const valueA = vecA[i] ?? 0
-    const valueB = vecB[i] ?? 0
-    dot += valueA * valueB
-    normA += valueA * valueA
-    normB += valueB * valueB
-  }
-
-  if (!normA || !normB) {
-    return 0
-  }
-
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB))
-}
-
-// Removed defaultPlan - fail loudly instead of using fallbacks
-
-const generateContentPlan = async (params: {
-  contentType: typeof CONTENT_TYPES[number]
-  instructions?: string
-  chunks: PipelineChunk[] | null
-  sourceText?: string | null
-  sourceTitle?: string | null
-}): Promise<ContentPlanResult> => {
-  const preview = params.chunks && params.chunks.length > 0
-    ? gatherChunkPreview(params.chunks)
-    : (params.sourceText
-        ? params.sourceText.slice(0, 6000) + (params.sourceText.length > 6000 ? '...' : '')
-        : 'No transcript snippets available.')
-  const prompt = [
-    `We are planning a ${params.contentType} that preserves the authentic voice and personality of the original content.`,
-    params.sourceTitle ? `Source Title: ${params.sourceTitle}` : 'Source Title: Unknown',
-    'Transcript highlights:',
-    preview,
-    params.instructions ? `Writer instructions: ${params.instructions}` : 'Writer instructions: Maintain the original speaker\'s authentic voice, casual expressions, and personal storytelling style.',
-    'Create an outline that reflects the natural flow and personality of the original content. Section titles should capture the speaker\'s authentic way of discussing topics.',
-    'Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaTypes": string[] }}.',
-    'Always include "BlogPosting" in schemaTypes, then append any additional schema.org types (e.g., Recipe, HowTo, FAQPage) when the content genuinely needs those structures.',
-    `Limit outline to ${PLAN_SECTION_LIMIT} sections.`
-  ].join('\n\n')
-
-  const raw = await callChatCompletions({
-    messages: [
-      { role: 'system', content: PLAN_SYSTEM_PROMPT },
-      { role: 'user', content: prompt }
-    ],
-    temperature: 0.7 // Higher temperature for more creative and personality-preserving planning
-  })
-
-  const parsed = parseJSONResponse<ContentPlanResult>(raw, 'content plan')
-
-  if (!parsed || typeof parsed !== 'object') {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to parse content plan from AI response'
-    })
-  }
-
-  if (!Array.isArray(parsed.outline) || parsed.outline.length === 0) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include a non-empty outline'
-    })
-  }
-
-  const outline = parsed.outline.slice(0, PLAN_SECTION_LIMIT).map((item, idx) => {
-    if (!item.title || !item.title.trim()) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Content plan outline item at index ${idx} is missing a title`
-      })
-    }
-    if (!item.id || !item.id.trim()) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Content plan outline item "${item.title}" at index ${idx} is missing an id`
-      })
-    }
-    if (!Number.isFinite(item.index)) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Content plan outline item "${item.title}" at index ${idx} is missing a valid index`
-      })
-    }
-    if (!item.type || !item.type.trim()) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Content plan outline item "${item.title}" at index ${idx} is missing a type`
-      })
-    }
-    return {
-      id: item.id,
-      index: item.index,
-      title: item.title.trim(),
-      type: item.type.trim(),
-      notes: item.notes?.trim() || undefined
-    }
-  })
-
-  if (!parsed.seo || typeof parsed.seo !== 'object') {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include SEO metadata'
-    })
-  }
-
-  if (!parsed.seo.title || !parsed.seo.title.trim()) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include a title in SEO metadata'
-    })
-  }
-
-  const parsedSchemaTypes = normalizeSchemaTypes(parsed.seo?.schemaTypes, parsed.seo?.schemaType)
-
-  if (parsedSchemaTypes.length === 0) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include at least one schema type'
-    })
-  }
-
-  if (!parsed.seo.description || !parsed.seo.description.trim()) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include a description in SEO metadata'
-    })
-  }
-
-  if (!parsed.seo.slugSuggestion || !parsed.seo.slugSuggestion.trim()) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Content plan must include a slugSuggestion in SEO metadata'
-    })
-  }
-
-  const plan: ContentPlanResult = {
-    outline,
-    seo: {
-      title: parsed.seo.title.trim(),
-      description: parsed.seo.description.trim(),
-      keywords: Array.isArray(parsed.seo.keywords) ? parsed.seo.keywords : [],
-      schemaType: parsedSchemaTypes[0],
-      schemaTypes: parsedSchemaTypes,
-      slugSuggestion: slugifyTitle(parsed.seo.slugSuggestion.trim())
-    }
-  }
-
-  return plan
-}
-
-const createFrontmatterFromContentPlan = (params: {
-  plan: ContentPlanResult
-  overrides?: GenerateContentOverrides
-  existingContent?: typeof schema.content.$inferSelect | null
-  sourceContent?: typeof schema.sourceContent.$inferSelect | null
-}): FrontmatterResult => {
-  const { plan, overrides, existingContent, sourceContent } = params
-
-  if (!plan.seo.title || !plan.seo.title.trim()) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Plan must include a title'
-    })
-  }
-
-  const resolvedTitle = overrides?.title?.trim() || plan.seo.title
-  if (!resolvedTitle || !resolvedTitle.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Title is required. Provide a title in overrides or ensure the plan includes one.'
-    })
-  }
-
-  const slugInput = overrides?.slug?.trim() || plan.seo.slugSuggestion
-  if (!slugInput || !slugInput.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Slug is required. Provide a slug in overrides or ensure the plan includes slugSuggestion.'
-    })
-  }
-  const normalizedSlug = slugifyTitle(slugInput.trim())
-
-  // For new content, default to 'draft'. For existing content, require explicit status or use existing.
-  let statusCandidate: typeof CONTENT_STATUSES[number]
-  if (overrides?.status) {
-    statusCandidate = validateEnum(overrides.status, CONTENT_STATUSES, 'status')
-  } else if (existingContent?.status) {
-    statusCandidate = validateEnum(existingContent.status, CONTENT_STATUSES, 'status')
-  } else {
-    // New content defaults to 'draft' - this is a business rule, not a fallback
-    statusCandidate = 'draft'
-  }
-
-  // contentType must always be provided explicitly or exist on existing content
-  let contentTypeCandidate: typeof CONTENT_TYPES[number]
-  if (overrides?.contentType) {
-    contentTypeCandidate = validateEnum(overrides.contentType, CONTENT_TYPES, 'contentType')
-  } else if (existingContent?.contentType) {
-    contentTypeCandidate = validateEnum(existingContent.contentType, CONTENT_TYPES, 'contentType')
-  } else {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `contentType is required and must be one of: ${CONTENT_TYPES.join(', ')}`
-    })
-  }
-
-  const resolvedSchemaTypes = normalizeSchemaTypes(
-    params.plan.seo.schemaTypes,
-    params.plan.seo.schemaType,
-    overrides?.schemaTypes,
-    CONTENT_TYPE_SCHEMA_EXTENSIONS[contentTypeCandidate]
-  )
-
-  if (resolvedSchemaTypes.length === 0) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Schema types are required'
-    })
-  }
-
-  const keywordSet = new Set<string>()
-  for (const keyword of normalizeKeywords(plan.seo.keywords)) {
-    keywordSet.add(keyword)
-  }
-  const resolvedPrimaryKeyword = overrides?.primaryKeyword ?? existingContent?.primaryKeyword ?? plan.seo.keywords?.[0] ?? null
-  if (resolvedPrimaryKeyword) {
-    keywordSet.add(resolvedPrimaryKeyword)
-  }
-
-  return {
-    title: resolvedTitle.trim(),
-    description: plan.seo.description || undefined,
-    slug: normalizedSlug,
-    slugSuggestion: normalizedSlug,
-    tags: Array.from(keywordSet),
-    keywords: Array.from(keywordSet),
-    status: statusCandidate,
-    contentType: contentTypeCandidate,
-    schemaTypes: resolvedSchemaTypes,
-    primaryKeyword: resolvedPrimaryKeyword,
-    targetLocale: overrides?.targetLocale ?? existingContent?.targetLocale ?? null,
-    sourceContentId: sourceContent?.id ?? existingContent?.sourceContentId ?? null
-  }
-}
-
-const enrichFrontmatterMetadata = (params: {
-  plan: ContentPlanResult
-  frontmatter: FrontmatterResult
-  sourceContent?: typeof schema.sourceContent.$inferSelect | null
-}) => {
-  const { plan, frontmatter, sourceContent } = params
-  const title = (frontmatter.title || '').replace(/\s+/g, ' ').trim()
-  if (!title) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Title is required in frontmatter'
-    })
-  }
-  const slugCandidate = frontmatter.slug || frontmatter.slugSuggestion || title
-  const slug = slugifyTitle(slugCandidate)
-
-  const keywordSet = new Set<string>()
-  const push = (value?: string | null) => {
-    const trimmed = (value || '').trim()
-    if (trimmed) {
-      keywordSet.add(trimmed)
-    }
-  }
-  const pushMany = (values?: string[] | null) => {
-    for (const value of values || []) {
-      push(value)
-    }
-  }
-
-  push(frontmatter.primaryKeyword)
-  pushMany(frontmatter.tags)
-  pushMany(frontmatter.keywords)
-  pushMany(plan.seo.keywords)
-
-  const resolvedSchemaTypes = normalizeSchemaTypes(
-    frontmatter.schemaTypes,
-    CONTENT_TYPE_SCHEMA_EXTENSIONS[frontmatter.contentType]
-  )
-
-  return {
-    ...frontmatter,
-    title,
-    slug,
-    slugSuggestion: frontmatter.slugSuggestion || slug,
-    tags: Array.from(keywordSet),
-    keywords: Array.from(keywordSet),
-    description: frontmatter.description || plan.seo.description,
-    schemaTypes: resolvedSchemaTypes,
-    targetLocale: frontmatter.targetLocale || null
-  }
-}
-
-const buildFrontmatterFromVersion = (params: {
-  content: typeof schema.content.$inferSelect
-  version: typeof schema.contentVersion.$inferSelect | null
-}): FrontmatterResult => {
-  const versionFrontmatter = params.version?.frontmatter || {}
-
-  const resolvedTitle = versionFrontmatter.title || params.content.title
-  if (!resolvedTitle || !resolvedTitle.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Content title is required'
-    })
-  }
-
-  const slugInput = versionFrontmatter.slug || params.content.slug
-  if (!slugInput || !slugInput.trim()) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Content slug is required'
-    })
-  }
-
-  const statusCandidate = versionFrontmatter.status
-    ? validateEnum(versionFrontmatter.status, CONTENT_STATUSES, 'status')
-    : validateEnum(params.content.status, CONTENT_STATUSES, 'status')
-
-  const contentTypeCandidate = versionFrontmatter.contentType
-    ? validateEnum(versionFrontmatter.contentType, CONTENT_TYPES, 'contentType')
-    : validateEnum(params.content.contentType, CONTENT_TYPES, 'contentType')
-  const schemaTypes = normalizeSchemaTypes(
-    versionFrontmatter.schemaTypes,
-    versionFrontmatter.schemaType,
-    CONTENT_TYPE_SCHEMA_EXTENSIONS[contentTypeCandidate]
-  )
-
-  return {
-    title: resolvedTitle.trim(),
-    description: versionFrontmatter.description || undefined,
-    slug: slugifyTitle(slugInput.trim()),
-    slugSuggestion: slugifyTitle(slugInput.trim()),
-    tags: Array.isArray(versionFrontmatter.tags) ? normalizeKeywords(versionFrontmatter.tags) : undefined,
-    keywords: normalizeKeywords(versionFrontmatter.keywords || versionFrontmatter.tags || []),
-    status: statusCandidate,
-    contentType: contentTypeCandidate,
-    schemaTypes,
-    primaryKeyword: versionFrontmatter.primaryKeyword ?? params.content.primaryKeyword ?? null,
-    targetLocale: versionFrontmatter.targetLocale ?? params.content.targetLocale ?? null,
-    sourceContentId: versionFrontmatter.sourceContentId ?? params.content.sourceContentId ?? null
-  }
-}
-
-const generateSectionsFromOutline = async (params: {
-  outline: OutlineSection[]
-  frontmatter: FrontmatterResult
-  chunks: PipelineChunk[]
-  instructions?: string
-  temperature?: number
-  organizationId: string
-  sourceContentId?: string | null
-}): Promise<GeneratedSection[]> => {
-  const sections: GeneratedSection[] = []
-
-  for (const item of params.outline) {
-    const relevantChunks = await getRelevantChunksForSection({
-      chunks: params.chunks,
-      outline: item,
-      organizationId: params.organizationId,
-      sourceContentId: params.sourceContentId
-    })
-    const contextBlock = relevantChunks.length
-      ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
-      : 'No transcript context available.'
-
-    const prompt = [
-      `Section title: ${item.title}`,
-      `Section type: ${item.type}`,
-      item.notes ? `Plan notes: ${item.notes}` : 'Plan notes: none.',
-      `Frontmatter: ${JSON.stringify({
-        title: params.frontmatter.title,
-        description: params.frontmatter.description,
-        tags: params.frontmatter.tags,
-        contentType: params.frontmatter.contentType,
-        schemaTypes: params.frontmatter.schemaTypes
-      })}`,
-      params.instructions ? `Additional voice instructions: ${params.instructions}` : 'Voice instructions: Preserve the original speaker\'s authentic voice, personality, casual expressions, personal anecdotes, and unique phrasing. Maintain their natural speaking style and tone rather than converting to formal editorial language.',
-      'Transcript context to ground this section:',
-      contextBlock,
-      'Write this section maintaining the original speaker\'s authentic voice and personality. Use their specific words, phrases, and expressions when possible. Keep their casual tone, personal stories, and unique way of explaining things. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
-    ].join('\n\n')
-
-    if (!item.title || !item.title.trim()) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Outline item at index ${item.index} is missing a title`
-      })
-    }
-
-    // Temperature is a configuration parameter with a reasonable default
-    const temperature = Number.isFinite(params.temperature) && params.temperature !== undefined
-      ? params.temperature
-      : 0.7
-
-    if (!item.id) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Outline item "${item.title}" is missing an id`
-      })
-    }
-
-    if (!Number.isFinite(item.index)) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Outline item "${item.title}" is missing a valid index`
-      })
-    }
-
-    if (!item.type || !item.type.trim()) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Outline item "${item.title}" is missing a type`
-      })
-    }
-
-    const raw = await callChatCompletions({
-      messages: [
-        { role: 'system', content: SECTION_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
-      ],
-      temperature
-    })
-
-    const parsed = parseJSONResponse<{ body?: string, body_mdx?: string, summary?: string }>(raw, `section ${item.title}`)
-
-    if (!parsed.body && !parsed.body_mdx) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Section "${item.title}" generation failed: missing body content`
-      })
-    }
-
-    const body = (parsed.body || parsed.body_mdx || '').trim()
-    if (!body) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: `Section "${item.title}" generation failed: body content is empty`
-      })
-    }
-
-    const headingLevel = item.type === 'subsection' ? 3 : 2
-    const anchor = slugifyTitle(item.title)
-
-    sections.push({
-      id: item.id,
-      index: item.index,
-      type: item.type,
-      title: item.title,
-      level: headingLevel,
-      anchor,
-      body,
-      summary: parsed.summary?.trim() || undefined,
-      wordCount: computeWordCount(body),
-      meta: {
-        planType: item.type,
-        notes: item.notes || undefined,
-        sourceChunks: relevantChunks.map(chunk => chunk.chunkIndex)
-      }
-    })
-  }
-
-  if (!sections.length) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: 'Unable to generate any sections from the provided plan'
-    })
-  }
-
-  return sections.sort((a, b) => a.index - b.index)
-}
-
-const combineSectionsIntoMarkdown = (params: {
-  frontmatter: FrontmatterResult
-  sections: GeneratedSection[]
-}) => {
-  const ordered = [...params.sections].sort((a, b) => a.index - b.index)
-  let markdown = `# ${params.frontmatter.title}\n\n`
-  let currentOffset = markdown.length
-
-  const sectionsWithOffsets = ordered.map((section) => {
-    const level = Math.min(Math.max(section.level || 2, 2), 6)
-    const headingLine = section.title ? `${'#'.repeat(level)} ${section.title}` : ''
-    const pieces = [headingLine, section.body.trim()].filter(Boolean)
-    const block = pieces.join('\n\n')
-    const blockWithPadding = `${block}\n\n`
-    const startOffset = currentOffset
-    markdown += blockWithPadding
-    currentOffset = markdown.length
-
-    return {
-      ...section,
-      startOffset,
-      endOffset: startOffset + block.length,
-      body_mdx: section.body
-    }
-  })
-
-  markdown = `${markdown.trim()}\n`
-
-  return {
-    markdown,
-    sections: sectionsWithOffsets
-  }
-}
-
-function formatScalarForYaml(value: any, indent = 0): string {
-  if (value == null) {
-    return ''
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-  if (typeof value === 'string') {
-    const normalized = value.replace(/\r/g, '')
-    if (normalized.includes('\n')) {
-      const blockIndent = '  '.repeat(indent + 1)
-      const indented = normalized.split('\n').map(line => `${blockIndent}${line}`).join('\n')
-      return `|\n${indented}`
-    }
-    return `"${normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-  }
-  return JSON.stringify(value)
-}
-
-function toYamlLinesForFrontmatter(value: any, indent = 0): string[] {
-  const prefix = '  '.repeat(indent)
-  if (Array.isArray(value)) {
-    if (!value.length) {
-      return [`${prefix}[]`]
-    }
-    return value.flatMap((entry) => {
-      if (entry && typeof entry === 'object') {
-        return [`${prefix}-`, ...toYamlLinesForFrontmatter(entry, indent + 1)]
-      }
-      return [`${prefix}- ${formatScalarForYaml(entry, indent)}`]
-    })
-  }
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, any>)
-    if (!entries.length) {
-      return [`${prefix}{}`]
-    }
-    return entries.flatMap(([key, entry]) => {
-      if (entry && typeof entry === 'object') {
-        return [`${prefix}${key}:`, ...toYamlLinesForFrontmatter(entry, indent + 1)]
-      }
-      return [`${prefix}${key}: ${formatScalarForYaml(entry, indent)}`]
-    })
-  }
-  return [`${prefix}${formatScalarForYaml(value, indent)}`]
-}
-
-function orderFrontmatterForBlock(frontmatter: Record<string, any>) {
-  const ordered: Record<string, any> = {}
-  for (const key of FRONTMATTER_KEY_ORDER) {
-    if (frontmatter[key] !== undefined) {
-      ordered[key] = frontmatter[key]
-    }
-  }
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (ordered[key] === undefined) {
-      ordered[key] = value
-    }
-  }
-  return ordered
-}
-
-function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined) {
-  if (!frontmatter || typeof frontmatter !== 'object') {
-    return '---\n---'
-  }
-  const filtered = Object.fromEntries(
-    Object.entries(frontmatter).filter(([, value]) => {
-      if (Array.isArray(value)) {
-        return value.length > 0
-      }
-      if (value && typeof value === 'object') {
-        return Object.keys(value).length > 0
-      }
-      return value !== null && value !== undefined && value !== ''
-    })
-  )
-  const ordered = orderFrontmatterForBlock(filtered)
-  const lines = toYamlLinesForFrontmatter(ordered)
-  return ['---', ...lines, '---'].join('\n')
-}
-
-function generateJsonLdStructuredData(params: {
-  frontmatter: FrontmatterResult
-  seoSnapshot: Record<string, any> | null
-  baseUrl?: string
-}): string {
-  const { frontmatter, seoSnapshot, baseUrl } = params
-  const schemaTypes = Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes : []
-  const normalizedSchemaTypes = schemaTypes
-    .map(type => (typeof type === 'string' ? type.trim() : ''))
-    .filter((type): type is string => Boolean(type))
-
-  if (!normalizedSchemaTypes.length) {
-    return ''
-  }
-
-  const structuredData: Record<string, any> = {
-    '@context': 'https://schema.org',
-    '@type': normalizedSchemaTypes[0] || 'BlogPosting'
-  }
-
-  // Basic article properties
-  if (frontmatter.title) {
-    structuredData.headline = frontmatter.title
-  }
-  if (frontmatter.description) {
-    structuredData.description = frontmatter.description
-  }
-  if (frontmatter.primaryKeyword) {
-    structuredData.keywords = frontmatter.primaryKeyword
-  }
-  if (Array.isArray(frontmatter.keywords) && frontmatter.keywords.length > 0) {
-    const keywordEntries = frontmatter.keywords
-      .map(keyword => typeof keyword === 'string' ? keyword.trim() : '')
-      .filter((keyword): keyword is string => Boolean(keyword))
-    const normalizedPrimary = typeof frontmatter.primaryKeyword === 'string'
-      ? frontmatter.primaryKeyword.trim()
-      : ''
-    const hasPrimary = normalizedPrimary
-      ? keywordEntries.includes(normalizedPrimary)
-      : false
-    const keywordsList = normalizedPrimary && !hasPrimary
-      ? [normalizedPrimary, ...keywordEntries]
-      : keywordEntries
-    if (keywordsList.length) {
-      structuredData.keywords = keywordsList.join(', ')
-    }
-  }
-
-  // Add datePublished if available
-  const seoPlan = seoSnapshot && typeof seoSnapshot === 'object' ? seoSnapshot.plan : null
-  if (seoPlan && typeof seoPlan === 'object' && seoPlan.datePublished) {
-    structuredData.datePublished = seoPlan.datePublished
-  }
-
-  // Add URL if baseUrl is provided
-  if (baseUrl && frontmatter.slug) {
-    const normalizedBase = baseUrl.replace(/\/+$/, '')
-    const normalizedSlug = frontmatter.slug.replace(/^\/+/, '')
-    structuredData.url = `${normalizedBase}/${normalizedSlug}`
-  }
-
-  // Add additional schema types as nested structures
-  if (normalizedSchemaTypes.length > 1) {
-    structuredData['@type'] = normalizedSchemaTypes
-  }
-
-  const jsonLd = JSON.stringify(structuredData, null, 2)
-  return `<script type="application/ld+json">\n${jsonLd}\n</script>`
-}
-
-/**
- * Extracts raw markdown from enriched MDX by stripping frontmatter and JSON-LD
- */
-function extractRawMarkdownFromEnrichedMdx(enrichedMdx: string): string {
-  const trimmed = enrichedMdx.trim()
-
-  // If it doesn't start with '---', it's not enriched, return as-is
-  if (!trimmed.startsWith('---')) {
-    return trimmed
-  }
-
-  // Find the end of frontmatter block (second '---')
-  const delimiter = '\n---'
-  const frontmatterEnd = trimmed.indexOf(delimiter, 3)
-  if (frontmatterEnd === -1) {
-    // No closing frontmatter, return as-is
-    return trimmed
-  }
-
-  // Extract content after frontmatter
-  let contentStart = frontmatterEnd + delimiter.length
-  // Skip optional Windows line endings or trailing newline
-  if (trimmed[contentStart] === '\r') {
-    contentStart += 1
-  }
-  if (trimmed[contentStart] === '\n') {
-    contentStart += 1
-  }
-  let content = trimmed.substring(contentStart).trim()
-
-  // Check if there's a JSON-LD script tag and remove it
-  const jsonLdStart = content.indexOf('<script type="application/ld+json">')
-  if (jsonLdStart !== -1) {
-    const jsonLdEnd = content.indexOf('</script>', jsonLdStart)
-    if (jsonLdEnd !== -1) {
-      // Remove JSON-LD block and any surrounding whitespace
-      const before = content.substring(0, jsonLdStart).trim()
-      const after = content.substring(jsonLdEnd + 9).trim()
-      content = [before, after].filter(Boolean).join('\n\n')
-    }
-  }
-
-  return content.trim()
-}
-
-/**
- * Enriches markdown with frontmatter and JSON-LD structured data
- */
-export function enrichMdxWithMetadata(params: {
-  markdown: string
-  frontmatter: FrontmatterResult
-  seoSnapshot: Record<string, any> | null
-  baseUrl?: string
-}): string {
-  const { markdown, frontmatter, seoSnapshot, baseUrl } = params
-
-  // Extract raw markdown if already enriched
-  const rawMarkdown = extractRawMarkdownFromEnrichedMdx(markdown)
-
-  const frontmatterBlock = buildFrontmatterBlock(frontmatter)
-  const jsonLd = generateJsonLdStructuredData({ frontmatter, seoSnapshot, baseUrl })
-
-  const parts: string[] = [frontmatterBlock]
-  if (jsonLd) {
-    parts.push(jsonLd)
-  }
-  parts.push(rawMarkdown)
-
-  return parts.filter(part => part.trim().length > 0).join('\n\n')
-}
-
-const createContentGenerationMetadata = (
-  sourceContent: typeof schema.sourceContent.$inferSelect | null,
-  stages: string[]
-) => {
-  return {
-    generator: {
-      engine: 'codex-pipeline',
-      generatedAt: new Date().toISOString(),
-      stages
-    },
-    source: sourceContent
-      ? {
-          id: sourceContent.id,
-          type: sourceContent.sourceType,
-          externalId: sourceContent.externalId
-        }
-      : null
-  }
-}
-
-const createSectionPatchMetadata = (
-  sourceContent: typeof schema.sourceContent.$inferSelect | null,
-  sectionId: string
-) => ({
-  generator: {
-    engine: 'codex-pipeline',
-    generatedAt: new Date().toISOString(),
-    stages: ['section_patch'],
-    sectionId
-  },
-  source: sourceContent
-    ? {
-        id: sourceContent.id,
-        type: sourceContent.sourceType,
-        externalId: sourceContent.externalId
-      }
-    : null
-})
-
-const extractSectionBody = (
-  section: Record<string, any>,
-  bodyMdx: string | null
-) => {
-  if (typeof section.body_mdx === 'string' && section.body_mdx.trim().length > 0) {
-    return section.body_mdx
-  }
-  if (typeof section.body === 'string' && section.body.trim().length > 0) {
-    return section.body
-  }
-  if (
-    typeof bodyMdx === 'string' &&
-    Number.isFinite(section.startOffset) &&
-    Number.isFinite(section.endOffset)
-  ) {
-    return bodyMdx.slice(section.startOffset, section.endOffset).trim()
-  }
-  return ''
-}
-
-const normalizeStoredSections = (
-  sectionsData: any,
-  bodyMdx: string | null
-): GeneratedSection[] => {
-  if (!Array.isArray(sectionsData)) {
-    return []
-  }
-
-  return sectionsData.map((section: Record<string, any>, idx: number) => {
-    const id = section.id || section.section_id || `section-${idx}`
-    const title = section.title || `Section ${idx + 1}`
-    const body = extractSectionBody(section, bodyMdx)
-
-    return {
-      id,
-      index: Number.isFinite(section.index) ? section.index : idx,
-      type: section.type || section.meta?.planType || 'body',
-      title,
-      level: Number.isFinite(section.level) ? section.level : 2,
-      anchor: section.anchor || slugifyTitle(title),
-      body,
-      summary: section.summary || section.meta?.summary || null,
-      wordCount: Number.isFinite(section.wordCount) ? section.wordCount : computeWordCount(body),
-      meta: section.meta || {}
-    }
-  })
-}
-
-const ensureChunksExistForSourceContent = async (
-  db: NodePgDatabase<typeof schema>,
-  sourceContent: typeof schema.sourceContent.$inferSelect | null,
-  fallbackText: string | null
-): Promise<PipelineChunk[]> => {
-  if (!sourceContent?.id) {
-    if (!fallbackText || !fallbackText.trim()) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Source content is required. Provide a sourceContentId or fallback text.'
-      })
-    }
-    const virtualChunks = createChunksFromTextForRAG(fallbackText)
-    if (virtualChunks.length === 0) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Failed to create chunks from fallback text'
-      })
-    }
-    if (isVectorizeConfigured) {
-      const embeddings = await embedTexts(virtualChunks.map(chunk => chunk.text))
-      if (embeddings.length !== virtualChunks.length) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: 'Failed to generate embeddings for all chunks'
-        })
-      }
-      virtualChunks.forEach((chunk, idx) => {
-        chunk.embedding = embeddings[idx] ?? null
-      })
-    }
-    return virtualChunks
-  }
-
-  let chunks = await db
-    .select({
-      id: schema.chunk.id,
-      chunkIndex: schema.chunk.chunkIndex,
-      text: schema.chunk.text,
-      textPreview: schema.chunk.textPreview,
-      embedding: schema.chunk.embedding,
-      sourceContentId: schema.chunk.sourceContentId,
-      organizationId: schema.chunk.organizationId
-    })
-    .from(schema.chunk)
-    .where(eq(schema.chunk.sourceContentId, sourceContent.id))
-    .orderBy(asc(schema.chunk.chunkIndex))
-
-  if (chunks.length === 0) {
-    if (!sourceContent.sourceText || !sourceContent.sourceText.trim()) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Source content has no text to chunk'
-      })
-    }
-    await createChunksFromSourceContentText({ db, sourceContent })
-    chunks = await db
-      .select()
-      .from(schema.chunk)
-      .where(eq(schema.chunk.sourceContentId, sourceContent.id))
-      .orderBy(asc(schema.chunk.chunkIndex))
-
-    if (chunks.length === 0) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to create chunks from source content'
-      })
-    }
-  }
-
-  if (isVectorizeConfigured) {
-    const missingEmbeddings = chunks.filter(chunk => !Array.isArray(chunk.embedding) || chunk.embedding.length === 0)
-    if (missingEmbeddings.length) {
-      const embeddings = await embedTexts(missingEmbeddings.map(chunk => chunk.text))
-      if (embeddings.length !== missingEmbeddings.length) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: `Failed to generate embeddings: expected ${missingEmbeddings.length}, got ${embeddings.length}`
-        })
-      }
-      const chunkEmbeddings = missingEmbeddings.map((chunk, idx) => {
-        const embedding = embeddings[idx]
-        if (!embedding) {
-          throw createError({
-            statusCode: 500,
-            statusMessage: `Missing embedding data for chunk ${chunk.id}`
-          })
-        }
-        return { chunk, embedding }
-      })
-
-      await Promise.all(chunkEmbeddings.map(({ chunk, embedding }) => {
-        chunk.embedding = embedding
-        return db
-          .update(schema.chunk)
-          .set({ embedding })
-          .where(eq(schema.chunk.id, chunk.id))
-      }))
-
-      await upsertVectors(chunkEmbeddings.map(({ chunk, embedding }) => ({
-        id: buildVectorId(chunk.sourceContentId, chunk.chunkIndex),
-        values: embedding,
-        metadata: {
-          sourceContentId: chunk.sourceContentId,
-          organizationId: chunk.organizationId,
-          chunkIndex: chunk.chunkIndex
-        }
-      })))
-    }
-  }
-
-  return chunks.map(item => ({
-    chunkIndex: item.chunkIndex,
-    text: item.text,
-    textPreview: item.textPreview ?? item.text.slice(0, 280),
-    sourceContentId: item.sourceContentId,
-    embedding: item.embedding ?? null
-  }))
-}
+// Type aliases for backward compatibility during migration
+type GenerateContentOverrides = ContentGenerationOverrides
+type PatchContentSectionInput = SectionUpdateInput
+type PatchContentSectionResult = SectionUpdateResult
+type PipelineChunk = ContentChunk
+type OutlineSection = ContentOutlineSection
+type ContentPlanResult = ContentOutline
+type FrontmatterResult = ContentFrontmatter
+type PlanReadyDetails = ContentPlanDetails
+type GeneratedSection = ContentSection
+
+// Utility functions moved to ./utils.ts
+// Using aliases for backward compatibility during migration
+const normalizeSchemaTypes = normalizeContentSchemaTypes
+const normalizeKeywords = normalizeContentKeywords
+const parseJSONResponse = parseAIResponseAsJSON
+
+// Chunking functions moved to ./chunking.ts
+// Using aliases for backward compatibility during migration
+const createChunksFromTextForRAG = createTextChunks
+const gatherChunkPreview = buildChunkPreviewText
+
+// Utility functions moved to ./utils.ts
+// Using aliases for backward compatibility during migration
+const tokenize = tokenizeTextForSearch
+const scoreChunk = calculateChunkRelevanceScore
+
+// Chunking functions moved to ./chunking.ts
+// Using aliases for backward compatibility during migration
+const getRelevantChunksForSection = findRelevantChunksForSection
+
+// Utility functions moved to ./utils.ts
+// Using aliases for backward compatibility during migration
+const computeWordCount = countWords
+const cosineSimilarity = calculateCosineSimilarity
+
+// Planning functions moved to ./planning.ts
+// Using aliases for backward compatibility during migration
+const generateContentPlan = generateContentOutline
+
+// Frontmatter functions moved to ./frontmatter.ts
+// Using aliases for backward compatibility during migration
+const createFrontmatterFromContentPlan = createFrontmatterFromOutline
+const enrichFrontmatterMetadata = enrichFrontmatterWithMetadata
+const buildFrontmatterFromVersion = extractFrontmatterFromVersion
+
+// Section functions moved to ./sections.ts
+// Using aliases for backward compatibility during migration
+const generateSectionsFromOutline = generateContentSectionsFromOutline
+
+// Assembly functions moved to ./assembly.ts
+// Using aliases for backward compatibility during migration
+const combineSectionsIntoMarkdown = assembleMarkdownFromSections
+
+// YAML formatting functions moved to ./frontmatter.ts
+// Using aliases for backward compatibility during migration
+const orderFrontmatterForBlock = orderFrontmatterKeys
+const buildFrontmatterBlock = formatFrontmatterAsYaml
+
+// Structured data functions moved to ./structured-data.ts
+// Using aliases for backward compatibility during migration
+const generateJsonLdStructuredData = generateStructuredDataJsonLd
+
+// Assembly functions moved to ./assembly.ts
+// Re-export for backward compatibility during migration
+export const enrichMdxWithMetadata = enrichMarkdownWithMetadata
+const extractRawMarkdownFromEnrichedMdx = extractMarkdownFromEnrichedMdx
+
+// Metadata functions moved to ./metadata.ts
+// Using aliases for backward compatibility during migration
+const createContentGenerationMetadata = createGenerationMetadata
+const createSectionPatchMetadata = createSectionUpdateMetadata
+
+// Section functions moved to ./sections.ts
+// Using aliases for backward compatibility during migration
+const extractSectionBody = extractSectionContent
+const normalizeStoredSections = normalizeContentSections
+
+// Chunking functions moved to ./chunking.ts
+// Using aliases for backward compatibility during migration
+const ensureChunksExistForSourceContent = ensureSourceContentChunksExist
 
 /**
  * Generates a content draft from a source content (transcript, YouTube video, etc.)
@@ -1401,10 +188,18 @@ const ensureChunksExistForSourceContent = async (
  * @param input - Input parameters for content generation
  * @returns Generated content draft with markdown and metadata
  */
+// Export with new name for cleaner API
+export const generateContentFromSource = async (
+  db: NodePgDatabase<typeof schema>,
+  input: ContentGenerationInput
+): Promise<ContentGenerationResult> => {
+  return generateContentDraftFromSource(db, input)
+}
+
 export const generateContentDraftFromSource = async (
   db: NodePgDatabase<typeof schema>,
-  input: GenerateContentInput
-): Promise<GenerateContentResult> => {
+  input: ContentGenerationInput
+): Promise<ContentGenerationResult> => {
   const {
     organizationId,
     userId,
@@ -1810,10 +605,18 @@ export const generateContentDraftFromSource = async (
  * @param input - Input parameters for section update
  * @returns Updated content with new version and section information
  */
+// Export with new name for cleaner API
+export const updateContentSection = async (
+  db: NodePgDatabase<typeof schema>,
+  input: SectionUpdateInput
+): Promise<SectionUpdateResult> => {
+  return updateContentSectionWithAI(db, input)
+}
+
 export const updateContentSectionWithAI = async (
   db: NodePgDatabase<typeof schema>,
-  input: PatchContentSectionInput
-): Promise<PatchContentSectionResult> => {
+  input: SectionUpdateInput
+): Promise<SectionUpdateResult> => {
   const {
     organizationId,
     userId,
@@ -2090,6 +893,23 @@ export const updateContentSectionWithAI = async (
  * @param params.baseUrl - Base URL for content
  * @returns Updated content version with enriched MDX
  */
+// Export with new name for cleaner API
+export async function refreshContentVersionMetadata(
+  db: NodePgDatabase<typeof schema>,
+  params: {
+    organizationId: string
+    userId: string
+    contentId: string
+    baseUrl?: string
+  }
+): Promise<{
+  content: typeof schema.content.$inferSelect
+  version: typeof schema.contentVersion.$inferSelect
+  enrichedMdx: string
+}> {
+  return reEnrichContentVersion(db, params)
+}
+
 export async function reEnrichContentVersion(
   db: NodePgDatabase<typeof schema>,
   params: {
@@ -2135,7 +955,7 @@ export async function reEnrichContentVersion(
 
   const currentVersion = record.version
   const rawFrontmatter = currentVersion.frontmatter
-  const frontmatter = isFrontmatterResult(rawFrontmatter) ? rawFrontmatter : null
+  const frontmatter = isValidContentFrontmatter(rawFrontmatter) ? rawFrontmatter : null
   const seoSnapshot = currentVersion.seoSnapshot as Record<string, any> | null
 
   if (!frontmatter) {

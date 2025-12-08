@@ -137,6 +137,8 @@ function handleRegenerate(message: ChatMessage) {
             <UChatPromptSubmit
               :status="uiStatus"
               color="neutral"
+              submitted-color="primary"
+              streaming-color="primary"
             />
           </UChatPrompt>
         </template>
