@@ -13,16 +13,23 @@ export const extractMarkdownFromEnrichedMdx = (enrichedMdx: string): string => {
     return trimmed
   }
 
-  // Find the end of frontmatter block (second '---')
-  const delimiter = '\n---'
-  const frontmatterEnd = trimmed.indexOf(delimiter, 3)
-  if (frontmatterEnd === -1) {
+  // Find the end of frontmatter block (second '---' at start of line)
+  // Use regex to match delimiter only when it appears alone at the start of a line
+  // This avoids misidentifying occurrences inside multi-line YAML strings
+  const frontmatterDelimiterRegex = /^---\s*$/m
+  const match = trimmed.slice(3).match(frontmatterDelimiterRegex)
+  if (!match) {
     // No closing frontmatter, return as-is
     return trimmed
   }
+  // match.index is relative to trimmed.slice(3), so add 3 to get position in trimmed
+  // match[0] includes the full delimiter line (--- plus optional whitespace)
+  const delimiterLineStart = match.index! + 3
+  const delimiterLineEnd = delimiterLineStart + match[0].length
 
   // Extract content after frontmatter
-  let contentStart = frontmatterEnd + delimiter.length
+  // Content starts after the delimiter line (which ends with a newline)
+  let contentStart = delimiterLineEnd
   // Skip optional Windows line endings or trailing newline
   if (trimmed[contentStart] === '\r') {
     contentStart += 1
@@ -94,7 +101,7 @@ export const assembleMarkdownFromSections = (params: {
     return {
       ...section,
       startOffset,
-      endOffset: startOffset + block.length,
+      endOffset: startOffset + blockWithPadding.length,
       body_mdx: section.body
     }
   })

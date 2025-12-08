@@ -343,9 +343,9 @@ const {
   }
 })
 
-const isPublishing = isPublishingComposable
+const _isPublishing = isPublishingComposable
 
-async function handleWriteDraftFromSource(sourceId?: string | null) {
+async function _handleWriteDraftFromSource(sourceId?: string | null) {
   await handleWriteDraftFromSourceComposable(sourceId)
   prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
 }
@@ -501,7 +501,7 @@ const handlePromptSubmit = async (value?: string) => {
   }
 }
 
-const handlePublishDraft = handlePublishDraftComposable
+const _handlePublishDraft = handlePublishDraftComposable
 
 const loadWorkspaceDetail = async (contentId: string) => {
   if (!contentId) {
@@ -1085,7 +1085,7 @@ if (import.meta.client) {
       :ui="{
         overlay: 'bg-black/60 backdrop-blur-sm',
         wrapper: 'max-w-sm mx-auto',
-        content: 'bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
+        content: 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-2xl shadow-2xl border border-muted-200/80 dark:border-muted-800/70',
         header: 'hidden',
         body: 'p-4 space-y-4',
         footer: 'hidden'

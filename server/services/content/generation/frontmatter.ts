@@ -127,7 +127,7 @@ export const enrichFrontmatterWithMetadata = (params: {
   frontmatter: ContentFrontmatter
   sourceContent?: typeof schema.sourceContent.$inferSelect | null
 }) => {
-  const { plan, frontmatter, sourceContent } = params
+  const { plan, frontmatter, sourceContent: _sourceContent } = params
   const title = (frontmatter.title || '').replace(/\s+/g, ' ').trim()
   if (!title) {
     throw createError({

@@ -26,7 +26,9 @@ async function deleteAllAnonymousUsers() {
       console.log('No anonymous organizations found')
       try {
         await pool.end()
-      } catch (e) {}
+      } catch {
+        // Ignore errors
+      }
       return
     }
 
@@ -41,8 +43,16 @@ async function deleteAllAnonymousUsers() {
 
     // Get all users in these organizations
     const members = await db.select().from(schema.member).where(inArray(schema.member.organizationId, orgIds))
-    const userIds = [...new Set(members.map(m => m.userId))]
-    console.log(`Found ${userIds.length} user(s) to delete`)
+    const potentialUserIds = [...new Set(members.map(m => m.userId))]
+
+    // Only delete users who are EXCLUSIVELY in anonymous organizations
+    const allMemberships = await db.select().from(schema.member).where(inArray(schema.member.userId, potentialUserIds))
+    const userIds = potentialUserIds.filter((userId) => {
+      const userMemberships = allMemberships.filter(m => m.userId === userId)
+      return userMemberships.every(m => orgIds.includes(m.organizationId))
+    })
+
+    console.log(`Found ${userIds.length} user(s) to delete (${potentialUserIds.length - userIds.length} user(s) excluded due to regular organization memberships)`)
 
     // Delete in order (respecting foreign keys)
     if (contentIds.length > 0) {
@@ -96,7 +106,7 @@ async function deleteAllAnonymousUsers() {
   } finally {
     try {
       await pool.end()
-    } catch (e) {
+    } catch {
       // Ignore double-end errors
     }
   }

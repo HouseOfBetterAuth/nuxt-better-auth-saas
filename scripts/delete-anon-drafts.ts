@@ -1,5 +1,5 @@
 import { config } from 'dotenv'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import pkg from 'pg'
 import * as schema from '../server/database/schema/index.js'
@@ -21,7 +21,6 @@ async function deleteAnonymousDrafts() {
 
     if (anonymousUsers.length === 0) {
       console.log('No anonymous users found')
-      await pool.end()
       return
     }
 
@@ -32,7 +31,6 @@ async function deleteAnonymousDrafts() {
     const members = await db.select().from(schema.member).where(eq(schema.member.userId, userId)).limit(1)
     if (members.length === 0) {
       console.log('No organization found for anonymous user')
-      await pool.end()
       return
     }
 
@@ -49,17 +47,19 @@ async function deleteAnonymousDrafts() {
       console.log(`Found ${contents.length} content items created by user`)
     }
 
-    // Also check all draft content
+    // Also check draft content created by anonymous user
     if (contents.length === 0) {
-      contents = await db.select().from(schema.content).where(eq(schema.content.status, 'draft')).limit(10)
-      console.log(`Found ${contents.length} draft content items total`)
+      contents = await db.select().from(schema.content).where(
+        and(
+          eq(schema.content.status, 'draft'),
+          eq(schema.content.createdByUserId, userId)
+        )
+      ).limit(10)
+      console.log(`Found ${contents.length} draft content items created by anonymous user`)
     }
 
     if (contents.length === 0) {
       console.log('No content to delete')
-      try {
-        await pool.end()
-      } catch (e) {}
       return
     }
 
@@ -69,16 +69,21 @@ async function deleteAnonymousDrafts() {
 
     console.log(`Deleting ${toDelete.length} content items...`)
 
-    // Delete content versions first (foreign key constraint)
-    for (const contentId of contentIds) {
-      await db.delete(schema.contentVersion).where(eq(schema.contentVersion.contentId, contentId))
-    }
-    console.log('Deleted content versions')
+    // Wrap deletions in a transaction to ensure atomicity
+    const deleted = await db.transaction(async (tx) => {
+      // Delete content versions first (foreign key constraint)
+      for (const contentId of contentIds) {
+        await tx.delete(schema.contentVersion).where(eq(schema.contentVersion.contentId, contentId))
+      }
+      console.log('Deleted content versions')
 
-    // Delete content
-    const deleted = await db.delete(schema.content)
-      .where(inArray(schema.content.id, contentIds))
-      .returning()
+      // Delete content
+      const deletedContent = await tx.delete(schema.content)
+        .where(inArray(schema.content.id, contentIds))
+        .returning()
+
+      return deletedContent
+    })
 
     console.log(`✅ Deleted ${deleted.length} content item(s)`)
     console.log('Drafts deleted successfully')
@@ -88,7 +93,7 @@ async function deleteAnonymousDrafts() {
   } finally {
     try {
       await pool.end()
-    } catch (e) {
+    } catch {
       // Ignore double-end errors
     }
   }

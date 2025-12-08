@@ -72,49 +72,49 @@ export type {
 }
 
 // Type aliases for backward compatibility during migration
-type GenerateContentInput = ContentGenerationInput
-type GenerateContentResult = ContentGenerationResult
+type _GenerateContentInput = ContentGenerationInput
+type _GenerateContentResult = ContentGenerationResult
 
 // Section constants moved to ./sections.ts
 // Using aliases for backward compatibility during migration
-const SECTION_SYSTEM_PROMPT = CONTENT_SECTION_SYSTEM_PROMPT
+const _SECTION_SYSTEM_PROMPT = CONTENT_SECTION_SYSTEM_PROMPT
 const SECTION_PATCH_SYSTEM_PROMPT = CONTENT_SECTION_UPDATE_SYSTEM_PROMPT
-const SECTION_CONTEXT_LIMIT = MAX_SECTION_CONTEXT_CHUNKS
+const _SECTION_CONTEXT_LIMIT = MAX_SECTION_CONTEXT_CHUNKS
 
 // Planning constants moved to ./planning.ts
 // Using aliases for backward compatibility during migration
-const PLAN_SYSTEM_PROMPT = 'You are an editorial strategist who preserves the authentic voice and personality of the original content while creating well-structured articles. Focus on maintaining the speaker\'s unique tone, expressions, and authentic voice over generic SEO optimization. Always respond with valid JSON.'
-const PLAN_SECTION_LIMIT = MAX_OUTLINE_SECTIONS
+const _PLAN_SYSTEM_PROMPT = 'You are an editorial strategist who preserves the authentic voice and personality of the original content while creating well-structured articles. Focus on maintaining the speaker\'s unique tone, expressions, and authentic voice over generic SEO optimization. Always respond with valid JSON.'
+const _PLAN_SECTION_LIMIT = MAX_OUTLINE_SECTIONS
 
 // Constants moved to ./frontmatter.ts
-const BASE_SCHEMA_TYPE = 'BlogPosting'
+const _BASE_SCHEMA_TYPE = 'BlogPosting'
 
 // Type aliases for backward compatibility during migration
-type GenerateContentOverrides = ContentGenerationOverrides
-type PatchContentSectionInput = SectionUpdateInput
-type PatchContentSectionResult = SectionUpdateResult
-type PipelineChunk = ContentChunk
-type OutlineSection = ContentOutlineSection
-type ContentPlanResult = ContentOutline
-type FrontmatterResult = ContentFrontmatter
-type PlanReadyDetails = ContentPlanDetails
-type GeneratedSection = ContentSection
+type _GenerateContentOverrides = ContentGenerationOverrides
+type _PatchContentSectionInput = SectionUpdateInput
+type _PatchContentSectionResult = SectionUpdateResult
+type _PipelineChunk = ContentChunk
+type _OutlineSection = ContentOutlineSection
+type _ContentPlanResult = ContentOutline
+type _FrontmatterResult = ContentFrontmatter
+type _PlanReadyDetails = ContentPlanDetails
+type _GeneratedSection = ContentSection
 
 // Utility functions moved to ./utils.ts
 // Using aliases for backward compatibility during migration
-const normalizeSchemaTypes = normalizeContentSchemaTypes
-const normalizeKeywords = normalizeContentKeywords
+const _normalizeSchemaTypes = normalizeContentSchemaTypes
+const _normalizeKeywords = normalizeContentKeywords
 const parseJSONResponse = parseAIResponseAsJSON
 
 // Chunking functions moved to ./chunking.ts
 // Using aliases for backward compatibility during migration
-const createChunksFromTextForRAG = createTextChunks
-const gatherChunkPreview = buildChunkPreviewText
+const _createChunksFromTextForRAG = createTextChunks
+const _gatherChunkPreview = buildChunkPreviewText
 
 // Utility functions moved to ./utils.ts
 // Using aliases for backward compatibility during migration
-const tokenize = tokenizeTextForSearch
-const scoreChunk = calculateChunkRelevanceScore
+const _tokenize = tokenizeTextForSearch
+const _scoreChunk = calculateChunkRelevanceScore
 
 // Chunking functions moved to ./chunking.ts
 // Using aliases for backward compatibility during migration
@@ -123,7 +123,7 @@ const getRelevantChunksForSection = findRelevantChunksForSection
 // Utility functions moved to ./utils.ts
 // Using aliases for backward compatibility during migration
 const computeWordCount = countWords
-const cosineSimilarity = calculateCosineSimilarity
+const _cosineSimilarity = calculateCosineSimilarity
 
 // Planning functions moved to ./planning.ts
 // Using aliases for backward compatibility during migration
@@ -145,12 +145,12 @@ const combineSectionsIntoMarkdown = assembleMarkdownFromSections
 
 // YAML formatting functions moved to ./frontmatter.ts
 // Using aliases for backward compatibility during migration
-const orderFrontmatterForBlock = orderFrontmatterKeys
-const buildFrontmatterBlock = formatFrontmatterAsYaml
+const _orderFrontmatterForBlock = orderFrontmatterKeys
+const _buildFrontmatterBlock = formatFrontmatterAsYaml
 
 // Structured data functions moved to ./structured-data.ts
 // Using aliases for backward compatibility during migration
-const generateJsonLdStructuredData = generateStructuredDataJsonLd
+const _generateJsonLdStructuredData = generateStructuredDataJsonLd
 
 // Assembly functions moved to ./assembly.ts
 // Re-export for backward compatibility during migration
@@ -164,7 +164,7 @@ const createSectionPatchMetadata = createSectionUpdateMetadata
 
 // Section functions moved to ./sections.ts
 // Using aliases for backward compatibility during migration
-const extractSectionBody = extractSectionContent
+const _extractSectionBody = extractSectionContent
 const normalizeStoredSections = normalizeContentSections
 
 // Chunking functions moved to ./chunking.ts
@@ -178,14 +178,6 @@ const ensureChunksExistForSourceContent = ensureSourceContentChunksExist
  * @param input - Input parameters for content generation
  * @returns Generated content draft with markdown and metadata
  */
-// Export with new name for cleaner API
-export const generateContentFromSource = async (
-  db: NodePgDatabase<typeof schema>,
-  input: ContentGenerationInput
-): Promise<ContentGenerationResult> => {
-  return generateContentDraftFromSource(db, input)
-}
-
 export const generateContentDraftFromSource = async (
   db: NodePgDatabase<typeof schema>,
   input: ContentGenerationInput
@@ -588,6 +580,14 @@ export const generateContentDraftFromSource = async (
   }
 }
 
+// Export with new name for cleaner API
+export const generateContentFromSource = async (
+  db: NodePgDatabase<typeof schema>,
+  input: ContentGenerationInput
+): Promise<ContentGenerationResult> => {
+  return generateContentDraftFromSource(db, input)
+}
+
 /**
  * Updates a content section using AI based on user instructions
  *
@@ -595,14 +595,6 @@ export const generateContentDraftFromSource = async (
  * @param input - Input parameters for section update
  * @returns Updated content with new version and section information
  */
-// Export with new name for cleaner API
-export const updateContentSection = async (
-  db: NodePgDatabase<typeof schema>,
-  input: SectionUpdateInput
-): Promise<SectionUpdateResult> => {
-  return updateContentSectionWithAI(db, input)
-}
-
 export const updateContentSectionWithAI = async (
   db: NodePgDatabase<typeof schema>,
   input: SectionUpdateInput
@@ -870,6 +862,14 @@ export const updateContentSectionWithAI = async (
       index: targetSection.index
     }
   }
+}
+
+// Export with new name for cleaner API
+export const updateContentSection = async (
+  db: NodePgDatabase<typeof schema>,
+  input: SectionUpdateInput
+): Promise<SectionUpdateResult> => {
+  return updateContentSectionWithAI(db, input)
 }
 
 /**

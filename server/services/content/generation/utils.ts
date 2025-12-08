@@ -146,4 +146,5 @@ export const isValidContentFrontmatter = (value: unknown): value is import('./ty
     && typeof data.status === 'string'
     && typeof data.contentType === 'string'
     && Array.isArray(data.schemaTypes)
+    && data.schemaTypes.every(t => typeof t === 'string')
 }

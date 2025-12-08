@@ -67,5 +67,8 @@ export const generateStructuredDataJsonLd = (params: {
   }
 
   const jsonLd = JSON.stringify(structuredData, null, 2)
-  return `<script type="application/ld+json">\n${jsonLd}\n</script>`
+  // Escape closing script tag sequences to prevent XSS
+  // Replace </script (case-insensitive) with <\/script to prevent premature tag termination
+  const escapedJsonLd = jsonLd.replace(/<\/script/gi, '<\\/script')
+  return `<script type="application/ld+json">\n${escapedJsonLd}\n</script>`
 }

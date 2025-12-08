@@ -369,9 +369,7 @@ export const createBetterAuth = () => betterAuth({
               }
             }
           }
-        }
-      },
-      create: {
+        },
         after: async (session) => {
           // Ensure activeOrganizationId is persisted to the database
           // This is a fallback in case the before hook didn't set it properly

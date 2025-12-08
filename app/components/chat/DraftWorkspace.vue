@@ -631,7 +631,7 @@ const mentionableSections = computed(() => sections.value.map(section => ({
   preview: section.body?.slice(0, 200)?.trim() || ''
 })))
 
-const currentContentRecordForDraft = computed<{ id: string, sourceContentId: string | null } | null>(() => {
+const _currentContentRecordForDraft = computed<{ id: string, sourceContentId: string | null } | null>(() => {
   const record = contentRecord.value
   if (!record) {
     return null
@@ -643,9 +643,9 @@ const currentContentRecordForDraft = computed<{ id: string, sourceContentId: str
 })
 
 const {
-  handleWriteDraftFromSource: handleWriteDraftFromSourceComposable,
-  handlePublishDraft: handlePublishDraftFromPlan,
-  isPublishing: isPublishingFromPlan
+  handleWriteDraftFromSource: _handleWriteDraftFromSourceComposable,
+  handlePublishDraft: _handlePublishDraftFromPlan,
+  isPublishing: _isPublishingFromPlan
 } = useDraftAction({
   isBusy: chatIsBusy,
   status: chatStatus,
@@ -758,7 +758,7 @@ function normalizeStringList(value: unknown): string[] {
 }
 
 const selectedSectionId = ref<string | null>(null)
-const selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
+const _selectedSection = computed(() => sections.value.find(section => section.id === selectedSectionId.value) ?? null)
 
 const _formatTranscriptText = (text: string) => {
   if (!text) {
