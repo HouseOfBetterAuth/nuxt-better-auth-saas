@@ -16,6 +16,7 @@ export interface ToolExecutionResult {
   success: boolean
   result?: any
   error?: string
+  errorStack?: string
   sourceContentId?: string | null
   contentId?: string | null
 }
@@ -132,9 +133,19 @@ export async function runChatAgentWithMultiPass({
       await onRetry(toolInvocation, retryCount)
     }
 
-    // Execute tool
-    const toolResult = await executeTool(toolInvocation)
+    // Execute tool with error handling
+    let toolResult: ToolExecutionResult
     const timestamp = new Date()
+    try {
+      toolResult = await executeTool(toolInvocation)
+    } catch (err: any) {
+      console.error(`Tool execution failed for ${toolInvocation.name}:`, err)
+      toolResult = {
+        success: false,
+        error: err?.message || String(err),
+        errorStack: err?.stack
+      }
+    }
 
     toolHistory.push({
       toolName: toolInvocation.name,

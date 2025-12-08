@@ -518,11 +518,57 @@ async function executeChatTool(
         sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
       }
 
-      const sectionId = args.sectionId ? validateRequiredString(args.sectionId, 'sectionId') : null
-      if (!sectionId) {
+      // Resolve sectionId from either sectionId or sectionTitle
+      let resolvedSectionId: string | null = null
+
+      if (args.sectionId) {
+        resolvedSectionId = validateRequiredString(args.sectionId, 'sectionId')
+      } else if (args.sectionTitle) {
+        const sectionTitle = validateRequiredString(args.sectionTitle, 'sectionTitle')
+        
+        // Query content version to find section by title
+        const [contentRecord] = await db
+          .select({
+            version: schema.contentVersion
+          })
+          .from(schema.content)
+          .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
+          .where(and(
+            eq(schema.content.organizationId, organizationId),
+            eq(schema.content.id, args.contentId)
+          ))
+          .limit(1)
+
+        if (!contentRecord?.version) {
+          return {
+            success: false,
+            error: 'Content version not found'
+          }
+        }
+
+        // Normalize sections to find by title
+        const sectionsData = contentRecord.version.sections
+        if (Array.isArray(sectionsData)) {
+          const matchingSection = sectionsData.find((section: any) => {
+            const sectionTitleValue = section?.title || section?.section_title
+            return typeof sectionTitleValue === 'string' && sectionTitleValue.trim().toLowerCase() === sectionTitle.trim().toLowerCase()
+          })
+
+          if (matchingSection) {
+            resolvedSectionId = matchingSection.id || matchingSection.section_id || null
+          }
+        }
+
+        if (!resolvedSectionId) {
+          return {
+            success: false,
+            error: `Section with title "${sectionTitle}" not found in this draft`
+          }
+        }
+      } else {
         return {
           success: false,
-          error: 'sectionId is required for patch_section'
+          error: 'Either sectionId or sectionTitle is required for patch_section'
         }
       }
 
@@ -530,7 +576,7 @@ async function executeChatTool(
         organizationId,
         userId,
         contentId: args.contentId,
-        sectionId,
+        sectionId: resolvedSectionId,
         instructions: args.instructions,
         temperature: sanitizedTemperature
       })
@@ -1183,10 +1229,8 @@ Keep it conversational and helpful.`
       })
     } catch (error) {
       console.error('Failed to generate assistant message with LLM', error)
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to generate assistant response'
-      })
+      // Fallback message when LLM generation fails
+      assistantMessageBody = 'I completed your request but had trouble generating a response. Please check your workspace for updates.'
     }
   } else {
     assistantMessageBody = 'Got it. I\'m ready whenever you want to start a draft or share a link.'
