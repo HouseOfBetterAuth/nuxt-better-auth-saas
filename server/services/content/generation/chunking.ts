@@ -62,7 +62,7 @@ export const createTextChunks = (text: string, chunkSize = 1200, overlap = 200):
 
 export const buildChunkPreviewText = (chunks: ContentChunk[], maxChars = 6000) => {
   if (!chunks.length) {
-    return 'No transcript snippets available.'
+    return 'No context available.'
   }
 
   const parts: string[] = []

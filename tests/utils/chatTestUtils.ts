@@ -147,9 +147,9 @@ export class ChatTestRunner {
    */
   async createContentFlow(topic: string, contentType: string = 'blog_post') {
     // Send natural language message - agent will handle tool selection
-    const transcript = `Here is a transcript about ${topic}: ${topic} has been a key part of my routine this week.`
+    const context = `Here is context about ${topic}: ${topic} has been a key part of my routine this week.`
     const response = await this.sendMessage(
-      `Create a ${contentType} about ${topic}. Here's the transcript: ${transcript}`
+      `Create a ${contentType} about ${topic}. Here's the context: ${context}`
     )
 
     return {
@@ -228,7 +228,7 @@ export class ChatTestRunner {
   }
 
   /**
-   * Get conversation transcript
+   * Get conversation history
    */
   getTranscript(): string {
     return this.conversation.messages

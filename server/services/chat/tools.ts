@@ -12,7 +12,7 @@ export type ChatToolArguments<TName extends ChatToolName> =
     ? {
         sourceContentId?: string | null
         sourceText?: string | null
-        transcript?: string | null
+        context?: string | null
         title?: string | null
         slug?: string | null
         status?: string | null
@@ -37,7 +37,7 @@ export type ChatToolArguments<TName extends ChatToolName> =
           }
         : TName extends 'save_source'
           ? {
-              transcript: string
+              context: string
               title?: string | null
             }
           : TName extends 'edit_metadata'
@@ -89,7 +89,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'write_content',
-        description: 'Create a new content item (blog post, article, etc.) from source content (transcript, YouTube video, etc.). This tool only creates new content - use edit_metadata for metadata edits or edit_section for content edits on existing items.',
+        description: 'Create a new content item (blog post, article, etc.) from source content (context, YouTube video, etc.). This tool only creates new content - use edit_metadata for metadata edits or edit_section for content edits on existing items.',
         parameters: buildWriteContentParameters()
       }
     }
@@ -122,7 +122,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'save_source',
-        description: 'Save a pasted transcript as source content for later use in content generation.',
+        description: 'Save a pasted context as source content for later use in content generation.',
         parameters: buildSaveSourceParameters()
       }
     }
@@ -177,7 +177,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'read_source',
-        description: 'Fetch a source content item (e.g. transcript) for inspection. Returns source content info including transcript text and chunk metadata. This is a read-only operation.',
+        description: 'Fetch a source content item (e.g. context) for inspection. Returns source content info including context text and chunk metadata. This is a read-only operation.',
         parameters: buildReadSourceParameters()
       }
     }
@@ -190,15 +190,15 @@ function buildWriteContentParameters(): ParameterSchema {
     properties: {
       sourceContentId: {
         type: ['string', 'null'],
-        description: 'Source content ID to generate from (transcript, YouTube ingest, etc.).'
+        description: 'Source content ID to generate from (context, YouTube ingest, etc.).'
       },
       sourceText: {
         type: ['string', 'null'],
-        description: 'Inline transcript or notes to draft from when no sourceContentId exists.'
+        description: 'Inline context or notes to draft from when no sourceContentId exists.'
       },
-      transcript: {
+      context: {
         type: ['string', 'null'],
-        description: 'Raw transcript text to use for generating content.'
+        description: 'Raw context text to use for generating content.'
       },
       title: {
         type: ['string', 'null'],
@@ -286,16 +286,16 @@ function buildSaveSourceParameters(): ParameterSchema {
   return {
     type: 'object',
     properties: {
-      transcript: {
+      context: {
         type: 'string',
-        description: 'Raw transcript text to save as source content.'
+        description: 'Raw context text to save as source content.'
       },
       title: {
         type: ['string', 'null'],
-        description: 'Optional title for the transcript source content.'
+        description: 'Optional title for the context source content.'
       }
     },
-    required: ['transcript']
+    required: ['context']
   }
 }
 

@@ -21,11 +21,11 @@ export const generateContentOutline = async (params: {
     ? buildChunkPreviewText(params.chunks)
     : (params.sourceText
         ? params.sourceText.slice(0, 6000) + (params.sourceText.length > 6000 ? '...' : '')
-        : 'No transcript snippets available.')
+        : 'No context available.')
   const prompt = [
     `Plan a ${params.contentType}.`,
     params.sourceTitle ? `Source Title: ${params.sourceTitle}` : 'Source Title: Unknown',
-    'Transcript highlights:',
+    'Context highlights:',
     preview,
     params.instructions ? `Writer instructions: ${params.instructions}` : null,
     'Create an outline that reflects the natural flow of the content. Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaTypes": string[] }}.',

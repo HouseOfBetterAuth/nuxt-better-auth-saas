@@ -7,7 +7,7 @@ import { countWords, parseAIResponseAsJSON } from './utils'
 
 export const CONTENT_SECTION_SYSTEM_PROMPT = 'You are a skilled writer creating well-structured content. Write in MDX-compatible markdown. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
 
-export const CONTENT_SECTION_UPDATE_SYSTEM_PROMPT = 'You are revising a single section of an existing article. Only update that section using the author instructions and contextual transcript snippets. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
+export const CONTENT_SECTION_UPDATE_SYSTEM_PROMPT = 'You are revising a single section of an existing article. Only update that section using the author instructions and contextual snippets. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
 
 export const MAX_SECTION_CONTEXT_CHUNKS = 3
 
@@ -31,7 +31,7 @@ export const generateContentSectionsFromOutline = async (params: {
     })
     const contextBlock = relevantChunks.length
       ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
-      : 'No transcript context available.'
+      : 'No context available.'
 
     const prompt = [
       `Section title: ${item.title}`,
@@ -45,9 +45,9 @@ export const generateContentSectionsFromOutline = async (params: {
         schemaTypes: params.frontmatter.schemaTypes
       })}`,
       params.instructions ? `Writer instructions: ${params.instructions}` : null,
-      'Transcript context:',
+      'Context:',
       contextBlock,
-      'Write this section based on the transcript context. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
+      'Write this section based on the provided context. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
     ].filter(Boolean).join('\n\n')
 
     if (!item.title || !item.title.trim()) {

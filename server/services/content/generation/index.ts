@@ -59,7 +59,7 @@ const SECTION_PATCH_SYSTEM_PROMPT = CONTENT_SECTION_UPDATE_SYSTEM_PROMPT
 export const enrichMdxWithMetadata = enrichMarkdownWithMetadata
 
 /**
- * Generates a content draft from a source content (transcript, YouTube video, etc.)
+ * Generates a content draft from a source content (context, YouTube video, etc.)
  *
  * @param db - Database instance
  * @param input - Input parameters for content generation
@@ -104,7 +104,7 @@ export const generateContentDraftFromSource = async (
   // If inline sourceText is provided, use it directly
   if (sourceText && sourceText.trim()) {
     resolvedSourceText = sourceText.trim()
-    resolvedIngestMethod = 'inline_transcript'
+    resolvedIngestMethod = 'inline_context'
   } else if (sourceContentId) {
     // Otherwise, fetch from source content
     const [row] = await db
@@ -166,7 +166,7 @@ export const generateContentDraftFromSource = async (
     })
     throw createError({
       statusCode: 400,
-      statusMessage: 'A source transcript is required to create a draft. Provide either sourceContentId or sourceText.'
+      statusMessage: 'Source context is required to create a draft. Provide either sourceContentId or sourceText.'
     })
   }
 
@@ -611,7 +611,7 @@ export const updateContentSectionWithAI = async (
 
   const contextBlock = relevantChunks.length
     ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 600)}`).join('\n\n')
-    : 'No transcript context available.'
+    : 'No context available.'
 
   const prompt = [
     `You are editing a single section of a ${frontmatter.contentType}.`,
@@ -627,7 +627,7 @@ export const updateContentSectionWithAI = async (
       primaryKeyword: frontmatter.primaryKeyword,
       targetLocale: frontmatter.targetLocale
     })}`,
-    'Transcript context to ground this update:',
+    'Context to ground this update:',
     contextBlock,
     'Respond with JSON {"body": string, "summary": string?}. Rewrite only this section content - do NOT include the section heading or title, as it will be added automatically.'
   ].join('\n\n')

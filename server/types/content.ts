@@ -14,11 +14,11 @@ export type ContentType = typeof CONTENT_TYPES[number]
 /**
  * Request body for writing content from source
  *
- * @description Creates a content item from a source content (transcript, YouTube video, etc.)
- * Either provide sourceContentId or transcript (which will create source content first)
+ * @description Creates a content item from a source content (context, YouTube video, etc.)
+ * Either provide sourceContentId or context (which will create source content first)
  */
 export interface WriteContentRequestBody {
-  /** Raw transcript text (alternative to sourceContentId - creates source content first) */
+  /** Raw context text (alternative to sourceContentId - creates source content first) */
   transcript?: string
   /** ID of existing source content to generate from */
   sourceContentId?: string | null
@@ -138,7 +138,7 @@ export interface CreateContentFromConversationRequestBody {
   title: string
   /** Type of content to generate */
   contentType?: ContentType
-  /** Array of message IDs to include in transcript */
+  /** Array of message IDs to include in context */
   messageIds?: string[]
 }
 

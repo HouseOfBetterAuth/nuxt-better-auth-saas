@@ -6,11 +6,11 @@ import type { INGEST_STATUSES } from '~~/server/services/sourceContent'
 export type IngestStatus = typeof INGEST_STATUSES[number]
 
 /**
- * Request body for creating source content from transcript
+ * Request body for creating source content from context
  */
-export interface CreateSourceContentFromTranscriptRequestBody {
-  /** Raw transcript text (required) */
-  transcript: string
+export interface CreateSourceContentFromContextRequestBody {
+  /** Raw context text (required) */
+  context: string
   /** Optional title for the source content */
   title?: string | null
   /** Optional metadata */
@@ -65,7 +65,7 @@ export interface UpsertSourceContentRequestBody {
   externalId?: string | null
   /** Title of the source content */
   title?: string | null
-  /** Source text/transcript */
+  /** Source text/context */
   sourceText?: string | null
   /** Metadata */
   metadata?: Record<string, any> | null

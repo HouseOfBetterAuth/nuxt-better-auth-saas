@@ -18,7 +18,7 @@ import {
 } from '~~/server/services/conversation'
 import { generateConversationTitle } from '~~/server/services/conversation/title'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
+import { createSourceContentFromContext } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
@@ -274,15 +274,15 @@ async function executeChatTool(
   if (toolInvocation.name === 'save_source') {
     // TypeScript now knows this is save_source
     const args = toolInvocation.arguments as ChatToolInvocation<'save_source'>['arguments']
-    const transcript = validateRequiredString(args.transcript, 'transcript')
+    const contextText = validateRequiredString(args.context, 'context')
     const title = validateOptionalString(args.title, 'title')
 
     try {
-      const manualSource = await createSourceContentFromTranscript({
+      const manualSource = await createSourceContentFromContext({
         db,
         organizationId,
         userId,
-        transcript,
+        context: contextText,
         title: title ?? null,
         mode: context.mode,
         metadata: { createdVia: 'chat_save_source_tool' },
@@ -299,7 +299,7 @@ async function executeChatTool(
       if (!manualSource) {
         return {
           success: false,
-          error: 'Failed to create source content from transcript'
+          error: 'Failed to create source content from context'
         }
       }
 
@@ -319,7 +319,7 @@ async function executeChatTool(
     } catch (error: any) {
       return {
         success: false,
-        error: error?.message || 'Failed to save transcript'
+        error: error?.message || 'Failed to save context'
       }
     }
   }
@@ -449,13 +449,13 @@ async function executeChatTool(
       let resolvedSourceContentId: string | null = args.sourceContentId ?? null
       const resolvedSourceText: string | null = args.sourceText ?? null
 
-      // If sourceText/transcript is provided but no sourceContentId, create source content first
+      // If sourceText/context is provided but no sourceContentId, create source content first
       if (resolvedSourceText && !resolvedSourceContentId) {
-        const manualSource = await createSourceContentFromTranscript({
+        const manualSource = await createSourceContentFromContext({
           db,
           organizationId,
           userId,
-          transcript: resolvedSourceText,
+          context: resolvedSourceText,
           mode: context.mode,
           metadata: { createdVia: 'chat_write_content_tool' },
           onProgress: async (progressMessage) => {
@@ -471,7 +471,7 @@ async function executeChatTool(
         if (!manualSource) {
           return {
             success: false,
-            error: 'Failed to create source content from transcript'
+            error: 'Failed to create source content from context'
           }
         }
 
@@ -481,7 +481,7 @@ async function executeChatTool(
       if (!resolvedSourceContentId && !resolvedSourceText) {
         return {
           success: false,
-          error: 'Either sourceContentId or sourceText/transcript is required'
+          error: 'Either sourceContentId or sourceText/context is required'
         }
       }
 

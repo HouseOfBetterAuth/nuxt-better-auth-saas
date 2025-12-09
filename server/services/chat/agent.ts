@@ -54,7 +54,7 @@ function buildSystemPrompt(mode: 'chat' | 'agent'): string {
 **Tool Selection Guidelines:**
 - For simple edits to metadata (title, slug, status, primaryKeyword, targetLocale, contentType) on existing content items, use edit_metadata. Examples: "make the title shorter", "change the status to published", "update the slug".
 - For editing specific sections of existing content, use edit_section. Examples: "make the introduction more engaging", "rewrite the conclusion".
-- For creating new content items from source content (transcript, YouTube video, etc.), use write_content. This tool only creates new content - it cannot update existing content.
+- For creating new content items from source content (context, YouTube video, etc.), use write_content. This tool only creates new content - it cannot update existing content.
 - Never use write_content for editing existing content - use edit_metadata or edit_section instead.`
 }
 

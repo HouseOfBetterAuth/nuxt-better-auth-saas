@@ -122,7 +122,7 @@ export async function createChunksFromSourceContentText({
     })
   }
 
-  await onProgress?.(`Created ${segments.length} chunk${segments.length > 1 ? 's' : ''} from transcript`)
+  await onProgress?.(`Created ${segments.length} chunk${segments.length > 1 ? 's' : ''} from context`)
 
   await db.transaction(async (tx) => {
     await tx
