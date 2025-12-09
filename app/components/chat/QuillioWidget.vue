@@ -119,26 +119,36 @@ const scheduleIdleTask = (fn: () => void) => {
   }
 }
 
-const prefetchWorkspacePayload = (contentId?: string | null) => {
-  if (!import.meta.client || !contentId) {
+const prefetchWorkspacePayload = (conversationId?: string | null) => {
+  if (!import.meta.client || !conversationId) {
     return
   }
   scheduleIdleTask(() => {
-    const cacheEntry = workspacePayloadCache.value[contentId]
+    const cacheEntry = workspacePayloadCache.value[conversationId]
     const now = Date.now()
     if (cacheEntry && (now - cacheEntry.timestamp) < WORKSPACE_CACHE_TTL_MS) {
       return
     }
-    $fetch<{ workspace?: any | null }>(`/api/content/${contentId}`)
-      .then((response) => {
-        workspacePayloadCache.value[contentId] = {
-          payload: response?.workspace ?? null,
-          timestamp: Date.now()
-        }
-      })
-      .catch(() => {
-        // Ignore prefetch errors
-      })
+    // Prefetch conversation and its artifacts
+    Promise.all([
+      $fetch<{ conversation: any }>(`/api/conversations/${conversationId}`).catch(() => null),
+      $fetch<{ artifacts: Array<{ contentId: string }> }>(`/api/conversations/${conversationId}/artifacts`).catch(() => ({ artifacts: [] }))
+    ]).then(([convResponse, artifactsResponse]) => {
+      if (!convResponse)
+        return
+      const contentId = artifactsResponse.artifacts?.[0]?.contentId || convResponse.conversation.contentId
+      if (contentId) {
+        return $fetch<{ workspace?: any | null }>(`/api/content/${contentId}`)
+          .then((response) => {
+            workspacePayloadCache.value[conversationId] = {
+              payload: response?.workspace ?? null,
+              timestamp: Date.now()
+            }
+          })
+      }
+    }).catch(() => {
+      // Ignore prefetch errors
+    })
   })
 }
 interface ConversationQuotaUsagePayload {
@@ -180,7 +190,7 @@ const debouncedRefreshConversations = useDebounceFn(() => refreshConversations()
 // Populate conversation list cache for header reuse
 const conversationListCache = useState<Map<string, any>>('conversation-list-cache', () => new Map())
 
-const updateLocalConversationStatus = (conversationId: string, status: string) => {
+const _updateLocalConversationStatus = (conversationId: string, status: string) => {
   const currentPayload = conversationsPayload.value
   if (!currentPayload?.conversations?.length)
     return
@@ -340,7 +350,9 @@ useDraftAction({
   sendMessage,
   onRefresh: async () => {
     await refreshConversations()
-    prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
+    if (activeWorkspaceId.value) {
+      prefetchWorkspacePayload(activeWorkspaceId.value)
+    }
   }
 })
 
@@ -488,20 +500,22 @@ const handlePromptSubmit = async (value?: string) => {
   promptSubmitting.value = true
   try {
     await sendMessage(trimmed)
-    prefetchWorkspacePayload(sessionContentId.value || activeWorkspaceId.value)
+    if (activeWorkspaceId.value) {
+      prefetchWorkspacePayload(activeWorkspaceId.value)
+    }
     prompt.value = ''
   } finally {
     promptSubmitting.value = false
   }
 }
 
-const loadWorkspaceDetail = async (contentId: string) => {
-  if (!contentId) {
+const loadWorkspaceDetail = async (conversationId: string) => {
+  if (!conversationId) {
     workspaceDetail.value = null
     return
   }
 
-  const cacheEntry = workspacePayloadCache.value[contentId]
+  const cacheEntry = workspacePayloadCache.value[conversationId]
   const now = Date.now()
 
   if (cacheEntry) {
@@ -522,7 +536,7 @@ const loadWorkspaceDetail = async (contentId: string) => {
 
     // Get artifacts for this conversation
     const artifactsResponse = await $fetch<{ artifacts: Array<{ contentId: string, data: any }> }>(`/api/conversations/${conversationId}/artifacts`)
-    
+
     // Use the first content artifact, or the legacy contentId if available
     const contentIdToLoad = artifactsResponse.artifacts?.[0]?.contentId || conversation.contentId
 
@@ -623,7 +637,7 @@ const activateWorkspace = async (conversationId: string | null) => {
   }
 }
 
-const openWorkspace = async (entry: { id: string, slug?: string | null }) => {
+const _openWorkspace = async (entry: { id: string, slug?: string | null }) => {
   await activateWorkspace(entry.id)
 }
 
@@ -637,18 +651,18 @@ const resetConversation = () => {
   resetSession()
 }
 
-const archiveContent = async (entry: { id: string, title?: string | null }) => {
-  if (!entry?.id || archivingContentId.value === entry.id)
+const archiveConversation = async (entry: { id: string, title?: string | null }) => {
+  if (!entry?.id || archivingConversationId.value === entry.id)
     return
 
-  archivingContentId.value = entry.id
+  archivingConversationId.value = entry.id
 
   try {
-    await $fetch(`/api/content/${entry.id}/archive`, {
-      method: 'POST'
+    await $fetch(`/api/conversations/${entry.id}`, {
+      method: 'DELETE'
     })
 
-    updateLocalContentStatus(entry.id, 'archived')
+    updateLocalConversationStatus(entry.id, 'archived')
 
     if (activeWorkspaceId.value === entry.id) {
       await activateWorkspace(null)
@@ -664,7 +678,7 @@ const archiveContent = async (entry: { id: string, title?: string | null }) => {
       icon: 'i-lucide-archive'
     })
   } catch (error: any) {
-    const message = error?.data?.statusMessage || error?.statusMessage || 'Failed to archive content'
+    const message = error?.data?.statusMessage || error?.statusMessage || 'Failed to archive conversation'
     toast.add({
       title: 'Archive failed',
       description: message,

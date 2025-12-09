@@ -1,5 +1,3 @@
-import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
 import { getOrCreateConversationForContent } from '~~/server/services/conversation'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'

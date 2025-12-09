@@ -117,19 +117,19 @@ const formatContentId = (id: string) => {
   return id.length > 8 ? `${id.slice(0, 8)}...` : id
 }
 
-const handleOpenWorkspace = (entry: ContentEntry) => {
+const handleOpenWorkspace = (entry: ConversationEntry) => {
   emit('openWorkspace', entry)
 }
 
-const handleArchiveEntry = (entry: ContentEntry) => {
+const handleArchiveEntry = (entry: ConversationEntry) => {
   emit('archiveEntry', entry)
 }
 
-const handleStopEntry = (entry: ContentEntry) => {
+const handleStopEntry = (entry: ConversationEntry) => {
   emit('stopEntry', entry)
 }
 
-const onTouchStart = (entry: ContentEntry, event: TouchEvent) => {
+const onTouchStart = (entry: ConversationEntry, event: TouchEvent) => {
   const touch = event.touches?.[0]
   if (!touch)
     return

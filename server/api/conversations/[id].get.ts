@@ -1,6 +1,4 @@
-import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParams } from 'h3'
-import * as schema from '~~/server/database/schema'
 import { getConversationById } from '~~/server/services/conversation'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'

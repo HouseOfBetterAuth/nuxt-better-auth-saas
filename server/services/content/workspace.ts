@@ -36,7 +36,6 @@ export async function getContentWorkspacePayload(
     })
   }
 
-  let chatSession = null
   let chatMessages: Array<{
     id: string
     role: string
@@ -56,7 +55,7 @@ export async function getContentWorkspacePayload(
     const conversation = await findConversation(db, organizationId, record.content.id)
 
     if (conversation) {
-      chatSession = conversation
+      // conversation already set above
       if (includeChat) {
         const [messages, logs] = await Promise.all([
           getConversationMessages(db, conversation.id, organizationId),
@@ -96,7 +95,7 @@ export async function getContentWorkspacePayload(
   return {
     ...record,
     workspaceSummary,
-    chatSession,
+    chatSession: conversation, // Legacy field name for backwards compatibility
     chatMessages: includeChat ? chatMessages : null,
     chatLogs: includeChat ? chatLogs : null
   }

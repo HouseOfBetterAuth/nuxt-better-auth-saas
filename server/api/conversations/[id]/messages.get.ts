@@ -1,5 +1,4 @@
 import { createError, getRouterParams } from 'h3'
-import * as schema from '~~/server/database/schema'
 import { getConversationById, getConversationMessages } from '~~/server/services/conversation'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'

@@ -177,12 +177,12 @@ const {
   hydrateSession,
   conversationContentId,
   conversationId,
-  // Legacy aliases
-  sessionContentId: conversationContentId,
-  sessionId: conversationId,
   agentContext,
   prompt
 } = useConversation()
+// Legacy aliases
+const sessionContentId = conversationContentId
+const _sessionId = conversationId
 const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 

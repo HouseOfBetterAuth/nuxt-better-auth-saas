@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { getConversationQuotaUsage, requireAuth } from '~~/server/utils/auth'

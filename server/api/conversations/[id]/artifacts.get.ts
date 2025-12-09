@@ -52,11 +52,13 @@ export default defineEventHandler(async (event) => {
         slug: content.slug,
         status: content.status,
         contentType: content.contentType,
-        currentVersion: currentVersion ? {
-          id: currentVersion.id,
-          version: currentVersion.version,
-          frontmatter: currentVersion.frontmatter
-        } : null
+        currentVersion: currentVersion
+          ? {
+              id: currentVersion.id,
+              version: currentVersion.version,
+              frontmatter: currentVersion.frontmatter
+            }
+          : null
       },
       createdAt: content.createdAt
     }))

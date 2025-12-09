@@ -5,17 +5,17 @@ import { and, eq } from 'drizzle-orm'
 import { createError, setHeader, setResponseStatus } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { runChatAgentWithMultiPassStream } from '~~/server/services/chat/agent'
+import { generateContentFromSource, updateContentSection } from '~~/server/services/content/generation'
+import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
+import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import {
   addLogEntryToConversation,
   addMessageToConversation,
   getConversationById,
-  getOrCreateConversationForContent,
   getConversationLogs,
-  getConversationMessages
+  getConversationMessages,
+  getOrCreateConversationForContent
 } from '~~/server/services/conversation'
-import { generateContentFromSource, updateContentSection } from '~~/server/services/content/generation'
-import { buildWorkspaceFilesPayload } from '~~/server/services/content/workspaceFiles'
-import { buildWorkspaceSummary } from '~~/server/services/content/workspaceSummary'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
@@ -270,14 +270,14 @@ async function executeChatTool(
         transcript,
         title: title ?? null,
         metadata: { createdVia: 'chat_save_source_tool' },
-          onProgress: async (progressMessage) => {
-            await addMessageToConversation(db, {
-              conversationId,
-              organizationId,
-              role: 'assistant',
-              content: progressMessage
-            })
-          }
+        onProgress: async (progressMessage) => {
+          await addMessageToConversation(db, {
+            conversationId,
+            organizationId,
+            role: 'assistant',
+            content: progressMessage
+          })
+        }
       })
 
       if (!manualSource) {
@@ -793,10 +793,10 @@ export default defineEventHandler(async (event) => {
   const message = typeof body.message === 'string' ? body.message : ''
   const trimmedMessage = message.trim()
   // Support both conversationId (new) and sessionId (legacy) for backwards compatibility
-  const requestConversationId = body.conversationId 
-    ? validateOptionalUUID(body.conversationId, 'conversationId') 
-    : body.sessionId 
-      ? validateOptionalUUID(body.sessionId, 'sessionId') 
+  const requestConversationId = body.conversationId
+    ? validateOptionalUUID(body.conversationId, 'conversationId')
+    : body.sessionId
+      ? validateOptionalUUID(body.sessionId, 'sessionId')
       : null
 
   if (!trimmedMessage) {
@@ -836,7 +836,7 @@ export default defineEventHandler(async (event) => {
     : null
 
   // Determine session contentId from request
-  const initialSessionContentId = requestContentId
+  const _initialSessionContentId = requestContentId
 
   // Declare multiPassResult variable for use later
   let multiPassResult: Awaited<ReturnType<typeof runChatAgentWithMultiPassStream>> | null = null
@@ -988,7 +988,7 @@ export default defineEventHandler(async (event) => {
         }
       } catch (error) {
         console.error('Failed to build workspace summary for context', error)
-            contextBlocks.push(`Current content ID: ${activeConversation.contentId}`)
+        contextBlocks.push(`Current content ID: ${activeConversation.contentId}`)
       }
     }
 
