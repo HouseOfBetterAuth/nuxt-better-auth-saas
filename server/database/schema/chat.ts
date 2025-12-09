@@ -31,6 +31,13 @@ export const conversation = pgTable('conversation', {
   sourceIdx: index('conversation_source_idx').on(table.sourceContentId),
   // Unique constraint on (organizationId, contentId) where contentId is not null
   // Prevents duplicate conversations for the same content within an organization
+  //
+  // MIGRATION SAFETY: Before applying this constraint, verify no duplicates exist:
+  // SELECT organization_id, content_id, COUNT(*) FROM conversation
+  // WHERE content_id IS NOT NULL GROUP BY organization_id, content_id HAVING COUNT(*) > 1;
+  //
+  // If duplicates exist, resolve them before migration (e.g., keep the most recent conversation).
+  // The application code uses onConflictDoNothing to handle race conditions gracefully.
   orgContentUnique: uniqueIndex('conversation_org_content_unique_idx')
     .on(table.organizationId, table.contentId)
     .where(sql`${table.contentId} IS NOT NULL`)

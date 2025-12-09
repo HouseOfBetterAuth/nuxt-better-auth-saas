@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
   // Determine if the conversation was actually archived by this operation
   const wasArchived = updatedConversation !== undefined
 
-  // Always log an audit event for the delete attempt
+  // Always log an audit event for the archive attempt
   await logAuditEvent({
     userId: user.id,
     category: 'conversation',

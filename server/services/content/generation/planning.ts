@@ -6,7 +6,7 @@ import { slugifyTitle } from '~~/server/utils/content'
 import { buildChunkPreviewText } from './chunking'
 import { normalizeContentSchemaTypes, parseAIResponseAsJSON } from './utils'
 
-export const CONTENT_OUTLINE_SYSTEM_PROMPT = 'You are an editorial strategist who preserves the authentic voice and personality of the original content while creating well-structured articles. Focus on maintaining the speaker\'s unique tone, expressions, and authentic voice over generic SEO optimization. Always respond with valid JSON.'
+export const CONTENT_OUTLINE_SYSTEM_PROMPT = 'You are an editorial strategist creating well-structured articles. Always respond with valid JSON.'
 
 export const MAX_OUTLINE_SECTIONS = 10
 
@@ -23,23 +23,22 @@ export const generateContentOutline = async (params: {
         ? params.sourceText.slice(0, 6000) + (params.sourceText.length > 6000 ? '...' : '')
         : 'No transcript snippets available.')
   const prompt = [
-    `We are planning a ${params.contentType} that preserves the authentic voice and personality of the original content.`,
+    `Plan a ${params.contentType}.`,
     params.sourceTitle ? `Source Title: ${params.sourceTitle}` : 'Source Title: Unknown',
     'Transcript highlights:',
     preview,
-    params.instructions ? `Writer instructions: ${params.instructions}` : 'Writer instructions: Maintain the original speaker\'s authentic voice, casual expressions, and personal storytelling style.',
-    'Create an outline that reflects the natural flow and personality of the original content. Section titles should capture the speaker\'s authentic way of discussing topics.',
-    'Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaTypes": string[] }}.',
+    params.instructions ? `Writer instructions: ${params.instructions}` : null,
+    'Create an outline that reflects the natural flow of the content. Return JSON with shape {"outline": [{"id": string, "index": number, "title": string, "type": string, "notes": string? }], "seo": {"title": string, "description": string, "keywords": string[], "slugSuggestion": string, "schemaTypes": string[] }}.',
     'Always include "BlogPosting" in schemaTypes, then append any additional schema.org types (e.g., Recipe, HowTo, FAQPage) when the content genuinely needs those structures.',
     `Limit outline to ${MAX_OUTLINE_SECTIONS} sections.`
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 
   const raw = await callChatCompletions({
     messages: [
       { role: 'system', content: CONTENT_OUTLINE_SYSTEM_PROMPT },
       { role: 'user', content: prompt }
     ],
-    temperature: 0.7 // Higher temperature for more creative and personality-preserving planning
+    temperature: 0.7
   })
 
   const parsed = parseAIResponseAsJSON<ContentOutline>(raw, 'content plan')

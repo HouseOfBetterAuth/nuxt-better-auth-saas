@@ -5,7 +5,7 @@ import { slugifyTitle } from '~~/server/utils/content'
 import { findRelevantChunksForSection } from './chunking'
 import { countWords, parseAIResponseAsJSON } from './utils'
 
-export const CONTENT_SECTION_SYSTEM_PROMPT = 'You are a skilled writer who preserves the original author\'s unique voice, personality, and authentic expressions while creating well-structured content. Maintain casual language, personal anecdotes, specific details, and the authentic tone from the source material. Write in MDX-compatible markdown. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
+export const CONTENT_SECTION_SYSTEM_PROMPT = 'You are a skilled writer creating well-structured content. Write in MDX-compatible markdown. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
 
 export const CONTENT_SECTION_UPDATE_SYSTEM_PROMPT = 'You are revising a single section of an existing article. Only update that section using the author instructions and contextual transcript snippets. Do NOT include the section heading in your response - only write the body content. Respond with JSON.'
 
@@ -44,11 +44,11 @@ export const generateContentSectionsFromOutline = async (params: {
         contentType: params.frontmatter.contentType,
         schemaTypes: params.frontmatter.schemaTypes
       })}`,
-      params.instructions ? `Additional voice instructions: ${params.instructions}` : 'Voice instructions: Preserve the original speaker\'s authentic voice, personality, casual expressions, personal anecdotes, and unique phrasing. Maintain their natural speaking style and tone rather than converting to formal editorial language.',
-      'Transcript context to ground this section:',
+      params.instructions ? `Writer instructions: ${params.instructions}` : null,
+      'Transcript context:',
       contextBlock,
-      'Write this section maintaining the original speaker\'s authentic voice and personality. Use their specific words, phrases, and expressions when possible. Keep their casual tone, personal stories, and unique way of explaining things. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
-    ].join('\n\n')
+      'Write this section based on the transcript context. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
+    ].filter(Boolean).join('\n\n')
 
     if (!item.title || !item.title.trim()) {
       throw createError({

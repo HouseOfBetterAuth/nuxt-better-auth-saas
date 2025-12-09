@@ -52,7 +52,14 @@ export default defineEventHandler(async (event) => {
   let offset: number
 
   if (pageRaw) {
-    const page = validateNumber(Number.parseInt(pageRaw, 10), 'page', 1)
+    const parsedPage = Number.parseInt(pageRaw, 10)
+    if (!Number.isFinite(parsedPage)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Invalid page parameter'
+      })
+    }
+    const page = validateNumber(parsedPage, 'page', 1)
     offset = (page - 1) * limit
   } else {
     const offsetRaw = getQueryValue(query.offset as string | string[] | undefined)

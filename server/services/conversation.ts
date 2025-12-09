@@ -73,13 +73,9 @@ export async function getOrCreateConversationForContent(
   const createdByUserId = input.createdByUserId?.trim() || null
 
   // Use atomic upsert to prevent race conditions
-  // If contentId is null, we can't use the unique constraint, so fall back to find-then-insert
+  // If contentId is null, we can't use the unique constraint, so always create a new conversation
+  // Note: findConversation always returns null when contentId is null, so we skip the lookup
   if (!contentId) {
-    const existing = await findConversation(db, input.organizationId, null)
-    if (existing) {
-      return existing
-    }
-
     const result = await db
       .insert(schema.conversation)
       .values({
