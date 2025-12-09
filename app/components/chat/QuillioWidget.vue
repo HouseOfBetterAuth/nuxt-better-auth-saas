@@ -3,6 +3,7 @@ import type { ChatMessage } from '#shared/utils/types'
 import type { PublishContentResponse } from '~~/server/types/content'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
+import { dump } from 'js-yaml'
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
@@ -968,15 +969,28 @@ function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefin
     })
   )
 
-  // Simple YAML-like format for copying (not for display)
-  const lines = Object.entries(filtered).map(([key, value]) => {
-    if (typeof value === 'string') {
-      return `${key}: "${value.replace(/"/g, '\\"')}"`
-    }
-    return `${key}: ${JSON.stringify(value)}`
-  })
-
-  return ['---', ...lines, '---'].join('\n')
+  try {
+    // Use js-yaml to properly serialize YAML
+    const yamlContent = dump(filtered, {
+      lineWidth: -1,
+      noRefs: true,
+      quotingType: '"',
+      forceQuotes: false
+    })
+    // Ensure proper formatting with frontmatter delimiters
+    const trimmed = yamlContent.trimEnd()
+    return `---\n${trimmed}\n---`
+  } catch (error) {
+    console.error('Failed to serialize frontmatter as YAML', error)
+    // Fallback to JSON if YAML serialization fails
+    const lines = Object.entries(filtered).map(([key, value]) => {
+      if (typeof value === 'string') {
+        return `${key}: "${value.replace(/"/g, '\\"')}"`
+      }
+      return `${key}: ${JSON.stringify(value)}`
+    })
+    return ['---', ...lines, '---'].join('\n')
+  }
 }
 
 const workspaceFullMdx = computed(() => {
@@ -1070,10 +1084,6 @@ watch(workspaceContent, (value) => {
   })
 }, { immediate: true })
 
-onBeforeUnmount(() => {
-  workspaceHeaderState.value = null
-})
-
 watch(routeContentId, (contentId) => {
   scheduleSyncWorkspace(contentId ?? null)
 })
@@ -1136,7 +1146,7 @@ async function handleCopyFullMdx() {
     await copy(workspaceFullMdx.value)
     toast.add({
       title: 'Draft copied',
-      description: 'Frontmatter and body copied to clipboard.',
+      description: 'Frontmatter and body copied to clipboard as valid YAML.',
       color: 'primary'
     })
   } catch (error) {
@@ -1294,14 +1304,23 @@ const handleRegenerate = async (message: ChatMessage) => {
   }
 }
 
-function handleSendAgain(message: ChatMessage) {
+async function handleSendAgain(message: ChatMessage) {
   const text = message.parts?.[0]?.text || ''
   if (text) {
     prompt.value = text
-    if (isWorkspaceActive.value) {
-      _handleWorkspaceSubmit()
-    } else {
-      handlePromptSubmit(text)
+    try {
+      if (isWorkspaceActive.value) {
+        await _handleWorkspaceSubmit()
+      } else {
+        await handlePromptSubmit(text)
+      }
+    } catch (error) {
+      console.error('Failed to send message again', error)
+      toast.add({
+        title: 'Send failed',
+        description: 'Could not resend the message.',
+        color: 'error'
+      })
     }
   }
 }
