@@ -4,7 +4,7 @@ import { member as memberTable, organization as organizationTable, subscription 
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'
-import { PLANS } from '~~/shared/utils/plans'
+import { getPlanKeyFromId, getTierForInterval } from '~~/shared/utils/plans'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -78,23 +78,38 @@ export default defineEventHandler(async (event) => {
   // Determine new price ID if interval changes
   let newPriceId
   if (newInterval) {
-    newPriceId = newInterval === 'month'
-      ? PLANS.PRO_MONTHLY.priceId
-      : PLANS.PRO_YEARLY.priceId
+    // Get user's current tier from local subscription
+    const localSub = await db.query.subscription.findFirst({
+      where: eq(subscriptionTable.stripeSubscriptionId, subscription.id)
+    })
+    const tierKey = getPlanKeyFromId(localSub?.plan)
+    const effectiveTierKey = tierKey === 'free' ? 'pro' : tierKey
+    newPriceId = getTierForInterval(effectiveTierKey, newInterval).priceId
   }
 
   const subscriptionItemId = subscription.items.data[0].id
+  const currentSeats = subscription.items.data[0].quantity || 1
+  const isDowngrade = seats < currentSeats
 
   // Update subscription params
+  // For downgrades: use 'none' - no proration, no credit (seats just reduce)
+  // For upgrades: use 'always_invoice' - charge prorated amount immediately
   const updateParams: any = {
     items: [{
       id: subscriptionItemId,
       quantity: seats,
       ...(newPriceId ? { price: newPriceId } : {})
     }],
-    proration_behavior: 'always_invoice',
-    payment_behavior: 'error_if_incomplete' // This will throw an error if payment fails instead of leaving subscription in bad state
+    proration_behavior: isDowngrade ? 'none' : 'always_invoice',
+    ...(isDowngrade ? {} : { payment_behavior: 'error_if_incomplete' })
   }
+
+  console.log('[update-seats] Updating seats:', {
+    currentSeats,
+    newSeats: seats,
+    isDowngrade,
+    proration: isDowngrade ? 'none' : 'always_invoice'
+  })
 
   if (endTrial) {
     updateParams.trial_end = 'now'
@@ -121,10 +136,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  console.log('[update-seats] Stripe Updated Raw:', {
+  console.log('[update-seats] Stripe updated:', {
     id: updatedSubscription.id,
-    current_period_end: updatedSubscription.current_period_end,
-    status: updatedSubscription.status
+    status: updatedSubscription.status,
+    newQuantity: updatedSubscription.items?.data?.[0]?.quantity
   })
 
   // Update local database immediately

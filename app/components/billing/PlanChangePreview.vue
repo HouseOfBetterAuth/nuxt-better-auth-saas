@@ -1,7 +1,7 @@
 <script setup lang="ts">
 interface PlanConfig {
-  priceNumber: number
-  seatPriceNumber: number
+  price: number
+  seatPrice: number
   interval: string
 }
 
@@ -10,10 +10,21 @@ interface LineItem {
   amount: number
 }
 
+interface PaymentMethod {
+  type: string
+  brand: string
+  last4: string
+  expMonth: number
+  expYear: number
+}
+
 interface PreviewData {
   amountDue: number
+  total?: number
+  subtotal?: number
   periodEnd?: number
   lines?: LineItem[]
+  paymentMethod?: PaymentMethod | null
 }
 
 const props = defineProps<{
@@ -29,7 +40,7 @@ const props = defineProps<{
 const creditAmount = computed(() => {
   if (!props.preview?.lines)
     return 0
-  const creditLine = props.preview.lines.find(l => l.amount < 0)
+  const creditLine = props.preview.lines.find((l: any) => l.amount < 0)
   return creditLine ? Math.abs(creditLine.amount) : 0
 })
 
@@ -38,26 +49,26 @@ const grossCharge = computed(() => {
   if (!props.preview?.lines)
     return 0
   return props.preview.lines
-    .filter(l => l.amount > 0)
-    .reduce((sum, l) => sum + l.amount, 0)
+    .filter((l: any) => l.amount > 0)
+    .reduce((sum: number, l: any) => sum + l.amount, 0)
 })
 
 // Calculate current total cost
 const currentTotal = computed(() => {
   if (!props.currentPlanConfig)
     return 0
-  const base = props.currentPlanConfig.priceNumber
+  const base = props.currentPlanConfig.price
   const additional = Math.max(0, props.seats - 1)
-  return base + (additional * props.currentPlanConfig.seatPriceNumber)
+  return base + (additional * props.currentPlanConfig.seatPrice)
 })
 
 // Calculate new total cost
 const newTotal = computed(() => {
   if (!props.newPlanConfig)
     return 0
-  const base = props.newPlanConfig.priceNumber
+  const base = props.newPlanConfig.price
   const additional = Math.max(0, props.seats - 1)
-  return base + (additional * props.newPlanConfig.seatPriceNumber)
+  return base + (additional * props.newPlanConfig.seatPrice)
 })
 
 const intervalLabel = computed(() => {
@@ -66,6 +77,36 @@ const intervalLabel = computed(() => {
 
 const currentIntervalLabel = computed(() => {
   return props.currentPlanConfig?.interval === 'year' ? 'yr' : 'mo'
+})
+
+// Format card brand for display
+const cardBrandDisplay = computed(() => {
+  const brand = props.preview?.paymentMethod?.brand
+  if (!brand)
+    return ''
+  const brands: Record<string, string> = {
+    visa: 'Visa',
+    mastercard: 'Mastercard',
+    amex: 'American Express',
+    discover: 'Discover',
+    diners: 'Diners Club',
+    jcb: 'JCB',
+    unionpay: 'UnionPay'
+  }
+  return brands[brand] || brand.charAt(0).toUpperCase() + brand.slice(1)
+})
+
+// Get card icon name
+const cardIcon = computed(() => {
+  const brand = props.preview?.paymentMethod?.brand
+  if (!brand)
+    return 'i-lucide-credit-card'
+  const icons: Record<string, string> = {
+    visa: 'i-simple-icons-visa',
+    mastercard: 'i-simple-icons-mastercard',
+    amex: 'i-simple-icons-americanexpress'
+  }
+  return icons[brand] || 'i-lucide-credit-card'
 })
 </script>
 
@@ -138,13 +179,18 @@ const currentIntervalLabel = computed(() => {
           <span class="text-lg font-bold text-primary">${{ (preview.amountDue / 100).toFixed(2) }}</span>
         </div>
 
-        <!-- Immediate charge warning -->
+        <!-- Immediate charge warning with payment method -->
         <div class="flex items-start gap-2 pt-2 text-xs text-amber-600 dark:text-amber-400">
           <UIcon
-            name="i-lucide-credit-card"
+            :name="cardIcon"
             class="w-4 h-4 shrink-0 mt-0.5"
           />
-          <span>Your card on file will be charged immediately when you confirm.</span>
+          <span v-if="preview.paymentMethod">
+            Your {{ cardBrandDisplay }} ending in {{ preview.paymentMethod.last4 }} will be charged immediately.
+          </span>
+          <span v-else>
+            Your card on file will be charged immediately when you confirm.
+          </span>
         </div>
       </div>
 
@@ -164,14 +210,14 @@ const currentIntervalLabel = computed(() => {
         </div>
         <div class="flex justify-between">
           <span>Base Plan (1st Seat):</span>
-          <span>${{ (newPlanConfig?.priceNumber || 0).toFixed(2) }}/yr</span>
+          <span>${{ (newPlanConfig?.price || 0).toFixed(2) }}/yr</span>
         </div>
         <div
           v-if="seats > 1"
           class="flex justify-between"
         >
-          <span>Additional Seats ({{ seats - 1 }} × ${{ (newPlanConfig?.seatPriceNumber || 0).toFixed(2) }}):</span>
-          <span>${{ ((seats - 1) * (newPlanConfig?.seatPriceNumber || 0)).toFixed(2) }}/yr</span>
+          <span>Additional Seats ({{ seats - 1 }} × ${{ (newPlanConfig?.seatPrice || 0).toFixed(2) }}):</span>
+          <span>${{ ((seats - 1) * (newPlanConfig?.seatPrice || 0)).toFixed(2) }}/yr</span>
         </div>
         <div class="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-700 font-medium text-foreground">
           <span>Total:</span>

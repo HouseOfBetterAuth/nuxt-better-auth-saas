@@ -1,13 +1,29 @@
 <script setup lang="ts">
 interface PlanConfig {
-  priceNumber: number
-  seatPriceNumber: number
+  price: number
+  seatPrice: number
   interval: string
+}
+
+interface PaymentMethod {
+  type: string
+  brand: string
+  last4: string
+  expMonth: number
+  expYear: number
+}
+
+interface LineItem {
+  description: string
+  amount: number
 }
 
 interface PreviewData {
   amountDue: number
   periodEnd?: number
+  paymentMethod?: PaymentMethod | null
+  isDowngrade?: boolean
+  lines?: LineItem[]
 }
 
 const props = defineProps<{
@@ -24,14 +40,48 @@ const props = defineProps<{
 const recurringAmount = computed(() => {
   if (!props.planConfig)
     return 0
-  const base = props.planConfig.priceNumber
-  // Additional seats = total - 1 (since 1 is included in base)
+  const base = props.planConfig.price
   const additional = Math.max(0, props.targetSeats - 1)
-  return base + (additional * props.planConfig.seatPriceNumber)
+  return base + (additional * props.planConfig.seatPrice)
 })
 
-const additionalSeatsCount = computed(() => {
-  return Math.max(0, props.targetSeats - props.currentSeats)
+// Calculate current amount
+const currentAmount = computed(() => {
+  if (!props.planConfig)
+    return 0
+  const base = props.planConfig.price
+  const additional = Math.max(0, props.currentSeats - 1)
+  return base + (additional * props.planConfig.seatPrice)
+})
+
+const isUpgrade = computed(() => props.targetSeats > props.currentSeats)
+const isDowngrade = computed(() => props.targetSeats < props.currentSeats)
+const seatDiff = computed(() => Math.abs(props.targetSeats - props.currentSeats))
+
+// Format card brand for display
+const cardBrandDisplay = computed(() => {
+  const brand = props.preview?.paymentMethod?.brand
+  if (!brand)
+    return ''
+  const brands: Record<string, string> = {
+    visa: 'Visa',
+    mastercard: 'Mastercard',
+    amex: 'American Express',
+    discover: 'Discover'
+  }
+  return brands[brand] || brand.charAt(0).toUpperCase() + brand.slice(1)
+})
+
+const cardIcon = computed(() => {
+  const brand = props.preview?.paymentMethod?.brand
+  if (!brand)
+    return 'i-lucide-credit-card'
+  const icons: Record<string, string> = {
+    visa: 'i-simple-icons-visa',
+    mastercard: 'i-simple-icons-mastercard',
+    amex: 'i-simple-icons-americanexpress'
+  }
+  return icons[brand] || 'i-lucide-credit-card'
 })
 </script>
 
@@ -40,20 +90,18 @@ const additionalSeatsCount = computed(() => {
     v-if="preview"
     class="space-y-4 text-sm"
   >
-    <!-- Description (optional) -->
+    <!-- Description -->
     <p
       v-if="showDescription"
       class="text-muted-foreground"
     >
-      <template v-if="targetSeats > currentSeats">
-        You are adding {{ targetSeats - currentSeats }} seat(s).
+      <template v-if="isUpgrade">
+        You are adding {{ seatDiff }} seat(s).
       </template>
-      <template v-else-if="targetSeats < currentSeats">
-        You are removing {{ currentSeats - targetSeats }} seat(s).
-        <span v-if="preview.periodEnd">
-          Your new rate will be <strong>${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}</strong>
-          starting on {{ new Date(preview.periodEnd * 1000).toLocaleDateString() }}.
-        </span>
+      <template v-else-if="isDowngrade">
+        You are removing {{ seatDiff }} seat(s). Your new rate will be
+        <strong>${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}</strong>
+        starting on {{ nextChargeDate }}.
       </template>
     </p>
 
@@ -67,10 +115,7 @@ const additionalSeatsCount = computed(() => {
           {{ currentSeats }} Seats
         </div>
         <div class="text-muted-foreground">
-          ${{ (
-            (planConfig?.priceNumber || 0)
-            + (Math.max(0, currentSeats - 1) * (planConfig?.seatPriceNumber || 0))
-          ).toFixed(2) }}/{{ planConfig?.interval === 'year' ? 'yr' : 'mo' }}
+          ${{ currentAmount.toFixed(2) }}/{{ planConfig?.interval === 'year' ? 'yr' : 'mo' }}
         </div>
       </div>
 
@@ -96,100 +141,85 @@ const additionalSeatsCount = computed(() => {
     <div class="text-xs text-muted-foreground space-y-1 px-1">
       <div class="flex justify-between">
         <span>Base Plan (Includes 1 Seat):</span>
-        <span>${{ (planConfig?.priceNumber || 0).toFixed(2) }}</span>
+        <span>${{ (planConfig?.price || 0).toFixed(2) }}</span>
       </div>
-      <div class="flex justify-between">
-        <span>Additional Seats ({{ targetSeats > 1 ? targetSeats - 1 : 0 }} x ${{ (planConfig?.seatPriceNumber || 0).toFixed(2) }}):</span>
-        <span>${{ (Math.max(0, targetSeats - 1) * (planConfig?.seatPriceNumber || 0)).toFixed(2) }}</span>
+      <div
+        v-if="targetSeats > 1"
+        class="flex justify-between"
+      >
+        <span>Additional Seats ({{ targetSeats - 1 }} × ${{ (planConfig?.seatPrice || 0).toFixed(2) }}):</span>
+        <span>${{ ((targetSeats - 1) * (planConfig?.seatPrice || 0)).toFixed(2) }}</span>
       </div>
     </div>
 
-    <!-- Proration / Amount Due Section -->
+    <!-- Proration Section (not for trials) -->
     <div
       v-if="!isTrialing"
-      class="pt-2 border-t border-gray-200 dark:border-gray-700 text-xs text-muted-foreground space-y-1"
+      class="pt-2 border-t border-gray-200 dark:border-gray-700"
     >
-      <!-- NON-ZERO CHARGE CASE -->
-      <div v-if="preview.amountDue !== 0">
-        <div class="text-muted-foreground text-sm mb-2">
-          {{ preview.amountDue > 0 ? 'Prorated amount due now:' : 'Credit applied to balance:' }}
+      <!-- DOWNGRADE - No charge -->
+      <div
+        v-if="isDowngrade"
+        class="space-y-2"
+      >
+        <div class="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+          <div class="flex items-start gap-2">
+            <UIcon
+              name="i-lucide-info"
+              class="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5"
+            />
+            <p class="text-sm text-blue-700 dark:text-blue-300">
+              No charge today. Your seats will be reduced immediately and your new rate will apply on your next billing date.
+            </p>
+          </div>
         </div>
+        <p
+          v-if="nextChargeDate"
+          class="text-xs text-muted-foreground text-center"
+        >
+          New rate of <strong>${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}</strong> starts on <strong>{{ nextChargeDate }}</strong>.
+        </p>
+      </div>
 
-        <!-- Line Items Breakdown -->
-        <div class="bg-gray-50 dark:bg-gray-800 rounded-md p-3 space-y-2 mb-2">
-          <!-- Adding seats -->
-          <template v-if="additionalSeatsCount > 0">
-            <div class="flex justify-between text-xs">
-              <span class="text-muted-foreground">
-                {{ additionalSeatsCount }} seat{{ additionalSeatsCount === 1 ? '' : 's' }} × ${{ (planConfig?.seatPriceNumber || 0).toFixed(2) }}/{{ planConfig?.interval }} (prorated)
-              </span>
-              <span class="font-medium">${{ (preview.amountDue / 100).toFixed(2) }}</span>
-            </div>
-          </template>
-          <!-- Removing seats (credit) -->
-          <template v-else-if="currentSeats > targetSeats">
-            <div class="flex justify-between text-xs">
-              <span class="text-muted-foreground">
-                {{ currentSeats - targetSeats }} seat{{ (currentSeats - targetSeats) === 1 ? '' : 's' }} removed (prorated credit)
-              </span>
-              <span class="font-medium text-green-600">-${{ (Math.abs(preview.amountDue) / 100).toFixed(2) }}</span>
-            </div>
-          </template>
-
-          <!-- Total -->
-          <div class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
-            <span class="font-medium text-sm">Total</span>
-            <span
-              class="font-bold text-sm"
-              :class="preview.amountDue > 0 ? 'text-primary' : 'text-green-600'"
-            >
-              {{ preview.amountDue > 0 ? '' : '-' }}${{ (Math.abs(preview.amountDue) / 100).toFixed(2) }}
+      <!-- UPGRADE - Charge prorated amount -->
+      <div
+        v-else-if="isUpgrade"
+        class="space-y-2"
+      >
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-md p-3 space-y-2">
+          <div class="flex justify-between text-xs">
+            <span class="text-muted-foreground">
+              {{ seatDiff }} seat{{ seatDiff === 1 ? '' : 's' }} × ${{ (planConfig?.seatPrice || 0).toFixed(2) }}/{{ planConfig?.interval }} (prorated)
             </span>
+            <span class="font-medium">${{ (preview.amountDue / 100).toFixed(2) }}</span>
           </div>
 
-          <!-- Immediate charge warning -->
+          <div class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span class="font-medium text-sm">Total due</span>
+            <span class="font-bold text-sm text-primary">${{ (preview.amountDue / 100).toFixed(2) }}</span>
+          </div>
+
+          <!-- Charge warning -->
           <div
             v-if="preview.amountDue > 0"
             class="flex items-start gap-2 pt-2 text-xs text-amber-600 dark:text-amber-400"
           >
             <UIcon
-              name="i-lucide-credit-card"
+              :name="cardIcon"
               class="w-4 h-4 shrink-0 mt-0.5"
             />
-            <span>Your card on file will be charged immediately when you confirm.</span>
+            <span v-if="preview.paymentMethod">
+              Your {{ cardBrandDisplay }} ending in {{ preview.paymentMethod.last4 }} will be charged immediately.
+            </span>
+            <span v-else>Your card on file will be charged immediately.</span>
           </div>
         </div>
 
-        <!-- Next Billing Info -->
-        <div
-          v-if="preview.amountDue > 0 && nextChargeDate"
-          class="text-xs text-muted-foreground/70 space-x-1"
+        <p
+          v-if="nextChargeDate"
+          class="text-xs text-muted-foreground text-center"
         >
-          <span>New rate will be</span>
-          <strong>
-            ${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}
-          </strong>
-          <span>on your next billing date,</span>
-          <strong>{{ nextChargeDate }}</strong>.
-        </div>
-      </div>
-
-      <!-- ZERO CHARGE CASE -->
-      <div
-        v-else
-        class="text-center space-y-2 pt-1"
-      >
-        <p>
-          No payment due today. Your current plan already covers this number of seats for the rest of your current billing period.
-        </p>
-        <p v-if="nextChargeDate">
-          On your next billing date,
-          <strong>{{ nextChargeDate }}</strong>,
-          your subscription will renew at
-          <strong>
-            ${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}
-          </strong>
-          for {{ targetSeats }} seat{{ targetSeats === 1 ? '' : 's' }}.
+          New rate of <strong>${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }}</strong> on <strong>{{ nextChargeDate }}</strong>.
         </p>
       </div>
     </div>
@@ -199,7 +229,6 @@ const additionalSeatsCount = computed(() => {
       v-else
       class="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-3"
     >
-      <!-- Trial Explanation -->
       <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
         <div class="flex gap-2 items-start">
           <UIcon
@@ -210,22 +239,18 @@ const additionalSeatsCount = computed(() => {
             <p class="font-medium">
               Your trial will end
             </p>
-            <p>
-              Adding team members requires an active Pro subscription.
-              Your trial will end and your subscription will begin immediately.
-            </p>
+            <p>Adding team members requires an active subscription. Your trial will end and billing will begin immediately.</p>
           </div>
         </div>
       </div>
 
-      <!-- Amount Due Box -->
       <div class="bg-primary/5 border border-primary/20 rounded-lg p-4">
         <div class="flex justify-between items-center mb-2">
           <span class="font-medium">Amount due now:</span>
           <span class="text-xl font-bold text-primary">${{ (preview.amountDue / 100).toFixed(2) }}</span>
         </div>
         <p class="text-xs text-muted-foreground">
-          This starts your Pro subscription with {{ targetSeats }} seat{{ targetSeats === 1 ? '' : 's' }}.
+          This starts your subscription with {{ targetSeats }} seat{{ targetSeats === 1 ? '' : 's' }}.
           You'll be billed ${{ recurringAmount.toFixed(2) }}/{{ planConfig?.interval }} going forward.
         </p>
       </div>

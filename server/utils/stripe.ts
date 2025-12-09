@@ -2,7 +2,7 @@ import type { Subscription } from '@better-auth/stripe'
 import { stripe } from '@better-auth/stripe'
 import { and, eq } from 'drizzle-orm'
 import Stripe from 'stripe'
-import { PLANS } from '~~/shared/utils/plans'
+import { PAID_TIERS } from '~~/shared/utils/plans'
 import { member as memberTable, organization as organizationTable } from '../database/schema'
 import { logAuditEvent } from './auditLogger'
 import { useDB } from './db'
@@ -328,25 +328,26 @@ export const setupStripe = () => stripe({
       return { params }
     },
     plans: async () => {
-      const plans = [
-        {
-          name: PLANS.PRO_MONTHLY.id,
-          priceId: PLANS.PRO_MONTHLY.priceId,
+      // Generate plans dynamically from PLAN_TIERS
+      const plans: any[] = []
+
+      for (const tier of PAID_TIERS) {
+        // Monthly plan with trial
+        plans.push({
+          name: tier.monthly.id,
+          priceId: tier.monthly.priceId,
           freeTrial: {
-            days: PLANS.PRO_MONTHLY.trialDays,
+            days: tier.trialDays,
             onTrialStart: async (subscription: Subscription) => {
-              console.log('[Stripe] PRO_MONTHLY onTrialStart fired:', { referenceId: subscription.referenceId })
+              console.log(`[Stripe] ${tier.key} monthly onTrialStart fired:`, { referenceId: subscription.referenceId })
               await addPaymentLog('trial_start', subscription)
-              // Send trial started email
               if (subscription.referenceId) {
                 await sendTrialStartedEmail(subscription.referenceId, subscription)
               }
             },
             onTrialEnd: async ({ subscription }: { subscription: Subscription }) => {
-              console.log('[Stripe] PRO_MONTHLY onTrialEnd fired:', { referenceId: subscription.referenceId, status: subscription.status })
+              console.log(`[Stripe] ${tier.key} monthly onTrialEnd fired:`, { referenceId: subscription.referenceId, status: subscription.status })
               await addPaymentLog('trial_end', subscription)
-              // Only send confirmation if payment succeeded (status is active)
-              // If payment failed (past_due), onTrialExpired will handle it to avoid duplicate emails
               if (subscription.referenceId && subscription.status === 'active') {
                 console.log('[Stripe] Sending subscription confirmed email for trial end')
                 await sendSubscriptionConfirmedEmail(subscription.referenceId, subscription)
@@ -355,32 +356,29 @@ export const setupStripe = () => stripe({
             onTrialExpired: async (subscription: Subscription) => {
               await addPaymentLog('trial_expired', subscription)
               if (subscription.referenceId) {
-                // Remove excess members when trial expires without conversion
                 await removeExcessMembersOnExpiration(subscription.referenceId)
-                // Send trial expired email (payment failed or no payment method)
                 await sendTrialExpiredEmail(subscription.referenceId, subscription)
               }
             }
           }
-        },
-        {
-          name: PLANS.PRO_YEARLY.id,
-          priceId: PLANS.PRO_YEARLY.priceId,
+        })
+
+        // Yearly plan with trial
+        plans.push({
+          name: tier.yearly.id,
+          priceId: tier.yearly.priceId,
           freeTrial: {
-            days: PLANS.PRO_YEARLY.trialDays,
+            days: tier.trialDays,
             onTrialStart: async (subscription: Subscription) => {
-              console.log('[Stripe] PRO_YEARLY onTrialStart fired:', { referenceId: subscription.referenceId })
+              console.log(`[Stripe] ${tier.key} yearly onTrialStart fired:`, { referenceId: subscription.referenceId })
               await addPaymentLog('trial_start', subscription)
-              // Send trial started email
               if (subscription.referenceId) {
                 await sendTrialStartedEmail(subscription.referenceId, subscription)
               }
             },
             onTrialEnd: async ({ subscription }: { subscription: Subscription }) => {
-              console.log('[Stripe] PRO_YEARLY onTrialEnd fired:', { referenceId: subscription.referenceId, status: subscription.status })
+              console.log(`[Stripe] ${tier.key} yearly onTrialEnd fired:`, { referenceId: subscription.referenceId, status: subscription.status })
               await addPaymentLog('trial_end', subscription)
-              // Only send confirmation if payment succeeded (status is active)
-              // If payment failed (past_due), onTrialExpired will handle it to avoid duplicate emails
               if (subscription.referenceId && subscription.status === 'active') {
                 console.log('[Stripe] Sending subscription confirmed email for trial end')
                 await sendSubscriptionConfirmedEmail(subscription.referenceId, subscription)
@@ -389,26 +387,24 @@ export const setupStripe = () => stripe({
             onTrialExpired: async (subscription: Subscription) => {
               await addPaymentLog('trial_expired', subscription)
               if (subscription.referenceId) {
-                // Remove excess members when trial expires without conversion
                 await removeExcessMembersOnExpiration(subscription.referenceId)
-                // Send trial expired email (payment failed or no payment method)
                 await sendTrialExpiredEmail(subscription.referenceId, subscription)
               }
             }
           }
-        },
-        // No-trial versions of plans (for users who own multiple orgs)
-        {
-          name: `${PLANS.PRO_MONTHLY.id}-no-trial`,
-          priceId: PLANS.PRO_MONTHLY.priceId
-          // No freeTrial - charges immediately
-        },
-        {
-          name: `${PLANS.PRO_YEARLY.id}-no-trial`,
-          priceId: PLANS.PRO_YEARLY.priceId
-          // No freeTrial - charges immediately
-        }
-      ]
+        })
+
+        // No-trial versions (for users who own multiple orgs)
+        plans.push({
+          name: `${tier.monthly.id}-no-trial`,
+          priceId: tier.monthly.priceId
+        })
+        plans.push({
+          name: `${tier.yearly.id}-no-trial`,
+          priceId: tier.yearly.priceId
+        })
+      }
+
       return plans
     },
     onSubscriptionComplete: async ({ subscription }) => {

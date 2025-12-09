@@ -1,7 +1,19 @@
 <script setup lang="ts">
+import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
+
 const localePath = useLocalePath()
 const { t } = useI18n()
 const { loggedIn, signOut, user, activeStripeSubscription } = useAuth()
+
+// Get the tier display name from the subscription plan
+const tierBadgeLabel = computed(() => {
+  if (!activeStripeSubscription.value?.plan)
+    return 'Pro'
+  const tierKey = getPlanKeyFromId(activeStripeSubscription.value.plan)
+  if (tierKey === 'free')
+    return 'Pro' // Fallback
+  return PLAN_TIERS[tierKey]?.name || 'Pro'
+})
 </script>
 
 <template>
@@ -30,7 +42,7 @@ const { loggedIn, signOut, user, activeStripeSubscription } = useAuth()
           {{ user?.name }}
           <UBadge
             v-if="activeStripeSubscription"
-            label="Pro"
+            :label="tierBadgeLabel"
           />
         </span>
       </UButton>

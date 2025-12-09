@@ -4,7 +4,7 @@ import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { createStripeClient } from '~~/server/utils/stripe'
 import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'
-import { PLANS } from '~~/shared/utils/plans'
+import { getPlanKeyFromId, getTierForInterval, PLAN_TIERS } from '~~/shared/utils/plans'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const { organizationId, newInterval } = body
+  const { organizationId, newInterval, newTierKey } = body
 
   if (!organizationId || !newInterval) {
     throw createError({
@@ -72,36 +72,103 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const currentPriceId = subscription.items.data[0].price.id
-  const monthlyPriceId = PLANS.PRO_MONTHLY.priceId
-  const yearlyPriceId = PLANS.PRO_YEARLY.priceId
+  // Get local subscription to determine current plan
+  const localSub = await db.query.subscription.findFirst({
+    where: eq(subscriptionTable.stripeSubscriptionId, subscription.id)
+  })
 
-  const newPriceId = newInterval === 'month' ? monthlyPriceId : yearlyPriceId
+  const currentPriceId = subscription.items.data[0].price.id
+
+  // Get user's current tier (pro, business, etc.)
+  const currentTierKey = getPlanKeyFromId(localSub?.plan)
+  const currentInterval = localSub?.plan?.includes('year') ? 'year' : 'month'
+
+  // Determine target tier: use newTierKey if provided, otherwise keep current tier
+  const targetTierKey = (newTierKey && PLAN_TIERS[newTierKey as keyof typeof PLAN_TIERS])
+    ? newTierKey
+    : (currentTierKey === 'free' ? 'pro' : currentTierKey)
+
+  const newPlan = getTierForInterval(targetTierKey as Exclude<typeof targetTierKey, 'free'>, newInterval)
+  const newPriceId = newPlan.priceId
 
   if (currentPriceId === newPriceId) {
     return { success: true, message: 'Already on this plan' }
   }
 
-  // Only allow upgrades (monthly to yearly)
-  if (newInterval === 'month') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Downgrading from yearly to monthly is not supported'
-    })
-  }
+  // Determine if this is an upgrade or downgrade
+  const currentTier = PLAN_TIERS[currentTierKey as keyof typeof PLAN_TIERS]
+  const targetTier = PLAN_TIERS[targetTierKey as keyof typeof PLAN_TIERS]
+
+  const isUpgrade = !currentTier ||
+    (targetTier && targetTier.order > currentTier.order) ||
+    (targetTier?.order === currentTier?.order && newInterval === 'year' && currentInterval === 'month')
+
+  // For downgrades, schedule at period end instead of immediate
+  const isDowngrade = currentTier && targetTier && (
+    targetTier.order < currentTier.order ||
+    (targetTier.order === currentTier.order && newInterval === 'month' && currentInterval === 'year')
+  )
 
   const quantity = subscription.items.data[0].quantity
 
-  // Upgrade (M -> Y): Immediate with Proration
+  // All plan tier downgrades are scheduled at period end (no credit)
+  // This prevents revenue loss - users keep features until renewal
+  if (isDowngrade) {
+    console.log('[change-plan] Plan downgrade - scheduling at period end')
+
+    try {
+      // Create a subscription schedule from the existing subscription
+      const schedule = await stripe.subscriptionSchedules.create({
+        from_subscription: subscription.id
+      })
+
+      // Update the schedule to change plan at next phase (period end)
+      const currentPhase = schedule.phases[0]
+      await stripe.subscriptionSchedules.update(schedule.id, {
+        phases: [
+          {
+            items: [{ price: subscription.items.data[0].price.id, quantity }],
+            start_date: currentPhase.start_date,
+            end_date: currentPhase.end_date
+          },
+          {
+            items: [{ price: newPriceId, quantity }],
+            start_date: currentPhase.end_date
+          }
+        ],
+        end_behavior: 'release' // Release back to regular subscription after schedule completes
+      })
+
+      const periodEnd = (subscription as any).current_period_end
+      return {
+        success: true,
+        message: 'Plan change scheduled',
+        newPlan: newPlan.id,
+        isUpgrade: false,
+        isDowngrade: true,
+        scheduledAt: periodEnd ? new Date(periodEnd * 1000).toISOString() : null
+      }
+    } catch (scheduleError: any) {
+      console.error('[change-plan] Schedule error:', scheduleError.message)
+      throw createError({
+        statusCode: 500,
+        statusMessage: `Failed to schedule plan change: ${scheduleError.message}`
+      })
+    }
+  }
+
+  // Build update params for upgrades only
   const updateParams: any = {
     items: [{
       id: subscription.items.data[0].id,
       price: newPriceId,
       quantity
     }],
+    // Upgrade: Immediate with proration
     proration_behavior: 'always_invoice',
-    payment_behavior: 'error_if_incomplete' // Fail fast if payment fails, don't leave subscription in bad state
+    payment_behavior: 'error_if_incomplete'
   }
+  console.log('[change-plan] Upgrade detected - applying with proration')
 
   if (subscription.status === 'trialing') {
     updateParams.trial_end = 'now'
@@ -128,9 +195,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Note: Plan downgrades are handled above with subscription schedules
+  // No credit is given for plan downgrades - only seat downgrades get credit
+
   // Update local database immediately
   const updateData: any = {
-    plan: PLANS.PRO_YEARLY.id
+    plan: newPlan.id
   }
 
   if (subscription.status === 'trialing' || updatedSub.status === 'active') {
@@ -149,10 +219,17 @@ export default defineEventHandler(async (event) => {
 
   // Send updated email for plan change
   if (updatedSub.status === 'active') {
-    const previousInterval = currentPriceId === monthlyPriceId ? 'monthly' : 'yearly'
+    const previousInterval = localSub?.plan?.includes('year') ? 'yearly' : 'monthly'
     const newIntervalLabel = newInterval === 'month' ? 'monthly' : 'yearly'
     await sendSubscriptionUpdatedEmail(organizationId, updatedSub, undefined, undefined, previousInterval, newIntervalLabel)
   }
 
-  return { success: true, message: 'Upgraded to yearly plan' }
+  const actionMessage = isDowngrade ? 'Plan downgraded' : 'Plan upgraded'
+  return {
+    success: true,
+    message: actionMessage,
+    newPlan: newPlan.id,
+    isUpgrade,
+    isDowngrade
+  }
 })

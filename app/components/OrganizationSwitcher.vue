@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
+
 const { organization, session, useActiveOrganization, user } = useAuth()
 
 // Use lazy fetch for organizations to not block navigation
@@ -68,8 +70,18 @@ const activeStripeSubscription = computed(() => {
 const _canManageTeam = computed(() => {
   if (!activeOrg.value?.data?.members || !user.value?.id)
     return false
-  const member = activeOrg.value.data.members.find(m => m.userId === user.value!.id)
+  const member = activeOrg.value.data.members.find((m: any) => m.userId === user.value!.id)
   return member?.role === 'owner' || member?.role === 'admin'
+})
+
+// Get the tier display name from the subscription plan
+const tierBadgeLabel = computed(() => {
+  if (!activeStripeSubscription.value?.plan)
+    return 'Pro'
+  const tierKey = getPlanKeyFromId(activeStripeSubscription.value.plan)
+  if (tierKey === 'free')
+    return 'Pro' // Fallback
+  return PLAN_TIERS[tierKey]?.name || 'Pro'
 })
 
 const activeOrgSlug = computed(() => activeOrg.value?.data?.slug || 't')
@@ -176,7 +188,7 @@ const dropdownItems = computed(() => {
             class="text-[10px] px-1.5 py-0.5 rounded-full border font-medium"
             :class="activeStripeSubscription ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400' : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'"
           >
-            {{ activeStripeSubscription ? 'Pro' : 'Free' }}
+            {{ activeStripeSubscription ? tierBadgeLabel : 'Free' }}
           </span>
         </div>
         <UIcon
