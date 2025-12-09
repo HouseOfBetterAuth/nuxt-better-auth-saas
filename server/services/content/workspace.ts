@@ -57,7 +57,6 @@ export async function getContentWorkspacePayload(
     conversation = await findConversation(db, organizationId, record.content.id)
 
     if (conversation) {
-      // conversation already set above
       if (includeChat) {
         const [messages, logs] = await Promise.all([
           getConversationMessages(db, conversation.id, organizationId),

@@ -7,9 +7,6 @@ import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
-/**
- * Archive/delete a conversation
- */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
@@ -36,7 +33,6 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
 
-  // Atomic update: only update if status is not already 'archived'
   const [updatedConversation] = await db
     .update(schema.conversation)
     .set({
@@ -50,10 +46,8 @@ export default defineEventHandler(async (event) => {
     ))
     .returning()
 
-  // Determine if the conversation was actually archived by this operation
   const wasArchived = updatedConversation !== undefined
 
-  // Always log an audit event for the archive attempt
   await logAuditEvent({
     userId: user.id,
     category: 'conversation',

@@ -30,7 +30,6 @@ export default defineEventHandler(async (event) => {
     const activeOrgId = (session.session as any).activeOrganizationId
 
     if (!activeOrgId) {
-      // If no active org, just return user data (e.g. for onboarding)
       return {
         organization: null,
         subscriptions: [],
@@ -141,8 +140,6 @@ export default defineEventHandler(async (event) => {
     const hasActiveSub = subscriptions.some(s => s.status === 'active' || s.status === 'trialing')
     const needsUpgrade = !isFreeOrg && !hasActiveSub
 
-    // Check if user owns more than 1 org - if so, no trial on additional orgs
-    // Only the first org gets a free trial
     const userOwnsMultipleOrgs = ownedMemberships.length > 1
 
     if (process.env.NODE_ENV === 'development') {

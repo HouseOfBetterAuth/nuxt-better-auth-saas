@@ -54,7 +54,6 @@ export default defineEventHandler(async (event) => {
   const mimeType = fileData.type || 'application/octet-stream'
   const fileSize = fileData.data.length
 
-  // Validate file size
   if (config.maxFileSize && fileSize > config.maxFileSize) {
     throw createError({
       statusCode: 413,
@@ -62,7 +61,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Validate MIME type
   if (config.allowedMimeTypes && config.allowedMimeTypes.length > 0) {
     if (!config.allowedMimeTypes.includes(mimeType)) {
       throw createError({

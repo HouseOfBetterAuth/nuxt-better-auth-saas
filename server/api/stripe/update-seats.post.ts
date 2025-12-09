@@ -77,7 +77,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Determine new price ID if interval changes
   let newPriceId
   if (newInterval) {
     newPriceId = newInterval === 'month'

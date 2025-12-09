@@ -72,7 +72,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // If currently trialing, calculate locally and return immediately (No Proration/Stripe API needed)
   if (subscription.status === 'trialing') {
     const interval = newInterval || (subscription as any).plan.interval
 
@@ -88,8 +87,6 @@ export default defineEventHandler(async (event) => {
       planConfig = Object.values(PLANS).find(p => p.id === localSub.plan)
     }
 
-    // If not found in DB (or switching interval), fallback to checking Stripe Price ID match
-    // This handles cases where DB might be out of sync or missing
     if (!planConfig) {
       planConfig = Object.values(PLANS).find(p => p.priceId === (subscription as any).plan.id)
     }
@@ -115,7 +112,6 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Determine new price if interval changes
   let newPriceId
   if (newInterval) {
     newPriceId = newInterval === 'month'

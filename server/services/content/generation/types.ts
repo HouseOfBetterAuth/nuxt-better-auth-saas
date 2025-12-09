@@ -23,6 +23,7 @@ export interface ContentGenerationInput {
   overrides?: ContentGenerationOverrides
   systemPrompt?: string
   temperature?: number
+  mode?: 'chat' | 'agent'
   onPlanReady?: (details: ContentPlanDetails) => Promise<void> | void
   event?: H3Event | null
 }
@@ -41,6 +42,7 @@ export interface SectionUpdateInput {
   sectionId: string
   instructions: string
   temperature?: number
+  mode?: 'chat' | 'agent'
 }
 
 export interface SectionUpdateResult {

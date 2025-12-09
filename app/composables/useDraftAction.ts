@@ -4,7 +4,7 @@ import { ref } from 'vue'
 interface DraftActionOptions {
   isBusy: Ref<boolean> | (() => boolean)
   status: Ref<string> | (() => string)
-  sessionContentId: Ref<string | null> | (() => string | null)
+  conversationContentId: Ref<string | null> | (() => string | null)
   contentId?: Ref<string> | (() => string | null)
   selectedContentType?: Ref<string | null> | (() => string | null)
   pendingDrafts?: Ref<Array<{ id: string, contentType: string | null }>> // Legacy name, represents pending content items
@@ -17,7 +17,7 @@ export function useDraftAction(options: DraftActionOptions) {
   const {
     isBusy,
     status,
-    sessionContentId,
+    conversationContentId,
     contentId,
     selectedContentType,
     pendingDrafts,
@@ -37,8 +37,8 @@ export function useDraftAction(options: DraftActionOptions) {
     return typeof status === 'function' ? status() : status.value
   }
 
-  const getSessionContentId = () => {
-    return typeof sessionContentId === 'function' ? sessionContentId() : sessionContentId.value
+  const getConversationContentId = () => {
+    return typeof conversationContentId === 'function' ? conversationContentId() : conversationContentId.value
   }
 
   const getContentId = () => {
@@ -76,7 +76,7 @@ export function useDraftAction(options: DraftActionOptions) {
     }
 
     try {
-      const resolvedContentId = getContentId() || getSessionContentId() || undefined
+      const resolvedContentId = getContentId() || getConversationContentId() || undefined
 
       if (!sendMessage) {
         throw new Error('sendMessage is required')

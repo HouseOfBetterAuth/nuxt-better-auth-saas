@@ -36,7 +36,6 @@ export default defineEventHandler(async (event) => {
   })
   const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl : undefined
 
-  // Validate baseUrl format if provided
   if (baseUrl) {
     try {
       // eslint-disable-next-line no-new

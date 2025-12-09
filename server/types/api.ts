@@ -75,5 +75,5 @@ export interface ChatRequestBody {
    */
   contentId?: string | null
   /** Chat mode: 'chat' for read-only, 'agent' for read+write */
-  mode?: 'chat' | 'agent'
+  mode: 'chat' | 'agent'
 }

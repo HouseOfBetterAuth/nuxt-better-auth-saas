@@ -30,15 +30,16 @@ const {
   errorMessage,
   sendMessage,
   isBusy,
-  sessionContentId,
+  conversationContentId,
   conversationId,
-  resetSession,
+  resetConversation,
   selectedContentType,
   stopResponse,
   logs,
   requestStartedAt,
   agentContext,
   prompt,
+  mode,
   currentActivity,
   currentToolName
 } = useConversation()
@@ -46,8 +47,6 @@ const promptSubmitting = ref(false)
 const showQuotaModal = ref(false)
 const quotaModalData = ref<{ limit: number | null, used: number | null, remaining: number | null, planLabel: string | null } | null>(null)
 const showUpgradeModal = ref(false)
-// Placeholder for chat/agent mode selector (not wired up yet)
-const chatMode = ref<'chat' | 'agent'>('agent')
 const MAX_USER_MESSAGE_LENGTH = 500
 const LONG_PRESS_DELAY_MS = 500
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10
@@ -340,7 +339,7 @@ const displayMessages = computed<ChatMessage[]>(() => {
 useDraftAction({
   isBusy,
   status,
-  sessionContentId,
+  conversationContentId,
   selectedContentType,
   pendingDrafts,
   sendMessage,
@@ -638,9 +637,9 @@ const openConversation = async (entry: { id: string }) => {
   await activateWorkspace(entry.id)
 }
 
-const resetConversation = () => {
+const _handleResetConversation = () => {
   prompt.value = ''
-  resetSession()
+  resetConversation()
 }
 
 const archiveConversation = async (entry: { id: string, title?: string | null }) => {
@@ -683,7 +682,7 @@ const archiveConversation = async (entry: { id: string, title?: string | null })
 }
 
 const stopWorkingContent = (entry: { id: string }) => {
-  if (!entry?.id || entry.id !== sessionContentId.value) {
+  if (!entry?.id || entry.id !== conversationContentId.value) {
     return
   }
 
@@ -1067,9 +1066,8 @@ if (import.meta.client) {
                   @submit="handlePromptSubmit"
                 >
                   <template #footer>
-                    <!-- Placeholder: Chat/Agent mode selector (not wired up yet) -->
                     <USelectMenu
-                      v-model="chatMode"
+                      v-model="mode"
                       :items="[
                         { value: 'agent', label: 'Agent', icon: 'i-lucide-bot' },
                         { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' }
@@ -1081,7 +1079,7 @@ if (import.meta.client) {
                     >
                       <template #leading>
                         <UIcon
-                          :name="chatMode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
+                          :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
                           class="w-4 h-4"
                         />
                       </template>

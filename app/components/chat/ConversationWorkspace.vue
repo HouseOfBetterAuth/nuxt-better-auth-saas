@@ -174,15 +174,12 @@ const {
   errorMessage: chatErrorMessage,
   sendMessage,
   isBusy: chatIsBusy,
-  hydrateSession,
+  hydrateConversation,
   conversationContentId,
   conversationId,
   agentContext,
   prompt
 } = useConversation()
-// Legacy aliases
-const sessionContentId = conversationContentId
-const _sessionId = conversationId
 const uiStatus = computed(() => chatStatus.value)
 const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 
@@ -447,7 +444,7 @@ watch(content, (value) => {
     }
   })
 
-  hydrateSession({
+  hydrateConversation({
     conversationId: value.chatSession?.id ?? conversationId.value,
     conversationContentId: value.chatSession?.contentId ?? value.content.id,
     messages: value.chatMessages ?? undefined,
@@ -663,7 +660,7 @@ const {
 } = useDraftAction({
   isBusy: chatIsBusy,
   status: chatStatus,
-  sessionContentId,
+  conversationContentId,
   contentId,
   sendMessage,
   onLoadWorkspace: loadWorkspacePayload

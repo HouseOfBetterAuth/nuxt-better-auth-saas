@@ -3,7 +3,7 @@ import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { callChatCompletionsStream } from '~~/server/utils/aiGateway'
 
 import type { ChatToolInvocation } from './tools'
-import { getChatToolDefinitions, parseChatToolCall } from './tools'
+import { getChatToolDefinitions, getToolsByKind, parseChatToolCall } from './tools'
 
 export interface ChatAgentInput {
   conversationHistory: ChatCompletionMessage[]
@@ -32,7 +32,19 @@ export interface MultiPassAgentResult {
   conversationHistory: ChatCompletionMessage[]
 }
 
-const CHAT_SYSTEM_PROMPT = `You are an autonomous content-creation assistant.
+function buildSystemPrompt(mode: 'chat' | 'agent'): string {
+  const basePrompt = `You are an autonomous content-creation assistant.`
+
+  if (mode === 'chat') {
+    return `${basePrompt}
+
+- You are in **read-only mode**. You can read content, sections, and sources to answer questions.
+- You MUST NOT perform actions that modify content or ingest new data.
+- If the user asks you to make changes, explain what you would do and suggest switching to agent mode for actual changes.
+- Keep replies concise (2-4 sentences) and helpful.`
+  }
+
+  return `${basePrompt}
 
 - Always analyze the user's intent from natural language.
 - When the user asks you to create content, update sections, or otherwise modify workspace artifacts, prefer calling the appropriate tool instead of replying with text.
@@ -43,8 +55,8 @@ const CHAT_SYSTEM_PROMPT = `You are an autonomous content-creation assistant.
 - For simple edits to metadata (title, slug, status, primaryKeyword, targetLocale, contentType) on existing content items, use edit_metadata. Examples: "make the title shorter", "change the status to published", "update the slug".
 - For editing specific sections of existing content, use edit_section. Examples: "make the introduction more engaging", "rewrite the conclusion".
 - For creating new content items from source content (transcript, YouTube video, etc.), use write_content. This tool only creates new content - it cannot update existing content.
-- Never use write_content for editing existing content - use edit_metadata or edit_section instead.
-`
+- Never use write_content for editing existing content - use edit_metadata or edit_section instead.`
+}
 
 const MAX_TOOL_ITERATIONS = 5
 const MAX_TOOL_RETRIES = 2
@@ -54,6 +66,7 @@ const MAX_TOOL_RETRIES = 2
  * Streams LLM responses as they arrive and emits tool execution events in real-time.
  */
 export async function runChatAgentWithMultiPassStream({
+  mode,
   conversationHistory,
   userMessage,
   contextBlocks = [],
@@ -64,6 +77,7 @@ export async function runChatAgentWithMultiPassStream({
   onRetry,
   executeTool
 }: ChatAgentInput & {
+  mode: 'chat' | 'agent'
   onLLMChunk?: (chunk: string) => void
   onToolStart?: (toolName: string) => void
   onToolComplete?: (toolName: string, result: ToolExecutionResult) => void
@@ -84,7 +98,7 @@ export async function runChatAgentWithMultiPassStream({
     // Run agent turn
     const contextText = contextBlocks.length ? `\n\nContext:\n${contextBlocks.join('\n\n')}` : ''
     const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: `${CHAT_SYSTEM_PROMPT}${contextText}` },
+      { role: 'system', content: `${buildSystemPrompt(mode)}${contextText}` },
       ...currentHistory
     ]
 
@@ -102,9 +116,15 @@ export async function runChatAgentWithMultiPassStream({
     let responseModel = ''
 
     try {
+      // Select tools based on mode: chat mode only gets read tools, agent mode gets all tools
+      const allTools = getChatToolDefinitions()
+      const tools = mode === 'chat'
+        ? getToolsByKind('read') // only read tools in chat mode
+        : allTools // full toolset in agent mode
+
       for await (const chunk of callChatCompletionsStream({
         messages,
-        tools: getChatToolDefinitions(),
+        tools,
         toolChoice: 'auto'
       })) {
         responseId = chunk.id || responseId
@@ -202,7 +222,6 @@ export async function runChatAgentWithMultiPassStream({
     // Add assistant response to history
     currentHistory.push(assistantResponseMessage)
 
-    // If no tool call, return the final message
     if (accumulatedToolCalls.length === 0) {
       const finalMessage = accumulatedContent || null
       if (finalMessage && onFinalMessage) {
@@ -277,7 +296,6 @@ export async function runChatAgentWithMultiPassStream({
         onToolComplete(toolInvocation.name, toolResult)
       }
 
-      // If tool failed, increment retry count
       if (!toolResult.success) {
         toolRetryCounts.set(toolKey, retryCount + 1)
       } else {
@@ -285,7 +303,6 @@ export async function runChatAgentWithMultiPassStream({
         toolRetryCounts.delete(toolKey)
       }
 
-      // Format tool result as assistant message for next iteration
       let toolResultMessage = ''
       if (toolResult.success) {
         toolResultMessage = `Tool ${toolInvocation.name} executed successfully.`

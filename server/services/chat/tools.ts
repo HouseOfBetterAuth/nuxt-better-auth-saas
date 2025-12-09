@@ -5,7 +5,7 @@ import type {
 
 export type ToolKind = 'read' | 'write' | 'ingest'
 
-export type ChatToolName = 'write_content' | 'edit_section' | 'fetch_youtube' | 'save_source' | 'edit_metadata' | 'enrich_content'
+export type ChatToolName = 'write_content' | 'edit_section' | 'fetch_youtube' | 'save_source' | 'edit_metadata' | 'enrich_content' | 'read_content' | 'read_section' | 'read_source'
 
 export type ChatToolArguments<TName extends ChatToolName> =
   TName extends 'write_content'
@@ -55,7 +55,20 @@ export type ChatToolArguments<TName extends ChatToolName> =
                   contentId: string
                   baseUrl?: string | null
                 }
-              : never
+              : TName extends 'read_content'
+                ? {
+                    contentId: string
+                  }
+                : TName extends 'read_section'
+                  ? {
+                      contentId: string
+                      sectionId: string
+                    }
+                  : TName extends 'read_source'
+                    ? {
+                        sourceContentId: string
+                      }
+                    : never
 
 export interface ChatToolInvocation<TName extends ChatToolName = ChatToolName> {
   name: TName
@@ -133,6 +146,39 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
         name: 'enrich_content',
         description: 'Re-enrich existing content with frontmatter and JSON-LD structured data. Useful for updating old content or refreshing SEO metadata.',
         parameters: buildEnrichContentParameters()
+      }
+    }
+  },
+  read_content: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_content',
+        description: 'Fetch a content item and its current version for inspection. Returns content metadata, version info, and sections. This is a read-only operation.',
+        parameters: buildReadContentParameters()
+      }
+    }
+  },
+  read_section: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_section',
+        description: 'Fetch a specific section of a content item for inspection. Returns section text and metadata. This is a read-only operation.',
+        parameters: buildReadSectionParameters()
+      }
+    }
+  },
+  read_source: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_source',
+        description: 'Fetch a source content item (e.g. transcript) for inspection. Returns source content info including transcript text and chunk metadata. This is a read-only operation.',
+        parameters: buildReadSourceParameters()
       }
     }
   }
@@ -307,6 +353,49 @@ function buildEnrichContentParameters(): ParameterSchema {
   }
 }
 
+function buildReadContentParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      contentId: {
+        type: 'string',
+        description: 'ID of the content to read.'
+      }
+    },
+    required: ['contentId']
+  }
+}
+
+function buildReadSectionParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      contentId: {
+        type: 'string',
+        description: 'ID of the content containing the section.'
+      },
+      sectionId: {
+        type: 'string',
+        description: 'ID of the section to read.'
+      }
+    },
+    required: ['contentId', 'sectionId']
+  }
+}
+
+function buildReadSourceParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      sourceContentId: {
+        type: 'string',
+        description: 'ID of the source content to read.'
+      }
+    },
+    required: ['sourceContentId']
+  }
+}
+
 function safeParseArguments(input: string): Record<string, any> | null {
   try {
     return input ? JSON.parse(input) : {}
@@ -381,6 +470,30 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
     return {
       name: 'enrich_content',
       arguments: rest as ChatToolInvocation<'enrich_content'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_content') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_content',
+      arguments: rest as ChatToolInvocation<'read_content'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_section') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_section',
+      arguments: rest as ChatToolInvocation<'read_section'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_source') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_source',
+      arguments: rest as ChatToolInvocation<'read_source'>['arguments']
     }
   }
 

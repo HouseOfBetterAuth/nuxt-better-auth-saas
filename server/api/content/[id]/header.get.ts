@@ -28,7 +28,6 @@ export default defineEventHandler(async (event) => {
         updatedAt: schema.content.updatedAt,
         currentVersionId: schema.content.currentVersionId
       },
-      // Only get frontmatter fields needed for header: contentType, seoTitle, title, diffStats
       frontmatterContentType: sql<string | null>`${schema.contentVersion.frontmatter}->>'contentType'`,
       frontmatterSeoTitle: sql<string | null>`${schema.contentVersion.frontmatter}->>'seoTitle'`,
       frontmatterTitle: sql<string | null>`${schema.contentVersion.frontmatter}->>'title'`,
@@ -56,7 +55,6 @@ export default defineEventHandler(async (event) => {
   const displayTitle = record.frontmatterSeoTitle || record.frontmatterTitle || record.content.title || 'Untitled content'
   const diffStats = record.diffStats as { additions?: number, deletions?: number } | null
 
-  // Format updatedAt
   const updatedAt = record.content.updatedAt
   const updatedAtLabel = updatedAt
     ? new Intl.DateTimeFormat(undefined, {

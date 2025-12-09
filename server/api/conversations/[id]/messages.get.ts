@@ -11,9 +11,6 @@ import { validateNumber, validateUUID } from '~~/server/utils/validation'
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 500
 
-/**
- * Get messages for a conversation with pagination
- */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
@@ -72,7 +69,6 @@ export default defineEventHandler(async (event) => {
     offset
   })
 
-  // Get total count for pagination
   const totalResult = await db
     .select({ value: count() })
     .from(schema.conversationMessage)

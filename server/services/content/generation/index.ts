@@ -78,8 +78,17 @@ export const generateContentDraftFromSource = async (
     overrides,
     systemPrompt,
     temperature,
+    mode,
     event: _event
   } = input
+
+  // Enforce agent mode for writes
+  if (mode === 'chat') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Writes are not allowed in chat mode'
+    })
+  }
 
   if (!organizationId || !userId) {
     throw createError({
@@ -495,8 +504,17 @@ export const updateContentSectionWithAI = async (
     contentId,
     sectionId,
     instructions,
-    temperature
+    temperature,
+    mode
   } = input
+
+  // Enforce agent mode for writes
+  if (mode === 'chat') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Writes are not allowed in chat mode'
+    })
+  }
 
   const trimmedInstructions = instructions?.trim()
 

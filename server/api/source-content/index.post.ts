@@ -36,12 +36,10 @@ export default defineEventHandler(async (event) => {
     ingestStatus = validateEnum(body.ingestStatus, INGEST_STATUSES, 'ingestStatus')
   }
 
-  // Validate optional fields
   const externalId = validateOptionalString(body.externalId, 'externalId')
   const title = validateOptionalString(body.title, 'title')
   const sourceText = validateOptionalString(body.sourceText, 'sourceText')
 
-  // Validate metadata
   if (body.metadata !== undefined && body.metadata !== null && (typeof body.metadata !== 'object' || Array.isArray(body.metadata))) {
     throw createValidationError('metadata must be an object or null')
   }

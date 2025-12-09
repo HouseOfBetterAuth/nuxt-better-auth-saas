@@ -160,7 +160,6 @@ export default eventHandler(async (event) => {
   queryOptions.limit = limit
   queryOptions.offset = (page - 1) * limit
 
-  // Get total count
   const totalCountOptions = queryOptions.where ? { where: queryOptions.where } : {}
   const totalResult = await db.select({ count: count() }).from(table).where(totalCountOptions.where)
   const total = totalResult[0]?.count || 0

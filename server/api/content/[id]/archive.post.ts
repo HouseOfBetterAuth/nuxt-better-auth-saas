@@ -17,7 +17,6 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
 
-  // Atomic UPDATE with status check in WHERE clause
   const [updatedContent] = await db
     .update(schema.content)
     .set({
@@ -32,7 +31,6 @@ export default defineEventHandler(async (event) => {
     ))
     .returning()
 
-  // If no rows were affected, check why
   if (!updatedContent) {
     const [content] = await db
       .select({

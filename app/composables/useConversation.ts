@@ -117,6 +117,7 @@ export function useConversation() {
   const activeController = useState<AbortController | null>('chat/active-controller', () => null)
   const agentContext = useState<AgentContext | null>('chat/agent-context', () => null)
   const prompt = useState<string>('chat/prompt', () => '')
+  const mode = useState<'chat' | 'agent'>('chat/mode', () => 'chat')
   const currentActivity = useState<'llm_thinking' | 'tool_executing' | 'streaming_message' | null>('chat/current-activity', () => null)
   const currentToolName = useState<string | null>('chat/current-tool-name', () => null)
 
@@ -476,13 +477,14 @@ export function useConversation() {
     // Final authoritative message list (including user message) comes in messages:complete
     return await callChatEndpoint({
       message: trimmed,
+      mode: mode.value,
       contentId: options?.contentId !== undefined
         ? options.contentId
         : (conversationContentId.value || undefined)
     })
   }
 
-  function hydrateSession(payload: {
+  function hydrateConversation(payload: {
     messages?: ChatResponse['messages']
     logs?: ChatResponse['logs']
     conversationId?: string | null
@@ -505,7 +507,7 @@ export function useConversation() {
     }
   }
 
-  async function loadSessionForContent(contentId: string) {
+  async function loadConversationForContent(contentId: string) {
     const response = await $fetch<{ workspace: Record<string, any> | null }>(`/api/content/${contentId}`)
 
     const workspace = response?.workspace
@@ -525,7 +527,7 @@ export function useConversation() {
         }
       }
 
-      hydrateSession({
+      hydrateConversation({
         conversationId: workspace.chatSession?.id ?? null,
         conversationContentId: workspace.chatSession?.contentId ?? workspace.content.id,
         messages: workspace.chatMessages,
@@ -544,7 +546,7 @@ export function useConversation() {
     return false
   }
 
-  function resetSession() {
+  function resetConversation() {
     messages.value = []
     status.value = 'ready'
     errorMessage.value = null
@@ -567,17 +569,15 @@ export function useConversation() {
     sendMessage,
     conversationId,
     conversationContentId,
-    // Legacy aliases for backwards compatibility during transition
-    sessionId: conversationId,
-    sessionContentId: conversationContentId,
     stopResponse,
     logs,
     requestStartedAt,
     agentContext,
-    hydrateSession,
-    loadSessionForContent,
-    resetSession,
+    hydrateConversation,
+    loadConversationForContent,
+    resetConversation,
     prompt,
+    mode,
     currentActivity,
     currentToolName
   }

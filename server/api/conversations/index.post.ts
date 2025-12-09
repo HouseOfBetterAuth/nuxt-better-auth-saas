@@ -18,9 +18,6 @@ const metadataSchema = z.union([
   { message: 'Metadata must be a plain object or null' }
 )
 
-/**
- * Create a new conversation
- */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event, user.id)
@@ -30,9 +27,6 @@ export default defineEventHandler(async (event) => {
   const contentId = body.contentId ? validateOptionalUUID(body.contentId, 'contentId') : null
   const sourceContentId = body.sourceContentId ? validateOptionalUUID(body.sourceContentId, 'sourceContentId') : null
 
-  // Validate metadata
-  // If metadata is undefined, default to null (no validation needed)
-  // Otherwise, validate the value (null or object)
   let validatedMetadata: Record<string, any> | null = null
   if (body.metadata !== undefined) {
     const metadataResult = metadataSchema.safeParse(body.metadata)

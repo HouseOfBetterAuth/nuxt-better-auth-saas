@@ -67,14 +67,10 @@ export async function getOrCreateConversationForContent(
 ) {
   const status: ConversationStatus = input.status ?? 'active'
 
-  // Ensure null values are explicitly null (not undefined or empty strings)
   const contentId = input.contentId?.trim() || null
   const sourceContentId = input.sourceContentId?.trim() || null
   const createdByUserId = input.createdByUserId?.trim() || null
 
-  // Use atomic upsert to prevent race conditions
-  // If contentId is null, we can't use the unique constraint, so always create a new conversation
-  // Note: findConversation always returns null when contentId is null, so we skip the lookup
   if (!contentId) {
     const result = await db
       .insert(schema.conversation)
@@ -99,7 +95,6 @@ export async function getOrCreateConversationForContent(
     return conv
   }
 
-  // For non-null contentId, use atomic upsert with ON CONFLICT
   const result = await db
     .insert(schema.conversation)
     .values({
@@ -117,7 +112,6 @@ export async function getOrCreateConversationForContent(
 
   const conv = (Array.isArray(result) ? result[0] : null) as typeof schema.conversation.$inferSelect | null
 
-  // If conflict occurred, fetch the existing conversation
   if (!conv) {
     const existing = await findConversation(db, input.organizationId, contentId)
     if (!existing) {
@@ -162,7 +156,7 @@ export async function addMessageToConversation(
   const [message] = await db
     .insert(schema.conversationMessage)
     .values({
-      id: input.id, // Use provided ID if available, otherwise use default (uuidv7)
+      id: input.id,
       conversationId: input.conversationId,
       organizationId: input.organizationId,
       role: input.role,

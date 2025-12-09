@@ -14,6 +14,7 @@ interface CreateManualTranscriptOptions {
   transcript: string
   title?: string | null
   metadata?: Record<string, any> | null
+  mode?: 'chat' | 'agent'
   onProgress?: (message: string) => Promise<void> | void
 }
 
@@ -27,6 +28,7 @@ interface CreateManualTranscriptOptions {
  * @param options.transcript - Transcript text content
  * @param options.title - Optional title for the source content
  * @param options.metadata - Optional metadata object
+ * @param options.mode - Chat mode ('chat' or 'agent')
  * @param options.onProgress - Optional progress callback
  * @returns Created source content record
  */
@@ -37,8 +39,17 @@ export const createSourceContentFromTranscript = async ({
   transcript,
   title,
   metadata,
+  mode,
   onProgress
 }: CreateManualTranscriptOptions) => {
+  // Enforce agent mode for writes
+  if (mode === 'chat') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Writes are not allowed in chat mode'
+    })
+  }
+
   if (process.env.NODE_ENV === 'development') {
     console.log(`🚀 [MANUAL_TRANSCRIPT] Starting manual transcript creation...`)
     console.log(`🚀 [MANUAL_TRANSCRIPT] Transcript length: ${transcript.length} characters`)
@@ -62,6 +73,7 @@ export const createSourceContentFromTranscript = async ({
       externalId: uuidv7(),
       title: title ?? null,
       sourceText: normalizedTranscript,
+      mode,
       metadata: {
         ...(metadata ?? {}),
         origin: metadata?.origin ?? 'transcript',

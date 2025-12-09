@@ -103,10 +103,8 @@ function getSubscriptionInfo(subscription: any): SubscriptionInfo {
     || subscription.items?.data?.[0]?.price?.id
     || subscription.plan?.id
 
-  // Use helper functions that handle -no-trial suffix automatically
   const plan = findPlanById(planId) || findPlanByPriceId(priceId)
 
-  // Determine billing cycle from plan config or Stripe interval
   const interval = plan?.interval
     || subscription.plan?.interval
     || subscription.items?.data?.[0]?.plan?.interval
@@ -494,7 +492,6 @@ export async function sendPaymentFailedEmail(customerId: string, amount?: number
     return
   }
 
-  // Format amount if provided
   const formattedAmount = amount
     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'usd' }).format(amount / 100)
     : undefined

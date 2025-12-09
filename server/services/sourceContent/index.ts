@@ -16,12 +16,21 @@ export interface SourceContentUpsertInput {
   sourceText?: string | null
   metadata?: Record<string, any> | null
   ingestStatus?: typeof INGEST_STATUSES[number]
+  mode?: 'chat' | 'agent'
 }
 
 export const upsertSourceContent = async (
   db: NodePgDatabase<typeof schema>,
   input: SourceContentUpsertInput
 ) => {
+  // Enforce agent mode for writes
+  if (input.mode === 'chat') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Writes are not allowed in chat mode'
+    })
+  }
+
   if (!input.sourceType) {
     throw createError({
       statusCode: 400,

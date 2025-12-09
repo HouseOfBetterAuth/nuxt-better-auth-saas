@@ -90,7 +90,6 @@ export default defineEventHandler(async (event) => {
     return { success: true, message: 'Already on this plan' }
   }
 
-  // Only allow upgrades (monthly to yearly)
   if (newInterval === 'month') {
     throw createError({
       statusCode: 400,
