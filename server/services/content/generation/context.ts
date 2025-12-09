@@ -38,7 +38,8 @@ export async function generateSyntheticContext(
   // Extract user messages from conversation
   const userMessages = conversationHistory
     .filter(msg => msg.role === 'user')
-    .map(msg => msg.content)
+    .map(msg => msg.content ?? '')
+    .filter(Boolean)
     .join('\n\n')
 
   if (!userMessages.trim()) {

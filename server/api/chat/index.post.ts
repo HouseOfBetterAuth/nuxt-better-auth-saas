@@ -447,114 +447,152 @@ async function executeChatTool(
     }
   }
 
-  if (toolInvocation.name === 'write_content') {
-    // TypeScript now knows this is write_content
-    const args = toolInvocation.arguments as ChatToolInvocation<'write_content'>['arguments']
+  if (toolInvocation.name === 'content_write') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'content_write'>['arguments']
+    const action = validateRequiredString(args.action, 'action') as 'create' | 'enrich'
 
-    try {
-      let resolvedSourceContentId: string | null = args.sourceContentId ?? null
-      // Handle both sourceText and context parameters (context is alias for sourceText)
-      const resolvedSourceText: string | null = args.sourceText ?? args.context ?? null
+    if (action === 'create') {
+      try {
+        let resolvedSourceContentId: string | null = args.sourceContentId ?? null
+        // Handle both sourceText and context parameters (context is alias for sourceText)
+        const resolvedSourceText: string | null = args.sourceText ?? args.context ?? null
 
-      // If sourceText/context is provided but no sourceContentId, create source content first
-      if (resolvedSourceText && !resolvedSourceContentId) {
-        const manualSource = await createSourceContentFromContext({
-          db,
-          organizationId,
-          userId,
-          context: resolvedSourceText,
-          mode: context.mode,
-          metadata: { createdVia: 'chat_write_content_tool' },
-          onProgress: async (progressMessage) => {
-            await addMessageToConversation(db, {
-              conversationId,
-              organizationId,
-              role: 'assistant',
-              content: progressMessage
-            })
+        // If sourceText/context is provided but no sourceContentId, create source content first
+        if (resolvedSourceText && !resolvedSourceContentId) {
+          const manualSource = await createSourceContentFromContext({
+            db,
+            organizationId,
+            userId,
+            context: resolvedSourceText,
+            mode: context.mode,
+            metadata: { createdVia: 'chat_content_write_tool' },
+            onProgress: async (progressMessage) => {
+              await addMessageToConversation(db, {
+                conversationId,
+                organizationId,
+                role: 'assistant',
+                content: progressMessage
+              })
+            }
+          })
+
+          if (!manualSource) {
+            return {
+              success: false,
+              error: 'Failed to create source content from context'
+            }
           }
-        })
 
-        if (!manualSource) {
+          resolvedSourceContentId = manualSource.id
+        }
+
+        // Get conversation history for context generation
+        const previousMessages = await getConversationMessages(db, conversationId, organizationId)
+        const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
+          role: message.role === 'assistant'
+            ? 'assistant'
+            : message.role === 'system'
+              ? 'system'
+              : 'user',
+          content: message.content
+        }))
+
+        // Allow generation with conversation history even if no source content
+        if (!resolvedSourceContentId && !resolvedSourceText && (!conversationHistory || conversationHistory.length === 0)) {
           return {
             success: false,
-            error: 'Failed to create source content from context'
+            error: 'Either sourceContentId, sourceText/context, or conversationHistory is required for action="create"'
           }
         }
 
-        resolvedSourceContentId = manualSource.id
-      }
+        let sanitizedSystemPrompt: string | undefined
+        if (args.systemPrompt !== undefined && args.systemPrompt !== null) {
+          const trimmed = validateRequiredString(args.systemPrompt, 'systemPrompt')
+          sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
+        }
 
-      // Get conversation history for context generation
-      const previousMessages = await getConversationMessages(db, conversationId, organizationId)
-      const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
-        role: message.role === 'assistant'
-          ? 'assistant'
-          : message.role === 'system'
-            ? 'system'
-            : 'user',
-        content: message.content
-      }))
+        let sanitizedTemperature = 1
+        if (args.temperature !== undefined && args.temperature !== null) {
+          sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
+        }
 
-      // Allow generation with conversation history even if no source content
-      if (!resolvedSourceContentId && !resolvedSourceText && (!conversationHistory || conversationHistory.length === 0)) {
+        const generationResult = await generateContentFromSource(db, {
+          organizationId,
+          userId,
+          sourceContentId: resolvedSourceContentId ?? null,
+          sourceText: resolvedSourceText,
+          conversationHistory: conversationHistory.length > 0 ? conversationHistory : null,
+          contentId: null, // action='create' only creates new content, never updates existing ones
+          event: context.event,
+          mode: context.mode,
+          overrides: {
+            title: args.title ? validateRequiredString(args.title, 'title') : null,
+            slug: args.slug ? validateRequiredString(args.slug, 'slug') : null,
+            status: args.status ? validateEnum(args.status, CONTENT_STATUSES, 'status') : undefined,
+            primaryKeyword: args.primaryKeyword ? validateRequiredString(args.primaryKeyword, 'primaryKeyword') : null,
+            targetLocale: args.targetLocale ? validateRequiredString(args.targetLocale, 'targetLocale') : null,
+            contentType: args.contentType
+              ? validateEnum(args.contentType, CONTENT_TYPES, 'contentType')
+              : DEFAULT_CONTENT_TYPE
+          },
+          systemPrompt: sanitizedSystemPrompt,
+          temperature: sanitizedTemperature
+        })
+
+        return {
+          success: true,
+          result: {
+            contentId: generationResult.content.id,
+            versionId: generationResult.version.id,
+            content: {
+              id: generationResult.content.id,
+              title: generationResult.content.title,
+              slug: generationResult.content.slug
+            }
+          },
+          contentId: generationResult.content.id
+        }
+      } catch (error: any) {
         return {
           success: false,
-          error: 'Either sourceContentId, sourceText/context, or conversationHistory is required'
+          error: error?.message || 'Failed to create content'
         }
       }
+    } else if (action === 'enrich') {
+      const contentId = validateUUID(args.contentId, 'contentId')
+      const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
 
-      let sanitizedSystemPrompt: string | undefined
-      if (args.systemPrompt !== undefined && args.systemPrompt !== null) {
-        const trimmed = validateRequiredString(args.systemPrompt, 'systemPrompt')
-        sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
+      try {
+        const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
+        const result = await refreshContentVersionMetadata(db, {
+          organizationId,
+          userId,
+          contentId,
+          baseUrl: baseUrl ?? undefined
+        })
+
+        return {
+          success: true,
+          result: {
+            contentId: result.content.id,
+            versionId: result.version.id,
+            content: {
+              id: result.content.id,
+              title: result.content.title
+            }
+          },
+          contentId: result.content.id
+        }
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error?.message || 'Failed to enrich content'
+        }
       }
-
-      let sanitizedTemperature = 1
-      if (args.temperature !== undefined && args.temperature !== null) {
-        sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
-      }
-
-      const generationResult = await generateContentFromSource(db, {
-        organizationId,
-        userId,
-        sourceContentId: resolvedSourceContentId ?? null,
-        sourceText: resolvedSourceText,
-        conversationHistory: conversationHistory.length > 0 ? conversationHistory : null,
-        contentId: null, // write_content only creates new content, never updates existing ones
-        event: context.event,
-        mode: context.mode,
-        overrides: {
-          title: args.title ? validateRequiredString(args.title, 'title') : null,
-          slug: args.slug ? validateRequiredString(args.slug, 'slug') : null,
-          status: args.status ? validateEnum(args.status, CONTENT_STATUSES, 'status') : undefined,
-          primaryKeyword: args.primaryKeyword ? validateRequiredString(args.primaryKeyword, 'primaryKeyword') : null,
-          targetLocale: args.targetLocale ? validateRequiredString(args.targetLocale, 'targetLocale') : null,
-          contentType: args.contentType
-            ? validateEnum(args.contentType, CONTENT_TYPES, 'contentType')
-            : DEFAULT_CONTENT_TYPE
-        },
-        systemPrompt: sanitizedSystemPrompt,
-        temperature: sanitizedTemperature
-      })
-
-      return {
-        success: true,
-        result: {
-          contentId: generationResult.content.id,
-          versionId: generationResult.version.id,
-          content: {
-            id: generationResult.content.id,
-            title: generationResult.content.title,
-            slug: generationResult.content.slug
-          }
-        },
-        contentId: generationResult.content.id
-      }
-    } catch (error: any) {
+    } else {
       return {
         success: false,
-        error: error?.message || 'Failed to generate content'
+        error: `Invalid action: ${action}. Must be 'create' or 'enrich'.`
       }
     }
   }
@@ -664,40 +702,6 @@ async function executeChatTool(
       return {
         success: false,
         error: error?.message || 'Failed to patch section'
-      }
-    }
-  }
-
-  if (toolInvocation.name === 'enrich_content') {
-    const args = toolInvocation.arguments as ChatToolInvocation<'enrich_content'>['arguments']
-    const contentId = validateUUID(args.contentId, 'contentId')
-    const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
-
-    try {
-      const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
-      const result = await refreshContentVersionMetadata(db, {
-        organizationId,
-        userId,
-        contentId,
-        baseUrl: baseUrl ?? undefined
-      })
-
-      return {
-        success: true,
-        result: {
-          contentId: result.content.id,
-          versionId: result.version.id,
-          content: {
-            id: result.content.id,
-            title: result.content.title
-          }
-        },
-        contentId: result.content.id
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error?.message || 'Failed to re-enrich content'
       }
     }
   }
@@ -1198,7 +1202,7 @@ async function executeChatTool(
  *
  * **Available Tools:**
  * - Read tools (available in both modes): `read_content`, `read_section`, `read_source`
- * - Write tools (agent mode only): `write_content`, `edit_section`, `edit_metadata`, `enrich_content`
+ * - Write tools (agent mode only): `content_write`, `edit_section`, `edit_metadata`
  * - Ingest tools (agent mode only): `fetch_youtube`, `save_source`
  *
  * @contract
@@ -1241,7 +1245,7 @@ async function executeChatTool(
  *
  * // The agent will automatically:
  * // 1. Call fetch_youtube tool to fetch captions
- * // 2. Call write_content tool to create the content
+ * // 2. Call content_write tool to create the content
  * // 3. Return a friendly message confirming completion
  * ```
  *
@@ -1663,7 +1667,7 @@ export default defineEventHandler(async (event) => {
               trackReadySource(sourceRecord, { isNew: true })
             }
           }
-          // Update conversation with new content if write_content or edit_section succeeded
+          // Update conversation with new content if content_write or edit_section succeeded
           if (toolExec.result.success && toolExec.result.contentId) {
             const newContentId = toolExec.result.contentId
             if (activeConversation.contentId !== newContentId) {
@@ -1766,7 +1770,7 @@ export default defineEventHandler(async (event) => {
   // Check if any tools created content that needs completion messages
   let completionMessages: Awaited<ReturnType<typeof composeWorkspaceCompletionMessages>> | null = null
   if (multiPassResult && multiPassResult.toolHistory.length > 0) {
-    // Find write_content or edit_section results
+    // Find content_write or edit_section results
     for (const toolExec of multiPassResult.toolHistory) {
       if (toolExec.result.success && toolExec.result.contentId) {
         try {

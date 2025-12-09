@@ -46,9 +46,10 @@ function findParagraphBoundary(text: string, targetPos: number, maxLookback: num
   }
 
   // Look for sentence endings (period, exclamation, question mark followed by space)
-  const sentenceEnd = searchText.search(/[.!?]\s/)
-  if (sentenceEnd >= 0) {
-    return lookbackStart + sentenceEnd + 2
+  const sentenceMatches = [...searchText.matchAll(/[.!?]\s/g)]
+  if (sentenceMatches.length > 0) {
+    const lastMatch = sentenceMatches[sentenceMatches.length - 1]
+    return lookbackStart + (lastMatch.index ?? 0) + 2
   }
 
   return targetPos
@@ -83,8 +84,8 @@ export async function createChunksFromSourceContentText({
   }
 
   // Determine chunk size and overlap (always token-based)
-  const targetChunkSizeTokens = Number.isFinite(chunkSize) ? Math.floor(chunkSize) : DEFAULT_CHUNK_SIZE_TOKENS
-  const targetOverlapTokens = Number.isFinite(chunkOverlap) ? Math.floor(chunkOverlap) : DEFAULT_CHUNK_OVERLAP_TOKENS
+  const targetChunkSizeTokens = (chunkSize !== undefined && Number.isFinite(chunkSize)) ? Math.floor(chunkSize as number) : DEFAULT_CHUNK_SIZE_TOKENS
+  const targetOverlapTokens = (chunkOverlap !== undefined && Number.isFinite(chunkOverlap)) ? Math.floor(chunkOverlap as number) : DEFAULT_CHUNK_OVERLAP_TOKENS
 
   if (targetChunkSizeTokens <= 0) {
     throw createError({

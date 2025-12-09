@@ -5,11 +5,13 @@ import type {
 
 export type ToolKind = 'read' | 'write' | 'ingest'
 
-export type ChatToolName = 'write_content' | 'edit_section' | 'source_ingest' | 'edit_metadata' | 'enrich_content' | 'read_content' | 'read_section' | 'read_source' | 'read_content_list' | 'read_source_list' | 'read_workspace_summary'
+export type ChatToolName = 'content_write' | 'edit_section' | 'source_ingest' | 'edit_metadata' | 'read_content' | 'read_section' | 'read_source' | 'read_content_list' | 'read_source_list' | 'read_workspace_summary'
 
 export type ChatToolArguments<TName extends ChatToolName> =
-  TName extends 'write_content'
+  TName extends 'content_write'
     ? {
+        action: 'create' | 'enrich'
+        // For action='create':
         sourceContentId?: string | null
         sourceText?: string | null
         context?: string | null
@@ -21,6 +23,9 @@ export type ChatToolArguments<TName extends ChatToolName> =
         contentType?: string | null
         systemPrompt?: string | null
         temperature?: number | null
+        // For action='enrich':
+        contentId?: string | null
+        baseUrl?: string | null
       }
     : TName extends 'edit_section'
       ? {
@@ -48,47 +53,42 @@ export type ChatToolArguments<TName extends ChatToolName> =
               targetLocale?: string | null
               contentType?: string | null
             }
-          : TName extends 'enrich_content'
+          : TName extends 'read_content'
             ? {
                 contentId: string
-                baseUrl?: string | null
               }
-            : TName extends 'read_content'
+            : TName extends 'read_section'
               ? {
                   contentId: string
+                  sectionId: string
                 }
-              : TName extends 'read_section'
+              : TName extends 'read_source'
                 ? {
-                    contentId: string
-                    sectionId: string
+                    sourceContentId: string
                   }
-                : TName extends 'read_source'
+                : TName extends 'read_content_list'
                   ? {
-                      sourceContentId: string
+                      status?: string | null
+                      contentType?: string | null
+                      limit?: number | null
+                      offset?: number | null
+                      orderBy?: 'updatedAt' | 'createdAt' | 'title' | null
+                      orderDirection?: 'asc' | 'desc' | null
                     }
-                  : TName extends 'read_content_list'
+                  : TName extends 'read_source_list'
                     ? {
-                        status?: string | null
-                        contentType?: string | null
+                        sourceType?: string | null
+                        ingestStatus?: string | null
                         limit?: number | null
                         offset?: number | null
                         orderBy?: 'updatedAt' | 'createdAt' | 'title' | null
                         orderDirection?: 'asc' | 'desc' | null
                       }
-                    : TName extends 'read_source_list'
+                    : TName extends 'read_workspace_summary'
                       ? {
-                          sourceType?: string | null
-                          ingestStatus?: string | null
-                          limit?: number | null
-                          offset?: number | null
-                          orderBy?: 'updatedAt' | 'createdAt' | 'title' | null
-                          orderDirection?: 'asc' | 'desc' | null
+                          contentId: string
                         }
-                      : TName extends 'read_workspace_summary'
-                        ? {
-                            contentId: string
-                          }
-                        : never
+                      : never
 
 export interface ChatToolInvocation<TName extends ChatToolName = ChatToolName> {
   name: TName
@@ -103,14 +103,14 @@ interface ToolDefinition {
 }
 
 const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
-  write_content: {
+  content_write: {
     kind: 'write',
     definition: {
       type: 'function',
       function: {
-        name: 'write_content',
-        description: 'Create a new content item (blog post, article, etc.) from source content. Source content can be: (1) saved source content via sourceContentId, (2) inline text via sourceText/context, or (3) conversation history when no source is provided. This tool only creates new content - use edit_metadata for metadata edits or edit_section for content edits on existing items.',
-        parameters: buildWriteContentParameters()
+        name: 'content_write',
+        description: 'Write or enrich content. Use action="create" to create new content from source (saved source content, inline text, or conversation history). Use action="enrich" to refresh an existing content item\'s frontmatter and JSON-LD structured data. For editing existing content sections, use edit_section. For updating metadata fields, use edit_metadata.',
+        parameters: buildContentWriteParameters()
       }
     }
   },
@@ -144,17 +144,6 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
         name: 'edit_metadata',
         description: 'Update metadata fields (title, slug, status, primaryKeyword, targetLocale, contentType) for an existing content item. Use this for simple edits like "make the title shorter", "change the status", or "update the slug". This tool patches the existing content without creating a new version.',
         parameters: buildEditMetadataParameters()
-      }
-    }
-  },
-  enrich_content: {
-    kind: 'write',
-    definition: {
-      type: 'function',
-      function: {
-        name: 'enrich_content',
-        description: 'Re-enrich existing content with frontmatter and JSON-LD structured data. Useful for updating old content or refreshing SEO metadata.',
-        parameters: buildEnrichContentParameters()
       }
     }
   },
@@ -226,54 +215,73 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
   }
 }
 
-function buildWriteContentParameters(): ParameterSchema {
+function buildContentWriteParameters(): ParameterSchema {
   return {
     type: 'object',
     properties: {
+      action: {
+        type: 'string',
+        enum: ['create', 'enrich'],
+        description: 'Action to perform: "create" to create new content from source, or "enrich" to refresh existing content\'s frontmatter and JSON-LD.'
+      },
+      // For action='create':
       sourceContentId: {
         type: ['string', 'null'],
-        description: 'Source content ID to generate from (context, YouTube ingest, etc.).'
+        description: 'Source content ID to generate from (required for action="create" if no sourceText/context).'
       },
       sourceText: {
         type: ['string', 'null'],
-        description: 'Inline source text to use directly for generation. If provided without sourceContentId, will create source content first. Use this for pasted text, notes, or any source material.'
+        description: 'Inline source text to use directly for generation (for action="create"). If provided without sourceContentId, will create source content first.'
       },
       context: {
         type: ['string', 'null'],
-        description: 'Alias for sourceText. Raw context text to use for generating content. If both sourceText and context are provided, sourceText takes precedence.'
+        description: 'Alias for sourceText (for action="create"). Raw context text to use for generating content. If both sourceText and context are provided, sourceText takes precedence.'
       },
       title: {
         type: ['string', 'null'],
-        description: 'Optional working title for the content item.'
+        description: 'Optional working title for the content item (for action="create").'
       },
       slug: {
-        type: ['string', 'null']
+        type: ['string', 'null'],
+        description: 'Optional slug for the content item (for action="create").'
       },
       status: {
         type: ['string', 'null'],
-        description: 'Desired content status (draft, review, published, etc.).'
+        description: 'Desired content status (draft, review, published, etc.) (for action="create").'
       },
       primaryKeyword: {
-        type: ['string', 'null']
+        type: ['string', 'null'],
+        description: 'Primary keyword for SEO (for action="create").'
       },
       targetLocale: {
-        type: ['string', 'null']
+        type: ['string', 'null'],
+        description: 'Target locale (e.g., en-US) (for action="create").'
       },
       contentType: {
         type: ['string', 'null'],
-        description: 'Content type identifier (blog_post, newsletter, etc.).'
+        description: 'Content type identifier (blog_post, newsletter, etc.) (for action="create").'
       },
       systemPrompt: {
         type: ['string', 'null'],
-        description: 'Custom system prompt overrides when the user provides style guidance.'
+        description: 'Custom system prompt overrides when the user provides style guidance (for action="create").'
       },
       temperature: {
         type: ['number', 'null'],
         minimum: 0,
         maximum: 2,
-        description: 'Sampling temperature for creative control (default 1).'
+        description: 'Sampling temperature for creative control (default 1) (for action="create").'
+      },
+      // For action='enrich':
+      contentId: {
+        type: ['string', 'null'],
+        description: 'Content ID of the content item to re-enrich (required for action="enrich").'
+      },
+      baseUrl: {
+        type: ['string', 'null'],
+        description: 'Optional base URL for generating absolute URLs in JSON-LD structured data (for action="enrich").'
       }
-    }
+    },
+    required: ['action']
   }
 }
 
@@ -333,7 +341,21 @@ function buildSourceIngestParameters(): ParameterSchema {
         description: 'Optional title for context source content (only used when sourceType="context").'
       }
     },
-    required: ['sourceType']
+    required: ['sourceType'],
+    oneOf: [
+      {
+        properties: {
+          sourceType: { const: 'youtube' }
+        },
+        required: ['youtubeUrl']
+      },
+      {
+        properties: {
+          sourceType: { const: 'context' }
+        },
+        required: ['context']
+      }
+    ]
   }
 }
 
@@ -368,23 +390,6 @@ function buildEditMetadataParameters(): ParameterSchema {
       contentType: {
         type: ['string', 'null'],
         description: 'New content type (blog_post, newsletter, etc.).'
-      }
-    },
-    required: ['contentId']
-  }
-}
-
-function buildEnrichContentParameters(): ParameterSchema {
-  return {
-    type: 'object',
-    properties: {
-      contentId: {
-        type: 'string',
-        description: 'Content ID of the content item to re-enrich with frontmatter and JSON-LD structured data.'
-      },
-      baseUrl: {
-        type: ['string', 'null'],
-        description: 'Optional base URL for generating absolute URLs in JSON-LD structured data.'
       }
     },
     required: ['contentId']
@@ -550,11 +555,11 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
     return null
   }
 
-  if (toolCall.function.name === 'write_content') {
+  if (toolCall.function.name === 'content_write') {
     const { type: _omit, ...rest } = args
     return {
-      name: 'write_content',
-      arguments: rest as ChatToolInvocation<'write_content'>['arguments']
+      name: 'content_write',
+      arguments: rest as ChatToolInvocation<'content_write'>['arguments']
     }
   }
 
@@ -579,14 +584,6 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
     return {
       name: 'edit_metadata',
       arguments: rest as ChatToolInvocation<'edit_metadata'>['arguments']
-    }
-  }
-
-  if (toolCall.function.name === 'enrich_content') {
-    const { type: _omit, ...rest } = args
-    return {
-      name: 'enrich_content',
-      arguments: rest as ChatToolInvocation<'enrich_content'>['arguments']
     }
   }
 
