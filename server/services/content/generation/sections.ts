@@ -1,4 +1,5 @@
 import type { ContentChunk, ContentFrontmatter, ContentOutlineSection, ContentSection } from './types'
+import type { GenerationMode } from './context'
 import { createError } from 'h3'
 import { callChatCompletions } from '~~/server/utils/aiGateway'
 import { slugifyTitle } from '~~/server/utils/content'
@@ -19,8 +20,11 @@ export const generateContentSectionsFromOutline = async (params: {
   temperature?: number
   organizationId: string
   sourceContentId?: string | null
+  generationMode?: GenerationMode
+  conversationContext?: string | null
 }): Promise<ContentSection[]> => {
   const sections: ContentSection[] = []
+  const mode = params.generationMode || 'context'
 
   for (const item of params.outline) {
     const relevantChunks = await findRelevantChunksForSection({
@@ -29,9 +33,49 @@ export const generateContentSectionsFromOutline = async (params: {
       organizationId: params.organizationId,
       sourceContentId: params.sourceContentId
     })
-    const contextBlock = relevantChunks.length
-      ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
-      : 'No context available.'
+
+    // Build context block based on mode
+    let contextBlock: string
+    let contextLabel: string
+    let writingInstruction: string
+
+    if (mode === 'conversation') {
+      // Conversation-only mode: use conversation context
+      contextBlock = params.conversationContext || 'No context available.'
+      contextLabel = 'User Intent and Requirements:'
+      writingInstruction = 'Write this section based on the user\'s intent and requirements from the conversation. Use general knowledge and best practices to create high-quality content that addresses the user\'s needs.'
+    } else if (mode === 'hybrid') {
+      // Hybrid mode: combine chunks and conversation context
+      const chunkContext = relevantChunks.length
+        ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
+        : null
+      const conversationContext = params.conversationContext || null
+
+      if (chunkContext && conversationContext) {
+        contextBlock = `Source Material:\n${chunkContext}\n\nUser Intent:\n${conversationContext}`
+        contextLabel = 'Context:'
+        writingInstruction = 'Write this section using both the provided source material and the user\'s intent from the conversation. Ground your writing in the source material while incorporating the user\'s requirements and preferences.'
+      } else if (chunkContext) {
+        contextBlock = chunkContext
+        contextLabel = 'Context:'
+        writingInstruction = 'Write this section based on the provided context.'
+      } else if (conversationContext) {
+        contextBlock = conversationContext
+        contextLabel = 'User Intent:'
+        writingInstruction = 'Write this section based on the user\'s intent from the conversation.'
+      } else {
+        contextBlock = 'No context available.'
+        contextLabel = 'Context:'
+        writingInstruction = 'Write this section based on general knowledge and best practices.'
+      }
+    } else {
+      // Context-only mode: use chunks (existing behavior)
+      contextBlock = relevantChunks.length
+        ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 1200)}`).join('\n\n')
+        : 'No context available.'
+      contextLabel = 'Context:'
+      writingInstruction = 'Write this section based on the provided context.'
+    }
 
     const prompt = [
       `Section title: ${item.title}`,
@@ -45,9 +89,9 @@ export const generateContentSectionsFromOutline = async (params: {
         schemaTypes: params.frontmatter.schemaTypes
       })}`,
       params.instructions ? `Writer instructions: ${params.instructions}` : null,
-      'Context:',
+      contextLabel,
       contextBlock,
-      'Write this section based on the provided context. Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.'
+      `${writingInstruction} Respond with JSON {"body": string, "summary": string?}. "body" must include only the prose content for this section - do NOT include the section heading or title, as it will be added automatically.`
     ].filter(Boolean).join('\n\n')
 
     if (!item.title || !item.title.trim()) {

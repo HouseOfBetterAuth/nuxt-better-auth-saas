@@ -111,6 +111,44 @@ export const countWords = (value: string) => {
     .length
 }
 
+/**
+ * Estimates token count for text using GPT model approximation
+ * 
+ * Approximation: ~4 characters per token for English text
+ * This is a standard approximation for GPT models (GPT-3.5, GPT-4)
+ * 
+ * @param text - Text to count tokens for
+ * @returns Estimated token count
+ */
+export const estimateTokenCount = (text: string): number => {
+  if (!text || !text.trim()) {
+    return 0
+  }
+  // GPT models: ~4 characters per token on average for English text
+  // This is a reasonable approximation without a full tokenizer
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Converts token count to approximate character count
+ * 
+ * @param tokens - Number of tokens
+ * @returns Approximate character count
+ */
+export const tokensToChars = (tokens: number): number => {
+  return tokens * 4
+}
+
+/**
+ * Converts character count to approximate token count
+ * 
+ * @param chars - Number of characters
+ * @returns Approximate token count
+ */
+export const charsToTokens = (chars: number): number => {
+  return Math.ceil(chars / 4)
+}
+
 export function calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
   if (!vecA.length || !vecB.length || vecA.length !== vecB.length) {
     return 0

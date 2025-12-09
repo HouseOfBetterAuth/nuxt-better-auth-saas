@@ -5,7 +5,7 @@ import type {
 
 export type ToolKind = 'read' | 'write' | 'ingest'
 
-export type ChatToolName = 'write_content' | 'edit_section' | 'fetch_youtube' | 'save_source' | 'edit_metadata' | 'enrich_content' | 'read_content' | 'read_section' | 'read_source'
+export type ChatToolName = 'write_content' | 'edit_section' | 'source_ingest' | 'edit_metadata' | 'enrich_content' | 'read_content' | 'read_section' | 'read_source' | 'read_content_list' | 'read_source_list' | 'read_workspace_summary'
 
 export type ChatToolArguments<TName extends ChatToolName> =
   TName extends 'write_content'
@@ -30,17 +30,15 @@ export type ChatToolArguments<TName extends ChatToolName> =
           instructions?: string | null
           temperature?: number | null
         }
-      : TName extends 'fetch_youtube'
+      : TName extends 'source_ingest'
         ? {
-            youtubeUrl: string
+            sourceType: 'youtube' | 'context'
+            youtubeUrl?: string | null
             titleHint?: string | null
+            context?: string | null
+            title?: string | null
           }
-        : TName extends 'save_source'
-          ? {
-              context: string
-              title?: string | null
-            }
-          : TName extends 'edit_metadata'
+        : TName extends 'edit_metadata'
             ? {
                 contentId: string
                 title?: string | null
@@ -68,7 +66,29 @@ export type ChatToolArguments<TName extends ChatToolName> =
                     ? {
                         sourceContentId: string
                       }
-                    : never
+                    : TName extends 'read_content_list'
+                      ? {
+                          status?: string | null
+                          contentType?: string | null
+                          limit?: number | null
+                          offset?: number | null
+                          orderBy?: 'updatedAt' | 'createdAt' | 'title' | null
+                          orderDirection?: 'asc' | 'desc' | null
+                        }
+                      : TName extends 'read_source_list'
+                        ? {
+                            sourceType?: string | null
+                            ingestStatus?: string | null
+                            limit?: number | null
+                            offset?: number | null
+                            orderBy?: 'updatedAt' | 'createdAt' | 'title' | null
+                            orderDirection?: 'asc' | 'desc' | null
+                          }
+                        : TName extends 'read_workspace_summary'
+                          ? {
+                              contentId: string
+                            }
+                          : never
 
 export interface ChatToolInvocation<TName extends ChatToolName = ChatToolName> {
   name: TName
@@ -89,7 +109,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'write_content',
-        description: 'Create a new content item (blog post, article, etc.) from source content (context, YouTube video, etc.). This tool only creates new content - use edit_metadata for metadata edits or edit_section for content edits on existing items.',
+        description: 'Create a new content item (blog post, article, etc.) from source content. Source content can be: (1) saved source content via sourceContentId, (2) inline text via sourceText/context, or (3) conversation history when no source is provided. This tool only creates new content - use edit_metadata for metadata edits or edit_section for content edits on existing items.',
         parameters: buildWriteContentParameters()
       }
     }
@@ -105,25 +125,14 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       }
     }
   },
-  fetch_youtube: {
+  source_ingest: {
     kind: 'ingest',
     definition: {
       type: 'function',
       function: {
-        name: 'fetch_youtube',
-        description: 'Fetch captions from a YouTube video and create source content for content generation.',
-        parameters: buildFetchYouTubeParameters()
-      }
-    }
-  },
-  save_source: {
-    kind: 'ingest',
-    definition: {
-      type: 'function',
-      function: {
-        name: 'save_source',
-        description: 'Save a pasted context as source content for later use in content generation.',
-        parameters: buildSaveSourceParameters()
+        name: 'source_ingest',
+        description: 'Ingest source content from either a YouTube video or arbitrary context text. Use sourceType="youtube" to fetch captions from a YouTube video, or sourceType="context" to save pasted text as source content for content generation.',
+        parameters: buildSourceIngestParameters()
       }
     }
   },
@@ -181,6 +190,39 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
         parameters: buildReadSourceParameters()
       }
     }
+  },
+  read_content_list: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_content_list',
+        description: 'List content items with optional filtering. Returns a paginated list of content items with metadata. This is a read-only operation.',
+        parameters: buildReadContentListParameters()
+      }
+    }
+  },
+  read_source_list: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_source_list',
+        description: 'List source content items (YouTube videos, manual context, etc.) with optional filtering. Returns a paginated list of source content. This is a read-only operation.',
+        parameters: buildReadSourceListParameters()
+      }
+    }
+  },
+  read_workspace_summary: {
+    kind: 'read',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'read_workspace_summary',
+        description: 'Get a formatted summary of a content workspace. Returns a human-readable summary of the content, its version, sections, and source. This is a read-only operation.',
+        parameters: buildReadWorkspaceSummaryParameters()
+      }
+    }
   }
 }
 
@@ -194,11 +236,11 @@ function buildWriteContentParameters(): ParameterSchema {
       },
       sourceText: {
         type: ['string', 'null'],
-        description: 'Inline context or notes to draft from when no sourceContentId exists.'
+        description: 'Inline source text to use directly for generation. If provided without sourceContentId, will create source content first. Use this for pasted text, notes, or any source material.'
       },
       context: {
         type: ['string', 'null'],
-        description: 'Raw context text to use for generating content.'
+        description: 'Alias for sourceText. Raw context text to use for generating content. If both sourceText and context are provided, sourceText takes precedence.'
       },
       title: {
         type: ['string', 'null'],
@@ -265,37 +307,33 @@ function buildEditSectionParameters(): ParameterSchema {
   }
 }
 
-function buildFetchYouTubeParameters(): ParameterSchema {
+function buildSourceIngestParameters(): ParameterSchema {
   return {
     type: 'object',
     properties: {
-      youtubeUrl: {
+      sourceType: {
         type: 'string',
-        description: 'YouTube video URL to ingest (e.g., https://www.youtube.com/watch?v=VIDEO_ID or https://youtu.be/VIDEO_ID).'
+        enum: ['youtube', 'context'],
+        description: 'Type of source to ingest. Use "youtube" to fetch captions from a YouTube video, or "context" to save pasted text as source content.'
+      },
+      youtubeUrl: {
+        type: ['string', 'null'],
+        description: 'YouTube video URL to ingest (required if sourceType="youtube"). Example: https://www.youtube.com/watch?v=VIDEO_ID or https://youtu.be/VIDEO_ID.'
       },
       titleHint: {
         type: ['string', 'null'],
-        description: 'Optional title hint for the source content.'
-      }
-    },
-    required: ['youtubeUrl']
-  }
-}
-
-function buildSaveSourceParameters(): ParameterSchema {
-  return {
-    type: 'object',
-    properties: {
+        description: 'Optional title hint for YouTube source content (only used when sourceType="youtube").'
+      },
       context: {
-        type: 'string',
-        description: 'Raw context text to save as source content.'
+        type: ['string', 'null'],
+        description: 'Raw context text to save as source content (required if sourceType="context").'
       },
       title: {
         type: ['string', 'null'],
-        description: 'Optional title for the context source content.'
+        description: 'Optional title for context source content (only used when sourceType="context").'
       }
     },
-    required: ['context']
+    required: ['sourceType']
   }
 }
 
@@ -396,6 +434,93 @@ function buildReadSourceParameters(): ParameterSchema {
   }
 }
 
+function buildReadContentListParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      status: {
+        type: ['string', 'null'],
+        description: 'Filter by content status (draft, in_review, ready_for_publish, published, archived).'
+      },
+      contentType: {
+        type: ['string', 'null'],
+        description: 'Filter by content type (blog_post, newsletter, etc.).'
+      },
+      limit: {
+        type: ['number', 'null'],
+        minimum: 1,
+        maximum: 100,
+        description: 'Maximum number of items to return (default: 20, max: 100).'
+      },
+      offset: {
+        type: ['number', 'null'],
+        minimum: 0,
+        description: 'Number of items to skip for pagination (default: 0).'
+      },
+      orderBy: {
+        type: ['string', 'null'],
+        enum: ['updatedAt', 'createdAt', 'title', null],
+        description: 'Field to sort by (default: updatedAt).'
+      },
+      orderDirection: {
+        type: ['string', 'null'],
+        enum: ['asc', 'desc', null],
+        description: 'Sort direction (default: desc).'
+      }
+    }
+  }
+}
+
+function buildReadSourceListParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      sourceType: {
+        type: ['string', 'null'],
+        description: 'Filter by source type (youtube, manual_transcript, etc.).'
+      },
+      ingestStatus: {
+        type: ['string', 'null'],
+        description: 'Filter by ingest status (ingested, ingesting, failed, etc.).'
+      },
+      limit: {
+        type: ['number', 'null'],
+        minimum: 1,
+        maximum: 100,
+        description: 'Maximum number of items to return (default: 20, max: 100).'
+      },
+      offset: {
+        type: ['number', 'null'],
+        minimum: 0,
+        description: 'Number of items to skip for pagination (default: 0).'
+      },
+      orderBy: {
+        type: ['string', 'null'],
+        enum: ['updatedAt', 'createdAt', 'title', null],
+        description: 'Field to sort by (default: updatedAt).'
+      },
+      orderDirection: {
+        type: ['string', 'null'],
+        enum: ['asc', 'desc', null],
+        description: 'Sort direction (default: desc).'
+      }
+    }
+  }
+}
+
+function buildReadWorkspaceSummaryParameters(): ParameterSchema {
+  return {
+    type: 'object',
+    properties: {
+      contentId: {
+        type: 'string',
+        description: 'ID of the content workspace to summarize.'
+      }
+    },
+    required: ['contentId']
+  }
+}
+
 function safeParseArguments(input: string): Record<string, any> | null {
   try {
     return input ? JSON.parse(input) : {}
@@ -441,19 +566,11 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
     }
   }
 
-  if (toolCall.function.name === 'fetch_youtube') {
+  if (toolCall.function.name === 'source_ingest') {
     const { type: _omit, ...rest } = args
     return {
-      name: 'fetch_youtube',
-      arguments: rest as ChatToolInvocation<'fetch_youtube'>['arguments']
-    }
-  }
-
-  if (toolCall.function.name === 'save_source') {
-    const { type: _omit, ...rest } = args
-    return {
-      name: 'save_source',
-      arguments: rest as ChatToolInvocation<'save_source'>['arguments']
+      name: 'source_ingest',
+      arguments: rest as ChatToolInvocation<'source_ingest'>['arguments']
     }
   }
 
@@ -494,6 +611,30 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
     return {
       name: 'read_source',
       arguments: rest as ChatToolInvocation<'read_source'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_content_list') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_content_list',
+      arguments: rest as ChatToolInvocation<'read_content_list'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_source_list') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_source_list',
+      arguments: rest as ChatToolInvocation<'read_source_list'>['arguments']
+    }
+  }
+
+  if (toolCall.function.name === 'read_workspace_summary') {
+    const { type: _omit, ...rest } = args
+    return {
+      name: 'read_workspace_summary',
+      arguments: rest as ChatToolInvocation<'read_workspace_summary'>['arguments']
     }
   }
 

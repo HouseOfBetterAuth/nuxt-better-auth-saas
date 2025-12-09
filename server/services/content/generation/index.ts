@@ -25,6 +25,11 @@ import {
   extractMarkdownFromEnrichedMdx
 } from './assembly'
 import {
+  determineGenerationMode,
+  generateSyntheticContext,
+  type GenerationMode
+} from './context'
+import {
   ensureSourceContentChunksExist,
   findRelevantChunksForSection
 } from './chunking'
@@ -75,6 +80,7 @@ export const generateContentDraftFromSource = async (
     sourceContentId,
     sourceText,
     contentId,
+    conversationHistory,
     overrides,
     systemPrompt,
     temperature,
@@ -156,17 +162,35 @@ export const generateContentDraftFromSource = async (
     existingContent = row
   }
 
+  // Determine generation mode and generate synthetic context if needed
+  const generationMode = determineGenerationMode(input)
+  let conversationContext: string | null = null
+
+  if (generationMode === 'conversation' || generationMode === 'hybrid') {
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationContext = await generateSyntheticContext(conversationHistory)
+    }
+  }
+
+  // If no sourceText but we have conversation context, use it
+  if (!resolvedSourceText && conversationContext) {
+    resolvedSourceText = conversationContext
+    resolvedIngestMethod = 'conversation_context'
+  }
+
   if (!resolvedSourceText) {
     console.error('[generateContentDraftFromSource] Missing sourceText:', {
       sourceContentId,
       hasSourceContent: !!sourceContent,
       sourceTextLength: resolvedSourceText?.length || 0,
       sourceTextPreview: resolvedSourceText?.substring(0, 100) || 'null/empty',
-      ingestStatus: sourceContent?.ingestStatus
+      ingestStatus: sourceContent?.ingestStatus,
+      hasConversationHistory: !!conversationHistory,
+      conversationHistoryLength: conversationHistory?.length || 0
     })
     throw createError({
       statusCode: 400,
-      statusMessage: 'Source context is required to create a draft. Provide either sourceContentId or sourceText.'
+      statusMessage: 'Source context is required to create a draft. Provide either sourceContentId, sourceText, or conversationHistory.'
     })
   }
 
@@ -241,7 +265,8 @@ export const generateContentDraftFromSource = async (
     instructions: systemPrompt,
     chunks: chunks || [], // Ensure chunks is always an array
     sourceText: resolvedSourceText, // Pass inline sourceText if available
-    sourceTitle: sourceContent?.title ?? existingContent?.title ?? null
+    sourceTitle: sourceContent?.title ?? existingContent?.title ?? null,
+    conversationContext: conversationContext
   })
   pipelineStages.push('plan')
 
@@ -269,7 +294,9 @@ export const generateContentDraftFromSource = async (
     instructions: systemPrompt,
     temperature,
     organizationId,
-    sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null
+    sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null,
+    generationMode: generationMode,
+    conversationContext: conversationContext
   })
   pipelineStages.push('sections')
 

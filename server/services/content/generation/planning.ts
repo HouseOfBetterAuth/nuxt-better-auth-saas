@@ -16,12 +16,15 @@ export const generateContentOutline = async (params: {
   chunks: ContentChunk[] | null
   sourceText?: string | null
   sourceTitle?: string | null
+  conversationContext?: string | null
 }): Promise<ContentOutline> => {
   const preview = params.chunks && params.chunks.length > 0
     ? buildChunkPreviewText(params.chunks)
     : (params.sourceText
         ? params.sourceText.slice(0, 6000) + (params.sourceText.length > 6000 ? '...' : '')
-        : 'No context available.')
+        : (params.conversationContext
+            ? params.conversationContext.slice(0, 6000) + (params.conversationContext.length > 6000 ? '...' : '')
+            : 'No context available.'))
   const prompt = [
     `Plan a ${params.contentType}.`,
     params.sourceTitle ? `Source Title: ${params.sourceTitle}` : 'Source Title: Unknown',

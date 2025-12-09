@@ -19,7 +19,7 @@ export type ContentType = typeof CONTENT_TYPES[number]
  */
 export interface WriteContentRequestBody {
   /** Raw context text (alternative to sourceContentId - creates source content first) */
-  transcript?: string
+  context?: string
   /** ID of existing source content to generate from */
   sourceContentId?: string | null
   /** ID of existing content to update (deprecated - use edit_metadata or edit_section for edits) */
