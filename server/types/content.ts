@@ -27,7 +27,7 @@ export interface WriteContentRequestBody {
   /** ID of conversation that this content belongs to */
   conversationId?: string | null
   /** Optional conversation to attach generation messages to */
-  conversationId?: string | null
+  conversationContentId?: string | null
   /** Override title for the generated content */
   title?: string | null
   /** Override slug for the generated content */

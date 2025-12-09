@@ -75,7 +75,7 @@
           },
           "editing": {
             "title": "内容编辑器",
-            "description": "功能齐全的内容编辑器，支持逐章节编辑、Markdown 支持和博客草稿的版本控制。"
+            "description": "功能齐全的内容编辑器，支持逐章节编辑、Markdown 支持和博客内容的版本控制。"
           },
           "search": {
             "title": "语义搜索",
@@ -124,7 +124,7 @@
           },
           "editing": {
             "title": "コンテンツエディター",
-            "description": "セクションごとの編集、Markdownサポート、ブログドラフトのバージョン管理を備えたフル機能のコンテンツエディター。"
+            "description": "セクションごとの編集、Markdownサポート、ブログコンテンツのバージョン管理を備えたフル機能のコンテンツエディター。"
           },
           "search": {
             "title": "セマンティック検索",
@@ -173,7 +173,7 @@
           },
           "editing": {
             "title": "Éditeur de Contenu",
-            "description": "Éditeur de contenu complet avec édition section par section, support Markdown et contrôle de version pour vos brouillons de blog."
+            "description": "Éditeur de contenu complet avec édition section par section, support Markdown et contrôle de version pour votre contenu de blog."
           },
           "search": {
             "title": "Recherche Sémantique",

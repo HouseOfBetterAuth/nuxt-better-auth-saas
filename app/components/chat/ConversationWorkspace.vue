@@ -292,8 +292,8 @@ async function loadHeaderData() {
   }
 }
 
-const fetchWorkspaceChat = async (workspaceContentId: string | null, conversationId: string | null) => {
-  if (!workspaceContentId || !conversationId) {
+const fetchWorkspaceChat = async (workspaceContentId: string | null, existingConversationId: string | null) => {
+  if (!workspaceContentId) {
     return
   }
   if (pendingChatFetches.has(workspaceContentId)) {
@@ -303,9 +303,12 @@ const fetchWorkspaceChat = async (workspaceContentId: string | null, conversatio
   pendingChatFetches.add(workspaceContentId)
   chatLoading.value = true
   try {
-    // Get conversation for this content, then fetch messages/logs
-    const workspaceResponse = await $fetch<{ workspace: ContentResponse | null }>(`/api/content/${workspaceContentId}`)
-    const conversationId = workspaceResponse.workspace?.chatSession?.id
+    // Use existing conversation ID if provided, otherwise fetch from API
+    let conversationId = existingConversationId
+    if (!conversationId) {
+      const workspaceResponse = await $fetch<{ workspace: ContentResponse | null }>(`/api/content/${workspaceContentId}`)
+      conversationId = workspaceResponse.workspace?.chatSession?.id ?? null
+    }
 
     if (!conversationId) {
       return
@@ -839,7 +842,7 @@ function _insertSectionReference(sectionId: string) {
   prompt.value = prompt.value ? `${prompt.value.trimEnd()} ${token} ` : `${token} `
 }
 
-function handleCopy(message: ChatMessage) {
+async function handleCopy(message: ChatMessage) {
   const rawText = message.parts[0]?.text ?? ''
   const hasContent = rawText.trim().length > 0
 
@@ -853,7 +856,7 @@ function handleCopy(message: ChatMessage) {
   }
 
   try {
-    copy(rawText)
+    await copy(rawText)
     toast.add({
       title: 'Copied to clipboard',
       description: 'Message copied successfully.',
@@ -869,7 +872,7 @@ function handleCopy(message: ChatMessage) {
   }
 }
 
-function handleCopyFullMdx() {
+async function handleCopyFullMdx() {
   if (!hasFullMdx.value) {
     toast.add({
       title: 'No MDX available',
@@ -880,7 +883,7 @@ function handleCopyFullMdx() {
   }
 
   try {
-    copy(fullMdx.value)
+    await copy(fullMdx.value)
     toast.add({
       title: 'Draft copied',
       description: 'Frontmatter and body copied to clipboard.',
@@ -1238,9 +1241,7 @@ onBeforeUnmount(() => {
               </UBadge>
             </div>
           </template>
-          <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">
-{{ generatedContent }}
-            </pre>
+          <pre class="whitespace-pre-wrap text-sm bg-muted p-4 rounded-md overflow-x-auto">{{ generatedContent }}</pre>
         </UCard>
         <UAlert
           v-else

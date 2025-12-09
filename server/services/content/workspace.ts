@@ -51,8 +51,10 @@ export async function getContentWorkspacePayload(
     createdAt: Date
   }> = []
 
+  let conversation: typeof schema.conversation.$inferSelect | null = null
+
   try {
-    const conversation = await findConversation(db, organizationId, record.content.id)
+    conversation = await findConversation(db, organizationId, record.content.id)
 
     if (conversation) {
       // conversation already set above

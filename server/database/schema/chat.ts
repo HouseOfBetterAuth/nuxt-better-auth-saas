@@ -1,5 +1,5 @@
-import { relations } from 'drizzle-orm'
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { v7 as uuidv7 } from 'uuid'
 import { organization, user } from './auth'
 import { content } from './content'
@@ -28,7 +28,12 @@ export const conversation = pgTable('conversation', {
 }, table => ({
   organizationIdx: index('conversation_org_idx').on(table.organizationId),
   contentIdx: index('conversation_content_idx').on(table.contentId),
-  sourceIdx: index('conversation_source_idx').on(table.sourceContentId)
+  sourceIdx: index('conversation_source_idx').on(table.sourceContentId),
+  // Unique constraint on (organizationId, contentId) where contentId is not null
+  // Prevents duplicate conversations for the same content within an organization
+  orgContentUnique: uniqueIndex('conversation_org_content_unique_idx')
+    .on(table.organizationId, table.contentId)
+    .where(sql`${table.contentId} IS NOT NULL`)
 }))
 
 export const conversationMessage = pgTable('conversation_message', {

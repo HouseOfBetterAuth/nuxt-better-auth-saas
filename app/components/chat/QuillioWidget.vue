@@ -32,6 +32,7 @@ const {
   sendMessage,
   isBusy,
   sessionContentId,
+  conversationId,
   resetSession,
   selectedContentType,
   stopResponse,
@@ -190,7 +191,7 @@ const debouncedRefreshConversations = useDebounceFn(() => refreshConversations()
 // Populate conversation list cache for header reuse
 const conversationListCache = useState<Map<string, any>>('conversation-list-cache', () => new Map())
 
-const _updateLocalConversationStatus = (conversationId: string, status: string) => {
+const updateLocalConversationStatus = (conversationId: string, status: string) => {
   const currentPayload = conversationsPayload.value
   if (!currentPayload?.conversations?.length)
     return
@@ -635,10 +636,6 @@ const activateWorkspace = async (conversationId: string | null) => {
   } else {
     await syncWorkspace(conversationId)
   }
-}
-
-const _openWorkspace = async (entry: { id: string, slug?: string | null }) => {
-  await activateWorkspace(entry.id)
 }
 
 const openConversation = async (entry: { id: string }) => {

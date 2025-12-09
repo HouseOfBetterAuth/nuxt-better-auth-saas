@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { createError, getRouterParams } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { logAuditEvent } from '~~/server/utils/auditLogger'
@@ -34,13 +34,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (conversation.status === 'archived') {
-    return { success: true, status: 'archived' }
-  }
-
   const now = new Date()
 
-  await db
+  // Atomic update: only update if status is not already 'archived'
+  const [updatedConversation] = await db
     .update(schema.conversation)
     .set({
       status: 'archived',
@@ -48,16 +45,25 @@ export default defineEventHandler(async (event) => {
     })
     .where(and(
       eq(schema.conversation.id, conversationId),
-      eq(schema.conversation.organizationId, organizationId)
+      eq(schema.conversation.organizationId, organizationId),
+      ne(schema.conversation.status, 'archived')
     ))
+    .returning()
 
+  // Determine if the conversation was actually archived by this operation
+  const wasArchived = updatedConversation !== undefined
+
+  // Always log an audit event for the delete attempt
   await logAuditEvent({
     userId: user.id,
     category: 'conversation',
     action: 'archive',
     targetType: 'conversation',
     targetId: conversationId,
-    details: JSON.stringify({ organizationId })
+    details: JSON.stringify({
+      organizationId,
+      alreadyArchived: !wasArchived
+    })
   })
 
   return { success: true, status: 'archived' }

@@ -65,11 +65,6 @@ export async function getOrCreateConversationForContent(
   db: NodePgDatabase<typeof schema>,
   input: EnsureConversationInput
 ) {
-  const existing = await findConversation(db, input.organizationId, input.contentId ?? null)
-  if (existing) {
-    return existing
-  }
-
   const status: ConversationStatus = input.status ?? 'active'
 
   // Ensure null values are explicitly null (not undefined or empty strings)
@@ -77,7 +72,39 @@ export async function getOrCreateConversationForContent(
   const sourceContentId = input.sourceContentId?.trim() || null
   const createdByUserId = input.createdByUserId?.trim() || null
 
-  const [conv] = await db
+  // Use atomic upsert to prevent race conditions
+  // If contentId is null, we can't use the unique constraint, so fall back to find-then-insert
+  if (!contentId) {
+    const existing = await findConversation(db, input.organizationId, null)
+    if (existing) {
+      return existing
+    }
+
+    const result = await db
+      .insert(schema.conversation)
+      .values({
+        organizationId: input.organizationId,
+        contentId: null,
+        sourceContentId,
+        createdByUserId,
+        status,
+        metadata: input.metadata ?? null
+      })
+      .returning()
+
+    const conv = (Array.isArray(result) ? result[0] : null) as typeof schema.conversation.$inferSelect | null
+    if (!conv) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to create conversation'
+      })
+    }
+
+    return conv
+  }
+
+  // For non-null contentId, use atomic upsert with ON CONFLICT
+  const result = await db
     .insert(schema.conversation)
     .values({
       organizationId: input.organizationId,
@@ -87,7 +114,24 @@ export async function getOrCreateConversationForContent(
       status,
       metadata: input.metadata ?? null
     })
+    .onConflictDoNothing({
+      target: [schema.conversation.organizationId, schema.conversation.contentId]
+    })
     .returning()
+
+  const conv = (Array.isArray(result) ? result[0] : null) as typeof schema.conversation.$inferSelect | null
+
+  // If conflict occurred, fetch the existing conversation
+  if (!conv) {
+    const existing = await findConversation(db, input.organizationId, contentId)
+    if (!existing) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to create or retrieve conversation'
+      })
+    }
+    return existing
+  }
 
   return conv
 }
@@ -174,12 +218,18 @@ export async function addLogEntryToConversation(
   return log
 }
 
+export interface GetConversationMessagesOptions {
+  limit?: number
+  offset?: number
+}
+
 export async function getConversationMessages(
   db: NodePgDatabase<typeof schema>,
   conversationId: string,
-  organizationId: string
+  organizationId: string,
+  options?: GetConversationMessagesOptions
 ) {
-  return await db
+  const baseQuery = db
     .select()
     .from(schema.conversationMessage)
     .where(and(
@@ -187,6 +237,19 @@ export async function getConversationMessages(
       eq(schema.conversationMessage.organizationId, organizationId)
     ))
     .orderBy(schema.conversationMessage.createdAt)
+
+  if (options?.limit !== undefined) {
+    if (options?.offset !== undefined) {
+      return await baseQuery.limit(options.limit).offset(options.offset)
+    }
+    return await baseQuery.limit(options.limit)
+  }
+
+  if (options?.offset !== undefined) {
+    return await baseQuery.offset(options.offset)
+  }
+
+  return await baseQuery
 }
 
 export async function getConversationLogs(

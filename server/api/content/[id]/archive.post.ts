@@ -15,39 +15,10 @@ export default defineEventHandler(async (event) => {
   const { id } = getRouterParams(event)
   const contentId = validateUUID(id, 'id')
 
-  const [content] = await db
-    .select({
-      id: schema.content.id,
-      status: schema.content.status
-    })
-    .from(schema.content)
-    .where(and(
-      eq(schema.content.id, contentId),
-      eq(schema.content.organizationId, organizationId)
-    ))
-    .limit(1)
-
-  if (!content) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Content not found'
-    })
-  }
-
-  if (content.status === 'archived') {
-    return { success: true, status: 'archived' }
-  }
-
-  if (content.status !== 'draft') {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Only content with draft status can be archived'
-    })
-  }
-
   const now = new Date()
 
-  await db
+  // Atomic UPDATE with status check in WHERE clause
+  const [updatedContent] = await db
     .update(schema.content)
     .set({
       status: 'archived',
@@ -56,8 +27,41 @@ export default defineEventHandler(async (event) => {
     })
     .where(and(
       eq(schema.content.id, contentId),
-      eq(schema.content.organizationId, organizationId)
+      eq(schema.content.organizationId, organizationId),
+      eq(schema.content.status, 'draft')
     ))
+    .returning()
+
+  // If no rows were affected, check why
+  if (!updatedContent) {
+    const [content] = await db
+      .select({
+        id: schema.content.id,
+        status: schema.content.status
+      })
+      .from(schema.content)
+      .where(and(
+        eq(schema.content.id, contentId),
+        eq(schema.content.organizationId, organizationId)
+      ))
+      .limit(1)
+
+    if (!content) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Content not found'
+      })
+    }
+
+    if (content.status === 'archived') {
+      return { success: true, status: 'archived' }
+    }
+
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Only content with draft status can be archived'
+    })
+  }
 
   await logAuditEvent({
     userId: user.id,
