@@ -1,7 +1,7 @@
 import type { ChatToolInvocation } from '~~/server/services/chat/tools'
 import type { ChatRequestBody } from '~~/server/types/api'
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq } from 'drizzle-orm'
 import { createError, setHeader, setResponseStatus } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { runChatAgentWithMultiPassStream } from '~~/server/services/chat/agent'
@@ -18,7 +18,7 @@ import {
 } from '~~/server/services/conversation'
 import { generateConversationTitle } from '~~/server/services/conversation/title'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
-import { createSourceContentFromTranscript } from '~~/server/services/sourceContent/manualTranscript'
+import { createSourceContentFromContext } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
 import { ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
@@ -172,154 +172,159 @@ async function executeChatTool(
 ): Promise<ToolExecutionResult> {
   const { mode, db, organizationId, userId, conversationId } = context
 
-  // Import getToolKind for mode enforcement
-  const { getToolKind } = await import('~~/server/services/chat/tools')
-  const toolKind = getToolKind(toolInvocation.name)
+  // Import mode enforcement functions
+  const { isToolAllowedInMode, getModeEnforcementError } = await import('~~/server/services/chat/tools')
 
   // Enforce read-only in chat mode
-  if (mode === 'chat' && (toolKind === 'write' || toolKind === 'ingest')) {
+  if (!isToolAllowedInMode(toolInvocation.name, mode)) {
     return {
       success: false,
-      error: `Tool "${toolInvocation.name}" is not available in chat mode (it can modify content or ingest new data). Switch to agent mode.`
+      error: getModeEnforcementError(toolInvocation.name)
     }
   }
 
-  if (toolInvocation.name === 'fetch_youtube') {
-    // TypeScript now knows this is fetch_youtube
-    const args = toolInvocation.arguments as ChatToolInvocation<'fetch_youtube'>['arguments']
-    const youtubeUrl = validateRequiredString(args.youtubeUrl, 'youtubeUrl')
-    const titleHint = validateOptionalString(args.titleHint, 'titleHint')
+  if (toolInvocation.name === 'source_ingest') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'source_ingest'>['arguments']
+    const sourceType = validateRequiredString(args.sourceType, 'sourceType') as 'youtube' | 'context'
 
-    if (!runtimeConfig.enableYoutubeIngestion) {
-      return {
-        success: false,
-        error: 'YouTube ingestion is currently disabled'
-      }
-    }
+    if (sourceType === 'youtube') {
+      const youtubeUrl = validateRequiredString(args.youtubeUrl, 'youtubeUrl')
+      const titleHint = validateOptionalString(args.titleHint, 'titleHint')
 
-    let videoId: string | null = null
-    try {
-      const url = new URL(youtubeUrl)
-      videoId = extractYouTubeId(url)
-    } catch {
-      videoId = null
-    }
-
-    if (!videoId) {
-      return {
-        success: false,
-        error: 'Unable to parse YouTube video ID from the provided URL'
-      }
-    }
-
-    try {
-      const upserted = await upsertSourceContent(db, {
-        organizationId,
-        userId,
-        sourceType: 'youtube',
-        externalId: videoId,
-        title: titleHint ?? undefined,
-        mode: context.mode,
-        metadata: {
-          originalUrl: youtubeUrl,
-          youtube: {
-            videoId
-          }
-        }
-      })
-
-      if (!upserted) {
+      if (!runtimeConfig.enableYoutubeIngestion) {
         return {
           success: false,
-          error: 'Failed to store source content'
+          error: 'YouTube ingestion is currently disabled'
         }
       }
 
-      const ingested = await ingestYouTubeVideoAsSourceContent({
-        db,
-        sourceContentId: upserted.id,
-        organizationId,
-        userId,
-        videoId
-      })
+      let videoId: string | null = null
+      try {
+        const url = new URL(youtubeUrl)
+        videoId = extractYouTubeId(url)
+      } catch {
+        videoId = null
+      }
 
-      if (!ingested) {
+      if (!videoId) {
         return {
           success: false,
-          error: 'Failed to ingest YouTube video'
+          error: 'Unable to parse YouTube video ID from the provided URL'
         }
       }
 
-      return {
-        success: true,
-        result: {
-          sourceContentId: ingested.id,
-          ingestStatus: ingested.ingestStatus,
-          sourceContent: {
-            id: ingested.id,
-            title: ingested.title,
-            ingestStatus: ingested.ingestStatus
+      try {
+        const upserted = await upsertSourceContent(db, {
+          organizationId,
+          userId,
+          sourceType: 'youtube',
+          externalId: videoId,
+          title: titleHint ?? undefined,
+          mode: context.mode,
+          metadata: {
+            originalUrl: youtubeUrl,
+            youtube: {
+              videoId
+            }
           }
-        },
-        sourceContentId: ingested.id
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error?.message || 'Failed to ingest YouTube video'
-      }
-    }
-  }
+        })
 
-  if (toolInvocation.name === 'save_source') {
-    // TypeScript now knows this is save_source
-    const args = toolInvocation.arguments as ChatToolInvocation<'save_source'>['arguments']
-    const transcript = validateRequiredString(args.transcript, 'transcript')
-    const title = validateOptionalString(args.title, 'title')
-
-    try {
-      const manualSource = await createSourceContentFromTranscript({
-        db,
-        organizationId,
-        userId,
-        transcript,
-        title: title ?? null,
-        mode: context.mode,
-        metadata: { createdVia: 'chat_save_source_tool' },
-        onProgress: async (progressMessage) => {
-          await addMessageToConversation(db, {
-            conversationId,
-            organizationId,
-            role: 'assistant',
-            content: progressMessage
-          })
+        if (!upserted) {
+          return {
+            success: false,
+            error: 'Failed to store source content'
+          }
         }
-      })
 
-      if (!manualSource) {
+        const ingested = await ingestYouTubeVideoAsSourceContent({
+          db,
+          sourceContentId: upserted.id,
+          organizationId,
+          userId,
+          videoId
+        })
+
+        if (!ingested) {
+          return {
+            success: false,
+            error: 'Failed to ingest YouTube video'
+          }
+        }
+
+        return {
+          success: true,
+          result: {
+            sourceContentId: ingested.id,
+            sourceType: 'youtube',
+            ingestStatus: ingested.ingestStatus,
+            sourceContent: {
+              id: ingested.id,
+              title: ingested.title,
+              ingestStatus: ingested.ingestStatus
+            }
+          },
+          sourceContentId: ingested.id
+        }
+      } catch (error: any) {
         return {
           success: false,
-          error: 'Failed to create source content from transcript'
+          error: error?.message || 'Failed to ingest YouTube video'
         }
       }
+    } else if (sourceType === 'context') {
+      const contextText = validateRequiredString(args.context, 'context')
+      const title = validateOptionalString(args.title, 'title')
 
-      return {
-        success: true,
-        result: {
-          sourceContentId: manualSource.id,
-          ingestStatus: manualSource.ingestStatus,
-          sourceContent: {
-            id: manualSource.id,
-            title: manualSource.title,
-            ingestStatus: manualSource.ingestStatus
+      try {
+        const manualSource = await createSourceContentFromContext({
+          db,
+          organizationId,
+          userId,
+          context: contextText,
+          title: title ?? null,
+          mode: context.mode,
+          metadata: { createdVia: 'chat_source_ingest_tool' },
+          onProgress: async (progressMessage) => {
+            await addMessageToConversation(db, {
+              conversationId,
+              organizationId,
+              role: 'assistant',
+              content: progressMessage
+            })
           }
-        },
-        sourceContentId: manualSource.id
+        })
+
+        if (!manualSource) {
+          return {
+            success: false,
+            error: 'Failed to create source content from context'
+          }
+        }
+
+        return {
+          success: true,
+          result: {
+            sourceContentId: manualSource.id,
+            sourceType: 'context',
+            ingestStatus: manualSource.ingestStatus,
+            sourceContent: {
+              id: manualSource.id,
+              title: manualSource.title,
+              ingestStatus: manualSource.ingestStatus
+            }
+          },
+          sourceContentId: manualSource.id
+        }
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error?.message || 'Failed to save context'
+        }
       }
-    } catch (error: any) {
+    } else {
       return {
         success: false,
-        error: error?.message || 'Failed to save transcript'
+        error: `Invalid sourceType: ${sourceType}. Must be 'youtube' or 'context'.`
       }
     }
   }
@@ -441,100 +446,152 @@ async function executeChatTool(
     }
   }
 
-  if (toolInvocation.name === 'write_content') {
-    // TypeScript now knows this is write_content
-    const args = toolInvocation.arguments as ChatToolInvocation<'write_content'>['arguments']
+  if (toolInvocation.name === 'content_write') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'content_write'>['arguments']
+    const action = validateRequiredString(args.action, 'action') as 'create' | 'enrich'
 
-    try {
-      let resolvedSourceContentId: string | null = args.sourceContentId ?? null
-      const resolvedSourceText: string | null = args.sourceText ?? null
+    if (action === 'create') {
+      try {
+        let resolvedSourceContentId: string | null = args.sourceContentId ?? null
+        // Handle both sourceText and context parameters (context is alias for sourceText)
+        const resolvedSourceText: string | null = args.sourceText ?? args.context ?? null
 
-      // If sourceText/transcript is provided but no sourceContentId, create source content first
-      if (resolvedSourceText && !resolvedSourceContentId) {
-        const manualSource = await createSourceContentFromTranscript({
-          db,
-          organizationId,
-          userId,
-          transcript: resolvedSourceText,
-          mode: context.mode,
-          metadata: { createdVia: 'chat_write_content_tool' },
-          onProgress: async (progressMessage) => {
-            await addMessageToConversation(db, {
-              conversationId,
-              organizationId,
-              role: 'assistant',
-              content: progressMessage
-            })
+        // If sourceText/context is provided but no sourceContentId, create source content first
+        if (resolvedSourceText && !resolvedSourceContentId) {
+          const manualSource = await createSourceContentFromContext({
+            db,
+            organizationId,
+            userId,
+            context: resolvedSourceText,
+            mode: context.mode,
+            metadata: { createdVia: 'chat_content_write_tool' },
+            onProgress: async (progressMessage) => {
+              await addMessageToConversation(db, {
+                conversationId,
+                organizationId,
+                role: 'assistant',
+                content: progressMessage
+              })
+            }
+          })
+
+          if (!manualSource) {
+            return {
+              success: false,
+              error: 'Failed to create source content from context'
+            }
           }
-        })
 
-        if (!manualSource) {
+          resolvedSourceContentId = manualSource.id
+        }
+
+        // Get conversation history for context generation
+        const previousMessages = await getConversationMessages(db, conversationId, organizationId)
+        const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
+          role: message.role === 'assistant'
+            ? 'assistant'
+            : message.role === 'system'
+              ? 'system'
+              : 'user',
+          content: message.content
+        }))
+
+        // Allow generation with conversation history even if no source content
+        if (!resolvedSourceContentId && !resolvedSourceText && (!conversationHistory || conversationHistory.length === 0)) {
           return {
             success: false,
-            error: 'Failed to create source content from transcript'
+            error: 'Either sourceContentId, sourceText/context, or conversationHistory is required for action="create"'
           }
         }
 
-        resolvedSourceContentId = manualSource.id
-      }
+        let sanitizedSystemPrompt: string | undefined
+        if (args.systemPrompt !== undefined && args.systemPrompt !== null) {
+          const trimmed = validateRequiredString(args.systemPrompt, 'systemPrompt')
+          sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
+        }
 
-      if (!resolvedSourceContentId && !resolvedSourceText) {
+        let sanitizedTemperature = 1
+        if (args.temperature !== undefined && args.temperature !== null) {
+          sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
+        }
+
+        const generationResult = await generateContentFromSource(db, {
+          organizationId,
+          userId,
+          sourceContentId: resolvedSourceContentId ?? null,
+          sourceText: resolvedSourceText,
+          conversationHistory: conversationHistory.length > 0 ? conversationHistory : null,
+          contentId: null, // action='create' only creates new content, never updates existing ones
+          event: context.event,
+          mode: context.mode,
+          overrides: {
+            title: args.title ? validateRequiredString(args.title, 'title') : null,
+            slug: args.slug ? validateRequiredString(args.slug, 'slug') : null,
+            status: args.status ? validateEnum(args.status, CONTENT_STATUSES, 'status') : undefined,
+            primaryKeyword: args.primaryKeyword ? validateRequiredString(args.primaryKeyword, 'primaryKeyword') : null,
+            targetLocale: args.targetLocale ? validateRequiredString(args.targetLocale, 'targetLocale') : null,
+            contentType: args.contentType
+              ? validateEnum(args.contentType, CONTENT_TYPES, 'contentType')
+              : DEFAULT_CONTENT_TYPE
+          },
+          systemPrompt: sanitizedSystemPrompt,
+          temperature: sanitizedTemperature
+        })
+
+        return {
+          success: true,
+          result: {
+            contentId: generationResult.content.id,
+            versionId: generationResult.version.id,
+            content: {
+              id: generationResult.content.id,
+              title: generationResult.content.title,
+              slug: generationResult.content.slug
+            }
+          },
+          contentId: generationResult.content.id
+        }
+      } catch (error: any) {
         return {
           success: false,
-          error: 'Either sourceContentId or sourceText/transcript is required'
+          error: error?.message || 'Failed to create content'
         }
       }
+    } else if (action === 'enrich') {
+      const contentId = validateUUID(args.contentId, 'contentId')
+      const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
 
-      let sanitizedSystemPrompt: string | undefined
-      if (args.systemPrompt !== undefined && args.systemPrompt !== null) {
-        const trimmed = validateRequiredString(args.systemPrompt, 'systemPrompt')
-        sanitizedSystemPrompt = trimmed.length > 2000 ? trimmed.slice(0, 2000) : trimmed
+      try {
+        const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
+        const result = await refreshContentVersionMetadata(db, {
+          organizationId,
+          userId,
+          contentId,
+          baseUrl: baseUrl ?? undefined
+        })
+
+        return {
+          success: true,
+          result: {
+            contentId: result.content.id,
+            versionId: result.version.id,
+            content: {
+              id: result.content.id,
+              title: result.content.title
+            }
+          },
+          contentId: result.content.id
+        }
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error?.message || 'Failed to enrich content'
+        }
       }
-
-      let sanitizedTemperature = 1
-      if (args.temperature !== undefined && args.temperature !== null) {
-        sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
-      }
-
-      const generationResult = await generateContentFromSource(db, {
-        organizationId,
-        userId,
-        sourceContentId: resolvedSourceContentId ?? null,
-        sourceText: resolvedSourceText,
-        contentId: null, // write_content only creates new content, never updates existing ones
-        event: context.event,
-        mode: context.mode,
-        overrides: {
-          title: args.title ? validateRequiredString(args.title, 'title') : null,
-          slug: args.slug ? validateRequiredString(args.slug, 'slug') : null,
-          status: args.status ? validateEnum(args.status, CONTENT_STATUSES, 'status') : undefined,
-          primaryKeyword: args.primaryKeyword ? validateRequiredString(args.primaryKeyword, 'primaryKeyword') : null,
-          targetLocale: args.targetLocale ? validateRequiredString(args.targetLocale, 'targetLocale') : null,
-          contentType: args.contentType
-            ? validateEnum(args.contentType, CONTENT_TYPES, 'contentType')
-            : DEFAULT_CONTENT_TYPE
-        },
-        systemPrompt: sanitizedSystemPrompt,
-        temperature: sanitizedTemperature
-      })
-
-      return {
-        success: true,
-        result: {
-          contentId: generationResult.content.id,
-          versionId: generationResult.version.id,
-          content: {
-            id: generationResult.content.id,
-            title: generationResult.content.title,
-            slug: generationResult.content.slug
-          }
-        },
-        contentId: generationResult.content.id
-      }
-    } catch (error: any) {
+    } else {
       return {
         success: false,
-        error: error?.message || 'Failed to generate content'
+        error: `Invalid action: ${action}. Must be 'create' or 'enrich'.`
       }
     }
   }
@@ -644,40 +701,6 @@ async function executeChatTool(
       return {
         success: false,
         error: error?.message || 'Failed to patch section'
-      }
-    }
-  }
-
-  if (toolInvocation.name === 'enrich_content') {
-    const args = toolInvocation.arguments as ChatToolInvocation<'enrich_content'>['arguments']
-    const contentId = validateUUID(args.contentId, 'contentId')
-    const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
-
-    try {
-      const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
-      const result = await refreshContentVersionMetadata(db, {
-        organizationId,
-        userId,
-        contentId,
-        baseUrl: baseUrl ?? undefined
-      })
-
-      return {
-        success: true,
-        result: {
-          contentId: result.content.id,
-          versionId: result.version.id,
-          content: {
-            id: result.content.id,
-            title: result.content.title
-          }
-        },
-        contentId: result.content.id
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error?.message || 'Failed to re-enrich content'
       }
     }
   }
@@ -875,6 +898,275 @@ async function executeChatTool(
     }
   }
 
+  if (toolInvocation.name === 'read_content_list') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'read_content_list'>['arguments']
+
+    try {
+      const DEFAULT_LIMIT = 20
+      const MAX_LIMIT = 100
+
+      // Parse and validate limit
+      let limit = args.limit !== undefined && args.limit !== null
+        ? validateNumber(args.limit, 'limit', 1, MAX_LIMIT)
+        : DEFAULT_LIMIT
+      limit = Math.min(limit, MAX_LIMIT)
+
+      // Parse and validate offset
+      const offset = args.offset !== undefined && args.offset !== null
+        ? validateNumber(args.offset, 'offset', 0)
+        : 0
+
+      // Build where clauses
+      const whereClauses = [eq(schema.content.organizationId, organizationId)]
+
+      if (args.status !== undefined && args.status !== null) {
+        const status = validateRequiredString(args.status, 'status')
+        whereClauses.push(eq(schema.content.status, status))
+      }
+
+      if (args.contentType !== undefined && args.contentType !== null) {
+        const contentType = validateRequiredString(args.contentType, 'contentType')
+        whereClauses.push(eq(schema.content.contentType, contentType))
+      }
+
+      const whereClause = whereClauses.length > 1 ? and(...whereClauses) : whereClauses[0]
+
+      // Determine order by
+      const orderByField = args.orderBy || 'updatedAt'
+      const orderDirection = args.orderDirection || 'desc'
+
+      let orderByClause
+      if (orderByField === 'title') {
+        orderByClause = orderDirection === 'asc' ? asc(schema.content.title) : desc(schema.content.title)
+      } else if (orderByField === 'createdAt') {
+        orderByClause = orderDirection === 'asc' ? asc(schema.content.createdAt) : desc(schema.content.createdAt)
+      } else {
+        // Default to updatedAt
+        orderByClause = orderDirection === 'asc' ? asc(schema.content.updatedAt) : desc(schema.content.updatedAt)
+      }
+
+      // Get total count
+      const totalResult = await db
+        .select({ value: count() })
+        .from(schema.content)
+        .where(whereClause)
+
+      const total = Number(totalResult[0]?.value ?? 0)
+
+      // Get items
+      const rows = await db
+        .select({
+          content: schema.content,
+          currentVersion: schema.contentVersion
+        })
+        .from(schema.content)
+        .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset)
+
+      const items = rows.map(row => ({
+        id: row.content.id,
+        title: row.content.title,
+        status: row.content.status,
+        contentType: row.content.contentType,
+        slug: row.content.slug,
+        primaryKeyword: row.content.primaryKeyword,
+        targetLocale: row.content.targetLocale,
+        createdAt: row.content.createdAt.toISOString(),
+        updatedAt: row.content.updatedAt.toISOString(),
+        hasVersion: row.currentVersion !== null,
+        sourceContentId: row.content.sourceContentId
+      }))
+
+      return {
+        success: true,
+        result: {
+          items,
+          total,
+          limit,
+          offset
+        }
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || 'Failed to list content'
+      }
+    }
+  }
+
+  if (toolInvocation.name === 'read_source_list') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'read_source_list'>['arguments']
+
+    try {
+      const DEFAULT_LIMIT = 20
+      const MAX_LIMIT = 100
+
+      // Parse and validate limit
+      let limit = args.limit !== undefined && args.limit !== null
+        ? validateNumber(args.limit, 'limit', 1, MAX_LIMIT)
+        : DEFAULT_LIMIT
+      limit = Math.min(limit, MAX_LIMIT)
+
+      // Parse and validate offset
+      const offset = args.offset !== undefined && args.offset !== null
+        ? validateNumber(args.offset, 'offset', 0)
+        : 0
+
+      // Build where clauses
+      const whereClauses = [eq(schema.sourceContent.organizationId, organizationId)]
+
+      if (args.sourceType !== undefined && args.sourceType !== null) {
+        const sourceType = validateRequiredString(args.sourceType, 'sourceType')
+        whereClauses.push(eq(schema.sourceContent.sourceType, sourceType))
+      }
+
+      if (args.ingestStatus !== undefined && args.ingestStatus !== null) {
+        const ingestStatus = validateRequiredString(args.ingestStatus, 'ingestStatus')
+        // Validate against enum if available
+        type IngestStatus = (typeof schema.ingestStatusEnum)['enumValues'][number]
+        if (schema.ingestStatusEnum.enumValues.includes(ingestStatus as any)) {
+          whereClauses.push(eq(schema.sourceContent.ingestStatus, ingestStatus as IngestStatus))
+        }
+      }
+
+      const whereClause = whereClauses.length > 1 ? and(...whereClauses) : whereClauses[0]
+
+      // Determine order by
+      const orderByField = args.orderBy || 'updatedAt'
+      const orderDirection = args.orderDirection || 'desc'
+
+      let orderByClause
+      if (orderByField === 'title') {
+        orderByClause = orderDirection === 'asc' ? asc(schema.sourceContent.title) : desc(schema.sourceContent.title)
+      } else if (orderByField === 'createdAt') {
+        orderByClause = orderDirection === 'asc' ? asc(schema.sourceContent.createdAt) : desc(schema.sourceContent.createdAt)
+      } else {
+        // Default to updatedAt
+        orderByClause = orderDirection === 'asc' ? asc(schema.sourceContent.updatedAt) : desc(schema.sourceContent.updatedAt)
+      }
+
+      // Get total count
+      const totalResult = await db
+        .select({ value: count() })
+        .from(schema.sourceContent)
+        .where(whereClause)
+
+      const total = Number(totalResult[0]?.value ?? 0)
+
+      // Get items
+      const rows = await db
+        .select()
+        .from(schema.sourceContent)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset)
+
+      const items = rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        sourceType: row.sourceType,
+        ingestStatus: row.ingestStatus,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        hasContext: row.sourceText !== null && row.sourceText.length > 0
+      }))
+
+      return {
+        success: true,
+        result: {
+          items,
+          total,
+          limit,
+          offset
+        }
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || 'Failed to list source content'
+      }
+    }
+  }
+
+  if (toolInvocation.name === 'read_workspace_summary') {
+    const args = toolInvocation.arguments as ChatToolInvocation<'read_workspace_summary'>['arguments']
+    const contentId = validateUUID(args.contentId, 'contentId')
+
+    try {
+      const rows = await db
+        .select({
+          content: schema.content,
+          sourceContent: schema.sourceContent,
+          currentVersion: schema.contentVersion
+        })
+        .from(schema.content)
+        .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
+        .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
+        .where(and(
+          eq(schema.content.organizationId, organizationId),
+          eq(schema.content.id, contentId)
+        ))
+        .limit(1)
+
+      const record = rows[0]
+
+      if (!record || !record.content) {
+        return {
+          success: false,
+          error: 'Content not found'
+        }
+      }
+
+      // Build workspace summary using existing helper
+      const summary = buildWorkspaceSummary({
+        content: record.content,
+        currentVersion: record.currentVersion ?? undefined,
+        sourceContent: record.sourceContent ?? undefined
+      })
+
+      // Extract section count
+      const sections = record.currentVersion?.sections
+      const sectionCount = Array.isArray(sections) ? sections.length : 0
+
+      return {
+        success: true,
+        result: {
+          contentId: record.content.id,
+          summary: summary || 'No summary available for this workspace.',
+          content: {
+            id: record.content.id,
+            title: record.content.title,
+            status: record.content.status,
+            contentType: record.content.contentType
+          },
+          version: record.currentVersion
+            ? {
+                id: record.currentVersion.id,
+                version: record.currentVersion.version,
+                sectionCount
+              }
+            : null,
+          sourceContent: record.sourceContent
+            ? {
+                id: record.sourceContent.id,
+                title: record.sourceContent.title,
+                sourceType: record.sourceContent.sourceType
+              }
+            : null
+        }
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || 'Failed to read workspace summary'
+      }
+    }
+  }
+
   return {
     success: false,
     error: `Unknown tool: ${toolInvocation.name}`
@@ -903,14 +1195,14 @@ async function executeChatTool(
  * - Error handling - automatic retries with configurable limits
  *
  * **Modes:**
- * - `chat` (read-only): Can use read tools (`read_content`, `read_section`, `read_source`) to inspect content
- *   but cannot modify content or ingest new data. Write/ingest tools are filtered out.
+ * - `chat` (read-only): Can use read tools (`read_content`, `read_section`, `read_source`, `read_content_list`, `read_source_list`, `read_workspace_summary`) to inspect content
+ *   but cannot modify content or ingest new data. Write/ingest tools are filtered out at both the tool selection and execution layers.
  * - `agent` (read+write): Full toolset available including write and ingest operations.
  *
  * **Available Tools:**
- * - Read tools (available in both modes): `read_content`, `read_section`, `read_source`
- * - Write tools (agent mode only): `write_content`, `edit_section`, `edit_metadata`, `enrich_content`
- * - Ingest tools (agent mode only): `fetch_youtube`, `save_source`
+ * - Read tools (available in both modes): `read_content`, `read_section`, `read_source`, `read_content_list`, `read_source_list`, `read_workspace_summary`
+ * - Write tools (agent mode only): `content_write` (with action="create" or action="enrich"), `edit_section`, `edit_metadata`
+ * - Ingest tools (agent mode only): `source_ingest` (with sourceType="youtube" or sourceType="context")
  *
  * @contract
  * **Input:**
@@ -951,8 +1243,8 @@ async function executeChatTool(
  * }
  *
  * // The agent will automatically:
- * // 1. Call fetch_youtube tool to fetch captions
- * // 2. Call write_content tool to create the content
+ * // 1. Call source_ingest tool with sourceType="youtube" to fetch captions
+ * // 2. Call content_write tool with action="create" to create the content
  * // 3. Return a friendly message confirming completion
  * ```
  *
@@ -1374,7 +1666,7 @@ export default defineEventHandler(async (event) => {
               trackReadySource(sourceRecord, { isNew: true })
             }
           }
-          // Update conversation with new content if write_content or edit_section succeeded
+          // Update conversation with new content if content_write or edit_section succeeded
           if (toolExec.result.success && toolExec.result.contentId) {
             const newContentId = toolExec.result.contentId
             if (activeConversation.contentId !== newContentId) {
@@ -1477,7 +1769,7 @@ export default defineEventHandler(async (event) => {
   // Check if any tools created content that needs completion messages
   let completionMessages: Awaited<ReturnType<typeof composeWorkspaceCompletionMessages>> | null = null
   if (multiPassResult && multiPassResult.toolHistory.length > 0) {
-    // Find write_content or edit_section results
+    // Find content_write or edit_section results
     for (const toolExec of multiPassResult.toolHistory) {
       if (toolExec.result.success && toolExec.result.contentId) {
         try {

@@ -14,7 +14,7 @@
           },
           "ai-generation": {
             "title": "AI-Powered Generation",
-            "description": "Transform video transcripts into well-structured blog posts with proper headings, sections, and formatting. Maintains the authentic voice of the original content."
+            "description": "Transform video content into well-structured blog posts with proper headings, sections, and formatting. Maintains the authentic voice of the original content."
           },
           "seo": {
             "title": "SEO Optimization",
@@ -63,7 +63,7 @@
           },
           "ai-generation": {
             "title": "AI 驱动生成",
-            "description": "将视频转录文本转换为结构良好的博客文章，包含适当的标题、章节和格式。保持原始内容的真实声音。"
+            "description": "将视频内容转换为结构良好的博客文章，包含适当的标题、章节和格式。保持原始内容的真实声音。"
           },
           "seo": {
             "title": "SEO 优化",
@@ -112,7 +112,7 @@
           },
           "ai-generation": {
             "title": "AI駆動生成",
-            "description": "動画の文字起こしを適切な見出し、セクション、フォーマットを持つ構造化されたブログ記事に変換。元のコンテンツの本物の声を維持。"
+            "description": "動画コンテンツを適切な見出し、セクション、フォーマットを持つ構造化されたブログ記事に変換。元のコンテンツの本物の声を維持。"
           },
           "seo": {
             "title": "SEO最適化",
@@ -161,7 +161,7 @@
           },
           "ai-generation": {
             "title": "Génération par IA",
-            "description": "Transformez les transcriptions vidéo en articles de blog bien structurés avec des titres, sections et formatage appropriés. Maintient la voix authentique du contenu original."
+            "description": "Transformez le contenu vidéo en articles de blog bien structurés avec des titres, sections et formatage appropriés. Maintient la voix authentique du contenu original."
           },
           "seo": {
             "title": "Optimisation SEO",

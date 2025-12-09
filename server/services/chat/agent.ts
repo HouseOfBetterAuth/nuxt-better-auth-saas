@@ -38,7 +38,13 @@ function buildSystemPrompt(mode: 'chat' | 'agent'): string {
   if (mode === 'chat') {
     return `${basePrompt}
 
-- You are in **read-only mode**. You can read content, sections, and sources to answer questions.
+- You are in **read-only mode**. You can use read tools to explore the workspace:
+  - read_content: Fetch a content item and its current version
+  - read_section: Fetch a specific section of a content item
+  - read_source: Fetch a source content item (e.g., context, YouTube)
+  - read_content_list: List content items with optional filtering
+  - read_source_list: List source content items with optional filtering
+  - read_workspace_summary: Get a formatted summary of a content workspace
 - You MUST NOT perform actions that modify content or ingest new data.
 - If the user asks you to make changes, explain what you would do and suggest switching to agent mode for actual changes.
 - Keep replies concise (2-4 sentences) and helpful.`
@@ -54,8 +60,10 @@ function buildSystemPrompt(mode: 'chat' | 'agent'): string {
 **Tool Selection Guidelines:**
 - For simple edits to metadata (title, slug, status, primaryKeyword, targetLocale, contentType) on existing content items, use edit_metadata. Examples: "make the title shorter", "change the status to published", "update the slug".
 - For editing specific sections of existing content, use edit_section. Examples: "make the introduction more engaging", "rewrite the conclusion".
-- For creating new content items from source content (transcript, YouTube video, etc.), use write_content. This tool only creates new content - it cannot update existing content.
-- Never use write_content for editing existing content - use edit_metadata or edit_section instead.`
+- For creating new content items from source content (context, YouTube video, etc.), use content_write with action="create". This tool only creates new content - it cannot update existing content.
+- For refreshing an existing content item's frontmatter and JSON-LD structured data, use content_write with action="enrich".
+- For ingesting source content from YouTube videos or pasted text, use source_ingest with sourceType="youtube" or sourceType="context".
+- Never use content_write with action="create" for editing existing content - use edit_metadata or edit_section instead.`
 }
 
 const MAX_TOOL_ITERATIONS = 5

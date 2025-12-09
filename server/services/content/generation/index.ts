@@ -29,6 +29,10 @@ import {
   findRelevantChunksForSection
 } from './chunking'
 import {
+  determineGenerationMode,
+  generateSyntheticContext
+} from './context'
+import {
   createFrontmatterFromOutline,
   enrichFrontmatterWithMetadata,
   extractFrontmatterFromVersion
@@ -59,7 +63,7 @@ const SECTION_PATCH_SYSTEM_PROMPT = CONTENT_SECTION_UPDATE_SYSTEM_PROMPT
 export const enrichMdxWithMetadata = enrichMarkdownWithMetadata
 
 /**
- * Generates a content draft from a source content (transcript, YouTube video, etc.)
+ * Generates a content draft from a source content (context, YouTube video, etc.)
  *
  * @param db - Database instance
  * @param input - Input parameters for content generation
@@ -75,6 +79,7 @@ export const generateContentDraftFromSource = async (
     sourceContentId,
     sourceText,
     contentId,
+    conversationHistory,
     overrides,
     systemPrompt,
     temperature,
@@ -104,7 +109,7 @@ export const generateContentDraftFromSource = async (
   // If inline sourceText is provided, use it directly
   if (sourceText && sourceText.trim()) {
     resolvedSourceText = sourceText.trim()
-    resolvedIngestMethod = 'inline_transcript'
+    resolvedIngestMethod = 'inline_context'
   } else if (sourceContentId) {
     // Otherwise, fetch from source content
     const [row] = await db
@@ -156,17 +161,35 @@ export const generateContentDraftFromSource = async (
     existingContent = row
   }
 
+  // Determine generation mode and generate synthetic context if needed
+  const generationMode = determineGenerationMode(input)
+  let conversationContext: string | null = null
+
+  if (generationMode === 'conversation' || generationMode === 'hybrid') {
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationContext = await generateSyntheticContext(conversationHistory)
+    }
+  }
+
+  // If no sourceText but we have conversation context, use it
+  if (!resolvedSourceText && conversationContext) {
+    resolvedSourceText = conversationContext
+    resolvedIngestMethod = 'conversation_context'
+  }
+
   if (!resolvedSourceText) {
     console.error('[generateContentDraftFromSource] Missing sourceText:', {
       sourceContentId,
       hasSourceContent: !!sourceContent,
       sourceTextLength: resolvedSourceText?.length || 0,
       sourceTextPreview: resolvedSourceText?.substring(0, 100) || 'null/empty',
-      ingestStatus: sourceContent?.ingestStatus
+      ingestStatus: sourceContent?.ingestStatus,
+      hasConversationHistory: !!conversationHistory,
+      conversationHistoryLength: conversationHistory?.length || 0
     })
     throw createError({
       statusCode: 400,
-      statusMessage: 'A source transcript is required to create a draft. Provide either sourceContentId or sourceText.'
+      statusMessage: 'Source context is required to create a draft. Provide either sourceContentId, sourceText, or conversationHistory.'
     })
   }
 
@@ -241,7 +264,8 @@ export const generateContentDraftFromSource = async (
     instructions: systemPrompt,
     chunks: chunks || [], // Ensure chunks is always an array
     sourceText: resolvedSourceText, // Pass inline sourceText if available
-    sourceTitle: sourceContent?.title ?? existingContent?.title ?? null
+    sourceTitle: sourceContent?.title ?? existingContent?.title ?? null,
+    conversationContext
   })
   pipelineStages.push('plan')
 
@@ -269,7 +293,9 @@ export const generateContentDraftFromSource = async (
     instructions: systemPrompt,
     temperature,
     organizationId,
-    sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null
+    sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null,
+    generationMode,
+    conversationContext
   })
   pipelineStages.push('sections')
 
@@ -611,7 +637,7 @@ export const updateContentSectionWithAI = async (
 
   const contextBlock = relevantChunks.length
     ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 600)}`).join('\n\n')
-    : 'No transcript context available.'
+    : 'No context available.'
 
   const prompt = [
     `You are editing a single section of a ${frontmatter.contentType}.`,
@@ -627,7 +653,7 @@ export const updateContentSectionWithAI = async (
       primaryKeyword: frontmatter.primaryKeyword,
       targetLocale: frontmatter.targetLocale
     })}`,
-    'Transcript context to ground this update:',
+    'Context to ground this update:',
     contextBlock,
     'Respond with JSON {"body": string, "summary": string?}. Rewrite only this section content - do NOT include the section heading or title, as it will be added automatically.'
   ].join('\n\n')

@@ -15,7 +15,7 @@ import { validateEnum, validateOptionalString, validateRequestBody, validateRequ
  * @param sourceType - Type of source (youtube, manual_transcript, etc.) (required)
  * @param externalId - External ID (e.g., YouTube video ID)
  * @param title - Title of the source content
- * @param sourceText - Source text/transcript
+ * @param sourceText - Source text/context
  * @param metadata - Additional metadata
  * @param ingestStatus - Ingest status (pending, processing, ingested, failed)
  * @returns Created or updated source content record

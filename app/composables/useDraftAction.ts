@@ -57,7 +57,7 @@ export function useDraftAction(options: DraftActionOptions) {
     if (!sourceId) {
       toast.add({
         title: 'Source unavailable',
-        description: 'Unable to locate the transcript for content generation.',
+        description: 'Unable to locate the context for content generation.',
         color: 'error'
       })
       return
@@ -84,7 +84,7 @@ export function useDraftAction(options: DraftActionOptions) {
 
       // Send natural language message - the agent will determine the appropriate tool to use
       await sendMessage(`Please create content from the source with ID ${sourceId}.`, {
-        displayContent: 'Write content from transcript',
+        displayContent: 'Write content from context',
         contentId: resolvedContentId
       })
 

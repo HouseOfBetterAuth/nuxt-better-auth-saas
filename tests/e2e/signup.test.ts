@@ -29,12 +29,19 @@ describe('signup', async () => {
 
   it('should validate form fields in Français', async () => {
     const page = await createPage('/fr/signup')
+    // Wait for page to load - if French locale is broken, this will timeout
+    await page.waitForLoadState('networkidle', { timeout: 15000 })
+    // Wait for i18n to load and form to be ready
+    await page.waitForSelector('input[name="name"]', { timeout: 5000 })
+
     await page.fill('input[name="name"]', 'te')
     await page.fill('input[name="email"]', 'invalid-email')
     await page.fill('input[name="password"]', '123')
     await page.fill('input[name="confirmPassword"]', '1234')
 
     await page.click('h1')
+    // Wait for validation errors to appear
+    await page.waitForSelector('[id^="v-"][id$="-error"]', { timeout: 3000 })
 
     const errors = await page.$$('[id^="v-"][id$="-error"]')
     expect(errors.length).toEqual(4)

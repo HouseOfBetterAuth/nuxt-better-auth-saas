@@ -55,7 +55,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     return
   loading.value = true
   loadingAction.value = 'submit'
-  const { error } = await auth.signIn.email({
+  const { error, data } = await auth.signIn.email({
     email: event.data.email,
     password: event.data.password,
     rememberMe: event.data.rememberMe,
@@ -72,6 +72,19 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       title: error.message,
       color: 'error'
     })
+    loading.value = false
+    return
+  }
+  // On success, Better Auth should redirect via callbackURL, but if it doesn't,
+  // we need to handle it client-side. The middleware will also redirect if we're on a guest-only page.
+  if (data && !error) {
+    // Refresh session and let middleware handle redirect
+    await auth.fetchSession()
+    // If still on signin page after a moment, navigate manually
+    await nextTick()
+    if (import.meta.client && window.location.pathname.includes('/signin')) {
+      await navigateTo(redirectTo.value)
+    }
   }
   loading.value = false
 }

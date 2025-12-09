@@ -15,31 +15,123 @@ import {
 import {
   calculateChunkRelevanceScore,
   calculateCosineSimilarity,
-  tokenizeTextForSearch
+  estimateTokenCount,
+  tokenizeTextForSearch,
+  tokensToChars
 } from './utils'
 
 const SECTION_CONTEXT_LIMIT = 3
 
-export const createTextChunks = (text: string, chunkSize = 1200, overlap = 200): ContentChunk[] => {
+// Default chunking configuration (token-based)
+export const DEFAULT_CHUNK_SIZE_TOKENS = 600 // ~2400 characters
+export const DEFAULT_CHUNK_OVERLAP_TOKENS = 75 // ~300 characters
+
+/**
+ * Finds the nearest paragraph boundary before or at the target position
+ *
+ * @param text - Text to search in
+ * @param targetPos - Target character position
+ * @param maxLookback - Maximum characters to look back for a boundary
+ * @returns Position of nearest paragraph boundary, or targetPos if none found
+ */
+function findParagraphBoundary(text: string, targetPos: number, maxLookback: number): number {
+  const lookbackStart = Math.max(0, targetPos - maxLookback)
+  const searchText = text.slice(lookbackStart, targetPos + 1)
+
+  // Look for double newlines (paragraph breaks) first
+  const lastDoubleNewline = searchText.lastIndexOf('\n\n')
+  if (lastDoubleNewline >= 0) {
+    return lookbackStart + lastDoubleNewline + 2
+  }
+
+  // Look for single newlines
+  const lastNewline = searchText.lastIndexOf('\n')
+  if (lastNewline >= 0) {
+    return lookbackStart + lastNewline + 1
+  }
+
+  // Look for sentence endings (period, exclamation, question mark followed by space)
+  const sentenceMatches = [...searchText.matchAll(/[.!?]\s/g)]
+  if (sentenceMatches.length > 0) {
+    const lastMatch = sentenceMatches[sentenceMatches.length - 1]
+    return lookbackStart + (lastMatch.index ?? 0) + 2
+  }
+
+  return targetPos
+}
+
+/**
+ * Creates text chunks using token-based chunking with semantic boundary support
+ *
+ * @param text - Text to chunk
+ * @param chunkSizeTokens - Target chunk size in tokens (default: 600)
+ * @param overlapTokens - Overlap between chunks in tokens (default: 75)
+ * @returns Array of content chunks
+ */
+export const createTextChunks = (
+  text: string,
+  chunkSizeTokens: number = DEFAULT_CHUNK_SIZE_TOKENS,
+  overlapTokens: number = DEFAULT_CHUNK_OVERLAP_TOKENS
+): ContentChunk[] => {
   if (!text) {
     return []
   }
 
-  const effectiveChunkSize = Number.isFinite(chunkSize) ? Math.max(1, Math.floor(chunkSize)) : 1200
-  const normalizedOverlap = Number.isFinite(overlap) ? Math.floor(overlap) : 0
+  // Convert token-based sizes to character-based for actual chunking
+  const chunkSizeChars = tokensToChars(chunkSizeTokens)
+  const overlapChars = tokensToChars(overlapTokens)
+
+  const effectiveChunkSize = Number.isFinite(chunkSizeChars) ? Math.max(1, Math.floor(chunkSizeChars)) : tokensToChars(DEFAULT_CHUNK_SIZE_TOKENS)
+  const normalizedOverlap = Number.isFinite(overlapChars) ? Math.floor(overlapChars) : 0
   const effectiveOverlap = Math.min(Math.max(normalizedOverlap, 0), effectiveChunkSize - 1)
   const step = Math.max(1, effectiveChunkSize - effectiveOverlap)
-  // Ensure overlap is always smaller than the chunk size so the sliding window advances.
 
-  const normalized = text.replace(/\s+/g, ' ').trim()
+  // Normalize text (collapse whitespace but preserve paragraph breaks)
+  const normalized = text.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').trim()
   const segments: ContentChunk[] = []
   let index = 0
   let start = 0
 
   while (start < normalized.length) {
-    const end = Math.min(start + effectiveChunkSize, normalized.length)
+    let end = Math.min(start + effectiveChunkSize, normalized.length)
+
+    // Try to find semantic boundary (paragraph or sentence break)
+    if (end < normalized.length) {
+      const maxLookback = Math.floor(effectiveChunkSize * 0.2) // Look back up to 20% of chunk size
+      const boundaryPos = findParagraphBoundary(normalized, end, maxLookback)
+
+      // Use boundary if it's within reasonable range (not too far back)
+      if (boundaryPos >= start + (effectiveChunkSize * 0.7)) {
+        end = boundaryPos
+      }
+    }
+
     const slice = normalized.slice(start, end).trim()
     if (slice) {
+      // Verify token count is approximately correct
+      const estimatedTokens = estimateTokenCount(slice)
+      // If chunk is significantly over target, try to trim at sentence boundary
+      if (estimatedTokens > chunkSizeTokens * 1.2 && end < normalized.length) {
+        const trimmedEnd = findParagraphBoundary(normalized, start + effectiveChunkSize, Math.floor(effectiveChunkSize * 0.3))
+        if (trimmedEnd > start) {
+          const trimmedSlice = normalized.slice(start, trimmedEnd).trim()
+          if (trimmedSlice && estimateTokenCount(trimmedSlice) <= chunkSizeTokens * 1.1) {
+            end = trimmedEnd
+            const finalSlice = trimmedSlice
+            segments.push({
+              chunkIndex: index,
+              text: finalSlice,
+              textPreview: finalSlice.slice(0, 280),
+              sourceContentId: null,
+              embedding: null
+            })
+            index += 1
+            start = Math.max(end - effectiveOverlap, start + step)
+            continue
+          }
+        }
+      }
+
       segments.push({
         chunkIndex: index,
         text: slice,
@@ -54,7 +146,7 @@ export const createTextChunks = (text: string, chunkSize = 1200, overlap = 200):
       break
     }
 
-    start += step
+    start = Math.max(end - effectiveOverlap, start + step)
   }
 
   return segments
@@ -62,7 +154,7 @@ export const createTextChunks = (text: string, chunkSize = 1200, overlap = 200):
 
 export const buildChunkPreviewText = (chunks: ContentChunk[], maxChars = 6000) => {
   if (!chunks.length) {
-    return 'No transcript snippets available.'
+    return 'No context available.'
   }
 
   const parts: string[] = []
@@ -192,7 +284,8 @@ export const ensureSourceContentChunksExist = async (
         statusMessage: 'Source content is required. Provide a sourceContentId or fallback text.'
       })
     }
-    const virtualChunks = createTextChunks(fallbackText)
+    // Use token-based chunking (600 tokens, 75 overlap)
+    const virtualChunks = createTextChunks(fallbackText, DEFAULT_CHUNK_SIZE_TOKENS, DEFAULT_CHUNK_OVERLAP_TOKENS)
     if (virtualChunks.length === 0) {
       throw createError({
         statusCode: 400,

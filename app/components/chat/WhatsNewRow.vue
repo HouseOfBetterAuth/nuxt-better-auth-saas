@@ -24,7 +24,7 @@ const cards = computed<WhatsNewCard[]>(() => [
   },
   {
     id: 'transcript',
-    title: 'Blog from Transcript',
+    title: 'Blog from Context',
     icon: 'i-lucide-file-text',
     disabled: true
   },

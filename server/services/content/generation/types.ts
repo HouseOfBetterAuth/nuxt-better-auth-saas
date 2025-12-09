@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import type * as schema from '~~/server/database/schema'
 // Runtime values needed for typeof expressions in type definitions
 
+import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import type { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 
 export interface ContentGenerationOverrides {
@@ -20,6 +21,7 @@ export interface ContentGenerationInput {
   sourceContentId?: string | null
   sourceText?: string | null
   contentId?: string | null
+  conversationHistory?: ChatCompletionMessage[] | null
   overrides?: ContentGenerationOverrides
   systemPrompt?: string
   temperature?: number

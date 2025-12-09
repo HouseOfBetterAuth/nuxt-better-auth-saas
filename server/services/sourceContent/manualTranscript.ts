@@ -7,11 +7,11 @@ import { createChunksFromSourceContentText } from '~~/server/services/sourceCont
 
 export const MANUAL_TRANSCRIPT_SOURCE_TYPE = 'manual_transcript'
 
-interface CreateManualTranscriptOptions {
+interface CreateManualContextOptions {
   db: NodePgDatabase<typeof schema>
   organizationId: string
   userId: string
-  transcript: string
+  context: string
   title?: string | null
   metadata?: Record<string, any> | null
   mode?: 'chat' | 'agent'
@@ -19,29 +19,29 @@ interface CreateManualTranscriptOptions {
 }
 
 /**
- * Creates source content from a raw transcript text
+ * Creates source content from raw context text
  *
- * @param options - Options for creating source content from transcript
+ * @param options - Options for creating source content from context
  * @param options.db - Database instance
  * @param options.organizationId - Organization ID
  * @param options.userId - User ID
- * @param options.transcript - Transcript text content
+ * @param options.context - Context text content
  * @param options.title - Optional title for the source content
  * @param options.metadata - Optional metadata object
  * @param options.mode - Chat mode ('chat' or 'agent')
  * @param options.onProgress - Optional progress callback
  * @returns Created source content record
  */
-export const createSourceContentFromTranscript = async ({
+export const createSourceContentFromContext = async ({
   db,
   organizationId,
   userId,
-  transcript,
+  context,
   title,
   metadata,
   mode,
   onProgress
-}: CreateManualTranscriptOptions) => {
+}: CreateManualContextOptions) => {
   // Enforce agent mode for writes
   if (mode === 'chat') {
     throw createError({
@@ -51,19 +51,19 @@ export const createSourceContentFromTranscript = async ({
   }
 
   if (process.env.NODE_ENV === 'development') {
-    console.log(`🚀 [MANUAL_TRANSCRIPT] Starting manual transcript creation...`)
-    console.log(`🚀 [MANUAL_TRANSCRIPT] Transcript length: ${transcript.length} characters`)
+    console.log(`🚀 [MANUAL_CONTEXT] Starting manual context creation...`)
+    console.log(`🚀 [MANUAL_CONTEXT] Context length: ${context.length} characters`)
   }
 
-  const normalizedTranscript = transcript.trim()
-  if (!normalizedTranscript) {
+  const normalizedContext = context.trim()
+  if (!normalizedContext) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Transcript cannot be empty'
+      statusMessage: 'Context cannot be empty'
     })
   }
 
-  await onProgress?.('Saving transcript...')
+  await onProgress?.('Saving context...')
 
   const result = await db.transaction(async (tx) => {
     const sourceContent = await upsertSourceContent(tx, {
@@ -72,11 +72,11 @@ export const createSourceContentFromTranscript = async ({
       sourceType: MANUAL_TRANSCRIPT_SOURCE_TYPE,
       externalId: uuidv7(),
       title: title ?? null,
-      sourceText: normalizedTranscript,
+      sourceText: normalizedContext,
       mode,
       metadata: {
         ...(metadata ?? {}),
-        origin: metadata?.origin ?? 'transcript',
+        origin: metadata?.origin ?? 'context',
         ingestMethod: metadata?.ingestMethod ?? MANUAL_TRANSCRIPT_SOURCE_TYPE
       },
       ingestStatus: 'ingested'
@@ -85,16 +85,16 @@ export const createSourceContentFromTranscript = async ({
     if (!sourceContent) {
       throw createError({
         statusCode: 500,
-        statusMessage: 'Failed to store transcript source content'
+        statusMessage: 'Failed to store context source content'
       })
     }
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`✅ [MANUAL_TRANSCRIPT] Created sourceContent: ${sourceContent.id}`)
-      console.log(`🔧 [MANUAL_TRANSCRIPT] About to call chunkSourceContentText...`)
+      console.log(`✅ [MANUAL_CONTEXT] Created sourceContent: ${sourceContent.id}`)
+      console.log(`🔧 [MANUAL_CONTEXT] About to call chunkSourceContentText...`)
     }
 
-    await onProgress?.('Chunking transcript into searchable segments...')
+    await onProgress?.('Chunking context into searchable segments...')
 
     try {
       await createChunksFromSourceContentText({
@@ -107,19 +107,19 @@ export const createSourceContentFromTranscript = async ({
         }
       })
     } catch (error) {
-      console.error(`❌ [MANUAL_TRANSCRIPT] Chunking failed for: ${sourceContent.id}`, error)
+      console.error(`❌ [MANUAL_CONTEXT] Chunking failed for: ${sourceContent.id}`, error)
       throw error
     }
 
     await onProgress?.('Generating embeddings for semantic search...')
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`🎉 [MANUAL_TRANSCRIPT] Completed chunking for: ${sourceContent.id}`)
+      console.log(`🎉 [MANUAL_CONTEXT] Completed chunking for: ${sourceContent.id}`)
     }
     return sourceContent
   })
 
-  await onProgress?.('✓ Transcript processed and ready!')
+  await onProgress?.('✓ Context processed and ready!')
 
   return result
 }
