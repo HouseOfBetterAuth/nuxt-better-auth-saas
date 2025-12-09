@@ -3,7 +3,6 @@ import type { ChatMessage } from '#shared/utils/types'
 import type { PublishContentResponse } from '~~/server/types/content'
 import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
-import { dump } from 'js-yaml'
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
@@ -311,7 +310,8 @@ const updateLocalConversationStatus = (conversationId: string, status: string) =
 const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
 
 // Workspace-specific state (merged from ConversationWorkspace)
-const workspaceHeaderState = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
+// Use instance-scoped ref instead of global useState to avoid wiping state for other widget instances
+const workspaceHeaderState = ref<WorkspaceHeaderState | null>(null)
 const workspaceContent = ref<ContentResponse | null>(null)
 const workspacePending = ref(false)
 const workspaceError = ref<any>(null)
@@ -892,7 +892,6 @@ watch(() => workspaceDetail.value, async (detail) => {
 // Workspace computed properties
 const workspaceContentRecord = computed(() => workspaceContent.value?.content ?? null)
 const workspaceCurrentVersion = computed(() => workspaceContent.value?.currentVersion ?? null)
-const workspaceFrontmatter = computed(() => workspaceCurrentVersion.value?.frontmatter || null)
 const workspaceGeneratedContent = computed(() => workspaceCurrentVersion.value?.bodyMdx || workspaceCurrentVersion.value?.bodyHtml || null)
 
 function slugify(value: string) {
@@ -951,57 +950,16 @@ function setActiveSection(sectionId: string | null) {
 }
 
 // Workspace MDX helpers - simplified for copy button only
-function buildFrontmatterBlock(frontmatter: Record<string, any> | null | undefined): string {
-  if (!frontmatter || typeof frontmatter !== 'object' || Array.isArray(frontmatter)) {
-    return '---\n---'
-  }
-
-  // Filter out empty values
-  const filtered = Object.fromEntries(
-    Object.entries(frontmatter).filter(([, value]) => {
-      if (Array.isArray(value)) {
-        return value.length > 0
-      }
-      if (value && typeof value === 'object') {
-        return Object.keys(value).length > 0
-      }
-      return value !== null && value !== undefined && value !== ''
-    })
-  )
-
-  try {
-    // Use js-yaml to properly serialize YAML
-    const yamlContent = dump(filtered, {
-      lineWidth: -1,
-      noRefs: true,
-      quotingType: '"',
-      forceQuotes: false
-    })
-    // Ensure proper formatting with frontmatter delimiters
-    const trimmed = yamlContent.trimEnd()
-    return `---\n${trimmed}\n---`
-  } catch (error) {
-    console.error('Failed to serialize frontmatter as YAML', error)
-    // Fallback to JSON if YAML serialization fails
-    const lines = Object.entries(filtered).map(([key, value]) => {
-      if (typeof value === 'string') {
-        return `${key}: "${value.replace(/"/g, '\\"')}"`
-      }
-      return `${key}: ${JSON.stringify(value)}`
-    })
-    return ['---', ...lines, '---'].join('\n')
-  }
-}
-
 const workspaceFullMdx = computed(() => {
   const body = typeof workspaceGeneratedContent.value === 'string' ? workspaceGeneratedContent.value.trim() : ''
+  // If body already has frontmatter, return as-is
   const isEnriched = /^---\n[\s\S]*?\n---\n/m.test(body)
   if (isEnriched) {
     return body
   }
-  const frontmatterBlock = buildFrontmatterBlock(workspaceFrontmatter.value || {})
-  const parts = [frontmatterBlock, body].filter(part => typeof part === 'string' && part.trim().length)
-  return parts.join('\n\n')
+  // If no frontmatter in body, just return the body without adding frontmatter
+  // The server handles proper MDX enrichment when needed
+  return body
 })
 
 const workspaceHasFullMdx = computed(() => workspaceFullMdx.value.trim().length > 0)
@@ -1146,7 +1104,7 @@ async function handleCopyFullMdx() {
     await copy(workspaceFullMdx.value)
     toast.add({
       title: 'Draft copied',
-      description: 'Frontmatter and body copied to clipboard as valid YAML.',
+      description: 'Content copied to clipboard.',
       color: 'primary'
     })
   } catch (error) {
