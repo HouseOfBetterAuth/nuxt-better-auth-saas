@@ -31,6 +31,8 @@
     "@nuxtjs/mdc": "^0.19.1",
     "@nuxtjs/seo": "^3.2.2",
     "@react-email/render": "^2.0.0",
+    "@tiptap/core": "^3.13.0",
+    "@tiptap/vue-3": "^3.13.0",
     "@vueuse/core": "13.9.0",
     "@vueuse/integrations": "^13.9.0",
     "aws4fetch": "^1.0.20",
