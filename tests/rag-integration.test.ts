@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as schema from '../server/database/schema'
 import * as chunking from '../server/services/content/generation/chunking'
 import * as contentGeneration from '../server/services/content/generation/index'
@@ -11,9 +11,9 @@ vi.mock('../server/services/vectorize', () => ({
     // Return a mock match that points to our test source
     if (filter?.organizationId) {
       return [{
-        id: `${globalThis.testSourceContentId}:0`,
+        id: `${(globalThis as any).testSourceContentId}:0`,
         score: 0.9,
-        metadata: { sourceContentId: globalThis.testSourceContentId, chunkIndex: 0 }
+        metadata: { sourceContentId: (globalThis as any).testSourceContentId, chunkIndex: 0 }
       }]
     }
     return []
@@ -54,9 +54,48 @@ vi.mock('../server/utils/content', async (importOriginal) => {
   }
 })
 
+// MOCK DOWNSTREAM AI SERVICES TO PREVENT TIMEOUTS
+vi.mock('../server/services/content/generation/planning', () => ({
+  generateContentOutline: vi.fn().mockResolvedValue({
+    outline: [],
+    seo: {},
+    frontmatter: { title: 'Test', status: 'draft' }
+  })
+}))
+
+vi.mock('../server/services/content/generation/sections', () => ({
+  generateContentSectionsFromOutline: vi.fn().mockResolvedValue([]),
+  normalizeContentSections: vi.fn().mockReturnValue([]),
+  CONTENT_SECTION_UPDATE_SYSTEM_PROMPT: 'You are an editor.'
+}))
+
+vi.mock('../server/services/content/generation/assembly', () => ({
+  assembleMarkdownFromSections: vi.fn().mockReturnValue({ markdown: '', sections: [] }),
+  enrichMarkdownWithMetadata: vi.fn().mockReturnValue(''),
+  extractMarkdownFromEnrichedMdx: vi.fn().mockReturnValue('')
+}))
+
 describe('rag integration & chat context', () => {
   const userId = 'user-test'
   const organizationId = 'org-test'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Reset chainable mocks
+    mockDb.insert.mockReturnThis()
+    mockDb.values.mockReturnThis()
+    mockDb.select.mockReturnThis()
+    mockDb.from.mockReturnThis()
+    mockDb.where.mockReturnThis()
+    mockDb.limit.mockReturnThis()
+    mockDb.orderBy.mockReturnThis()
+    mockDb.update.mockReturnThis()
+    mockDb.set.mockReturnThis()
+  })
+
+  afterEach(() => {
+    delete (globalThis as any).testSourceContentId
+  })
 
   it('should persist chat context as SourceContent when generating draft', async () => {
     const conversationContext = 'Synthesized user intent from conversation.'
@@ -111,7 +150,7 @@ describe('rag integration & chat context', () => {
 
   it('should use findGlobalRelevantChunks during section update', async () => {
     // Setup global ID for the mock to return
-    globalThis.testSourceContentId = 'source-123'
+    (globalThis as any).testSourceContentId = 'source-123'
 
     // Mock fetching the chunk text from DB
     mockDb.limit.mockResolvedValueOnce([{

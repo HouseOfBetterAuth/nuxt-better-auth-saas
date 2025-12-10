@@ -193,25 +193,20 @@ export async function runChatAgentWithMultiPassStream({
                 }
               }
 
-              // Emit preparing event as soon as tool name is detected (even if args aren't complete)
-              if (toolCallDelta.function?.name && onToolPreparing) {
-                onToolPreparing(toolCallDelta.id || '', toolCallDelta.function.name)
+              // Emit preparing event when we have both name and id (LLM should provide both)
+              if (toolCallDelta.function?.name && toolCallDelta.id && onToolPreparing) {
+                onToolPreparing(toolCallDelta.id, toolCallDelta.function.name)
               }
             } else {
               // Append to existing tool call
-              const hadNameBefore = !!accumulatedToolCalls[index].function.name
               if (toolCallDelta.function?.name) {
                 accumulatedToolCalls[index].function.name = toolCallDelta.function.name
-                // Emit preparing if this is the first time we see the name for this tool call
-                if (onToolPreparing && !hadNameBefore) {
-                  onToolPreparing(accumulatedToolCalls[index].id, toolCallDelta.function.name)
-                }
-              }
-              if (toolCallDelta.function?.arguments) {
-                accumulatedToolCalls[index].function.arguments += toolCallDelta.function.arguments
               }
               if (toolCallDelta.id) {
                 accumulatedToolCalls[index].id = toolCallDelta.id
+              }
+              if (toolCallDelta.function?.arguments) {
+                accumulatedToolCalls[index].function.arguments += toolCallDelta.function.arguments
               }
             }
           }
@@ -356,12 +351,15 @@ export async function runChatAgentWithMultiPassStream({
         await onRetry(toolInvocation, retryCount)
       }
 
-      // Generate unique ID for this tool call (for tracking concurrent executions)
-      const toolCallId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      // Tool call ID should always be present from LLM (per OpenAI API spec)
+      if (!toolCall.id) {
+        console.warn(`[Agent] Tool call missing ID for ${toolInvocation.name}, skipping`)
+        continue
+      }
 
-      // Emit tool start event with unique ID
+      // Emit tool start event with ID from LLM
       if (onToolStart) {
-        onToolStart(toolCallId, toolInvocation.name)
+        onToolStart(toolCall.id, toolInvocation.name)
       }
 
       // Execute tool with timeout and error handling
@@ -403,9 +401,9 @@ export async function runChatAgentWithMultiPassStream({
         }
       }
 
-      // Emit tool complete event with unique ID
+      // Emit tool complete event with ID from LLM
       if (onToolComplete) {
-        onToolComplete(toolCallId, toolInvocation.name, toolResult)
+        onToolComplete(toolCall.id, toolInvocation.name, toolResult)
       }
 
       // Add tool result to history for debugging/state tracking

@@ -200,21 +200,25 @@ export const generateContentDraftFromSource = async (
   if (sourceContent) {
     chunks = await ensureSourceContentChunksExist(db, sourceContent, resolvedSourceText!)
   } else if (resolvedSourceText && resolvedIngestMethod === 'conversation_context') {
-    // FIX: Persist conversation context as a SourceContent record
-    // This ensures future tools (like edit_section) can reference the original context
+    // Persist conversation context as a SourceContent record
+    // This allows the context to be chunked and embedded for RAG search
+    // (edit_section uses findGlobalRelevantChunks which searches the entire org's vector index)
+    // Marked as ephemeral - can be cleaned up by a periodic job for old records
     const [newSource] = await db.insert(schema.sourceContent).values({
       organizationId,
       createdByUserId: userId,
-      sourceType: 'conversation', // You might need to ensure this is a valid enum value or string
+      sourceType: 'conversation', // Valid text value (not an enum)
       title: `Conversation Context - ${new Date().toLocaleString()}`,
       sourceText: resolvedSourceText,
-      ingestStatus: 'ingested'
+      ingestStatus: 'ingested',
+      metadata: {
+        isEphemeral: true, // Mark as ephemeral for potential cleanup job
+        createdAt: new Date().toISOString()
+      }
     }).returning()
 
     if (newSource) {
       sourceContent = newSource
-      // _resolvedSourceId = newSource.id // Not currently used
-      resolvedSourceText = newSource.sourceText // Ensure consistency
       // Generate chunks for this new source so vector search works immediately
       chunks = await ensureSourceContentChunksExist(db, newSource, newSource.sourceText)
     }
@@ -980,7 +984,7 @@ export {
   buildChunkPreviewText,
   createTextChunks,
   ensureSourceContentChunksExist,
-  findRelevantChunksForSection
+  findGlobalRelevantChunks
 } from './chunking'
 
 export {

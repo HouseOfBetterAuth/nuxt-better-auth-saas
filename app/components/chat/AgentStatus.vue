@@ -62,7 +62,7 @@ const statusText = computed(() => {
       />
       <span class="font-medium">{{ displayName }}</span>
       <span
-        v-if="statusText && (part.status === 'preparing' || part.status === 'success' || part.status === 'error')"
+        v-if="statusText && (part.status === 'preparing' || part.status === 'success')"
         class="text-xs text-muted-600 dark:text-muted-400 ml-1"
       >
         {{ statusText }}
