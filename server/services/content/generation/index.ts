@@ -88,25 +88,28 @@ async function updateChunkingStatus(
   status: 'processing' | 'completed' | 'failed',
   error?: string
 ) {
-  const currentMetadata = await db
-    .select({ metadata: schema.sourceContent.metadata })
-    .from(schema.sourceContent)
-    .where(eq(schema.sourceContent.id, sourceContentId))
-    .limit(1)
+  // Use atomic JSONB update to avoid race conditions
+  // jsonb_set can patch individual fields, but for multiple fields or deeply nested merges, || operator is better in PG
+  // Here we use jsonb_build_object to construct the patch and || to merge logic
 
-  const existingMetadata = (currentMetadata[0]?.metadata as Record<string, any>) || {}
-  const updatedMetadata = {
-    ...existingMetadata,
-    chunkingStatus: status,
-    ...(status === 'failed' && error ? { chunkingError: error } : {}),
-    ...(status === 'processing' ? { chunkingStartedAt: new Date().toISOString() } : {}),
-    ...(status === 'completed' ? { chunkingCompletedAt: new Date().toISOString() } : {})
+  const now = new Date().toISOString()
+
+  let patch = sql`jsonb_build_object('chunkingStatus', ${status}::text)`
+
+  if (status === 'failed' && error) {
+    patch = sql`${patch} || jsonb_build_object('chunkingError', ${error}::text)`
+  }
+  if (status === 'processing') {
+    patch = sql`${patch} || jsonb_build_object('chunkingStartedAt', ${now}::text)`
+  }
+  if (status === 'completed') {
+    patch = sql`${patch} || jsonb_build_object('chunkingCompletedAt', ${now}::text)`
   }
 
   await db
     .update(schema.sourceContent)
     .set({
-      metadata: updatedMetadata,
+      metadata: sql`COALESCE(${schema.sourceContent.metadata}, '{}'::jsonb) || ${patch}`,
       updatedAt: new Date()
     })
     .where(eq(schema.sourceContent.id, sourceContentId))
@@ -260,7 +263,7 @@ export const generateContentDraftFromSource = async (
       sourceType: 'conversation', // Valid text value (not an enum)
       title: `Conversation Context - ${new Date().toLocaleString()}`,
       sourceText: resolvedSourceText,
-      ingestStatus: 'ingested',
+      ingestStatus: 'pending', // Set to pending initially to match chunkingStatus
       metadata: {
         isEphemeral: true, // Mark as ephemeral for potential cleanup job
         chunkingStatus: 'pending', // Will be updated to 'processing' when chunking starts
@@ -270,11 +273,17 @@ export const generateContentDraftFromSource = async (
 
     if (newSource) {
       sourceContent = newSource
-      // Start async chunking in background (non-blocking for better performance)
-      // Update status to 'processing' immediately
-      const statusUpdatePromise = updateChunkingStatus(db, newSource.id, 'processing').catch(err =>
+
+      // Fail fast if status update fails
+      try {
+        await updateChunkingStatus(db, newSource.id, 'processing')
+      } catch (err) {
         console.error('[Content Generation] Failed to update chunking status to processing:', err)
-      )
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Failed to initialize chunking status'
+        })
+      }
 
       // Chunk and embed in background using Cloudflare waitUntil or fire-and-forget
       const chunkingPromise = ensureSourceContentChunksExist(db, newSource, newSource.sourceText)
@@ -285,20 +294,16 @@ export const generateContentDraftFromSource = async (
         })
 
       // Use Cloudflare waitUntil if available (extends request lifetime), otherwise fire-and-forget
-      getWaitUntil().then((waitUntilFn) => {
-        if (waitUntilFn) {
-          waitUntilFn(statusUpdatePromise)
-          waitUntilFn(chunkingPromise)
-        } else {
-          // Fallback for Node.js/dev: fire-and-forget (tasks may not complete if server shuts down)
-          statusUpdatePromise.catch(() => {})
-          chunkingPromise.catch(() => {})
-        }
-      }).catch(() => {
-        // If getWaitUntil fails, use fire-and-forget
-        statusUpdatePromise.catch(() => {})
-        chunkingPromise.catch(() => {})
-      })
+      // Await getting the function to ensure we don't race against response end
+      const waitUntilFn = await getWaitUntil()
+      if (waitUntilFn) {
+        waitUntilFn(chunkingPromise)
+      } else {
+        // Fallback for Node.js/dev: fire-and-forget (tasks may not complete if server shuts down)
+        chunkingPromise.catch((err) => {
+          console.error('[Content Generation] Fire-and-forget chunking failed:', err)
+        })
+      }
 
       // Don't wait for chunks - proceed with content generation
       // edit_section will check status and inform user if chunks aren't ready yet
@@ -722,33 +727,29 @@ export const updateContentSectionWithAI = async (
     version: currentVersion
   })
 
-  // Check if any recently created conversation context sources are still being chunked
-  // Only check sources created in the last 5 minutes to avoid blocking on stale stuck sources
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
-  const recentConversationSources = await db
-    .select({
-      id: schema.sourceContent.id,
-      metadata: schema.sourceContent.metadata
-    })
-    .from(schema.sourceContent)
-    .where(
-      and(
-        eq(schema.sourceContent.organizationId, organizationId),
-        eq(schema.sourceContent.sourceType, 'conversation'),
-        sql`${schema.sourceContent.createdAt} > ${fiveMinutesAgo}`
-      )
-    )
-    .limit(10) // Check up to 10 recent conversation sources
+  // Check status of the specific source content linked to this record
+  if (record.sourceContent?.id) {
+    const sourceMeta = (record.sourceContent.metadata as Record<string, any>) || {}
+    const chunkingStatus = sourceMeta.chunkingStatus
 
-  // Check if any are still processing
-  for (const source of recentConversationSources) {
-    const metadata = (source.metadata as Record<string, any>) || {}
-    const chunkingStatus = metadata.chunkingStatus
     if (chunkingStatus === 'processing' || chunkingStatus === 'pending') {
-      throw createError({
-        statusCode: 503,
-        statusMessage: 'Context is still being processed for semantic search. Please wait a moment and try again.'
-      })
+      // Check for timeout/stale job
+      const startedAtStr = sourceMeta.chunkingStartedAt || sourceMeta.createdAt
+      const startedAt = startedAtStr ? new Date(startedAtStr).getTime() : Date.now()
+      const elapsedMinutes = (Date.now() - startedAt) / (1000 * 60)
+
+      if (elapsedMinutes > 10) {
+        // Job is stale/stuck (>10 mins). Mark as failed and proceed (on a best-effort basis)
+        console.warn(`[Content Update] Found stale chunking job for source ${record.sourceContent.id}, marking failed.`)
+        await updateChunkingStatus(db, record.sourceContent.id, 'failed', 'Chunking timeout - auto-failed')
+        // Proceed without throwing 503
+      } else {
+        // Job is still fresh, ask user to wait
+        throw createError({
+          statusCode: 503,
+          statusMessage: 'Context is still being processed for semantic search. Please wait a moment and try again.'
+        })
+      }
     }
   }
 

@@ -47,6 +47,7 @@ interface ContentApiResponse {
 
 definePageMeta({
   // Uses default layout which adapts based on workspace header state
+  ssr: false // Client-side only to prevent hydration mismatches
 })
 
 const route = useRoute()
@@ -55,9 +56,6 @@ const contentId = computed(() => {
   const param = route.params.id
   return Array.isArray(param) ? param[0] : param || ''
 })
-
-// Chat widget visibility
-const showChat = ref(false)
 
 // Set workspace header state
 const workspaceHeader = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
@@ -144,13 +142,15 @@ const contentEntry = computed<ContentEntry | null>(() => {
   }
 })
 
-// Sync markdown with content - with dirty check to prevent overwriting edits
+// Sync editor content with content - with dirty check to prevent overwriting edits
 watch(contentEntry, (entry) => {
   if (entry && typeof entry.bodyMdx === 'string') {
+    // Convert MDX to HTML for editor (simple conversion - MDX is mostly markdown)
+    const htmlContent = entry.bodyMdx
     // If no local changes, or remote content matches what we started with, safe to update
-    if (!isDirty.value || entry.bodyMdx === originalMarkdown.value) {
-      markdown.value = entry.bodyMdx
-      originalMarkdown.value = entry.bodyMdx
+    if (!isDirty.value || htmlContent === originalContent.value) {
+      editorContent.value = htmlContent
+      originalContent.value = htmlContent
     } else {
       // Remote content changed while we have unsaved local edits
       // Store pending remote content and show conflict modal
@@ -163,8 +163,8 @@ watch(contentEntry, (entry) => {
 // Handle conflict resolution
 const acceptRemoteChanges = () => {
   if (pendingRemoteContent.value !== null) {
-    markdown.value = pendingRemoteContent.value
-    originalMarkdown.value = pendingRemoteContent.value
+    editorContent.value = pendingRemoteContent.value
+    originalContent.value = pendingRemoteContent.value
     pendingRemoteContent.value = null
   }
   showConflictModal.value = false
@@ -174,7 +174,7 @@ const keepLocalChanges = () => {
   // Update baseline to remote so we don't re-trigger conflict on same content
   // User still has unsaved changes (isDirty remains true), but we acknowledge this remote version
   if (pendingRemoteContent.value !== null) {
-    originalMarkdown.value = pendingRemoteContent.value
+    originalContent.value = pendingRemoteContent.value
   }
   pendingRemoteContent.value = null
   showConflictModal.value = false
@@ -247,11 +247,11 @@ const handleSave = async () => {
     await $fetch(`/api/content/${contentId.value}`, {
       method: 'PATCH',
       body: {
-        bodyMdx: markdown.value
+        bodyMdx: editorContent.value
       }
     })
-    // Update original markdown to match saved content
-    originalMarkdown.value = markdown.value
+    // Update original content to match saved content
+    originalContent.value = editorContent.value
     await refresh()
   } catch (err) {
     console.error('Failed to save content:', err)
@@ -287,51 +287,42 @@ const handleSave = async () => {
 
         <!-- Content Editor -->
         <template v-else-if="contentEntry">
-          <!-- Editor Toolbar -->
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <UButton
-                v-if="contentEntry.conversationId"
-                :to="`/conversations/${contentEntry.conversationId}`"
-                variant="ghost"
-                color="gray"
-                size="sm"
-                icon="i-lucide-message-circle"
-              >
-                View Conversation
-              </UButton>
-            </div>
-            <div class="flex items-center gap-2">
-              <UButton
-                :icon="showChat ? 'i-lucide-panel-right-close' : 'i-lucide-message-circle'"
-                variant="ghost"
-                color="gray"
-                size="sm"
-                @click="showChat = !showChat"
-              >
-                {{ showChat ? 'Hide Chat' : 'Show Chat' }}
-              </UButton>
-              <UButton
-                icon="i-lucide-save"
-                color="primary"
-                size="sm"
-                :loading="isSaving"
-                @click="handleSave"
-              >
-                Save
-              </UButton>
-            </div>
-          </div>
-
-          <!-- MDX Editor -->
+          <!-- Editor -->
           <div class="w-full">
             <UTextarea
-              v-model="markdown"
+              v-model="editorContent"
               placeholder="Start writing your content..."
               autoresize
-              class="w-full"
+              class="w-full min-h-96"
             />
           </div>
+
+          <!-- Save Button -->
+          <div class="flex justify-end">
+            <UButton
+              icon="i-lucide-save"
+              color="primary"
+              size="sm"
+              :loading="isSaving"
+              @click="handleSave"
+            >
+              Save
+            </UButton>
+          </div>
+
+          <!-- Chat Widget Below Editor -->
+          <ClientOnly>
+            <div
+              v-if="contentEntry"
+              class="w-full"
+            >
+              <QuillioWidget
+                :content-id="contentEntry.id"
+                :conversation-id="contentEntry.conversationId"
+                initial-mode="agent"
+              />
+            </div>
+          </ClientOnly>
         </template>
       </div>
     </div>
@@ -382,27 +373,5 @@ const handleSave = async () => {
         </template>
       </UCard>
     </UModal>
-
-    <!-- Floating Chat Widget -->
-    <Transition
-      enter-active-class="transition-all duration-300 ease-out"
-      enter-from-class="translate-x-full opacity-0"
-      enter-to-class="translate-x-0 opacity-100"
-      leave-active-class="transition-all duration-300 ease-in"
-      leave-from-class="translate-x-0 opacity-100"
-      leave-to-class="translate-x-full opacity-0"
-    >
-      <div
-        v-if="showChat && contentEntry"
-        class="fixed top-0 right-0 h-screen w-[480px] bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-2xl z-50 overflow-hidden"
-      >
-        <QuillioWidget
-          :content-id="contentEntry.id"
-          :conversation-id="contentEntry.conversationId"
-          initial-mode="agent"
-          class="h-full"
-        />
-      </div>
-    </Transition>
   </div>
 </template>
