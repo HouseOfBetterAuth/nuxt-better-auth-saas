@@ -147,13 +147,16 @@ watch(contentEntry, (entry) => {
   if (entry && typeof entry.bodyMdx === 'string') {
     // Use MDX content directly in textarea (UTextarea handles plain text/MDX)
     const htmlContent = entry.bodyMdx
-    // If no local changes, or remote content matches what we started with, safe to update
-    if (!isDirty.value || htmlContent === originalContent.value) {
+
+    if (!isDirty.value) {
+      // No local changes - safe to update both editor and baseline
       editorContent.value = htmlContent
       originalContent.value = htmlContent
+    } else if (htmlContent === originalContent.value) {
+      // Local edits exist but remote hasn't changed - preserve local edits
+      // Do nothing
     } else {
-      // Remote content changed while we have unsaved local edits
-      // Store pending remote content and show conflict modal
+      // Remote content changed while we have unsaved local edits - conflict
       pendingRemoteContent.value = entry.bodyMdx
       showConflictModal.value = true
     }
