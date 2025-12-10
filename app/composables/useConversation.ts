@@ -78,7 +78,7 @@ export function useConversation() {
   const mode = useState<'chat' | 'agent'>('chat/mode', () => 'chat')
   const currentActivity = useState<'thinking' | 'streaming' | null>('chat/current-activity', () => null)
   const currentToolName = useState<string | null>('chat/current-tool-name', () => null)
-  
+
   // Track active tool calls by unique toolCallId (supports concurrent calls to same tool)
   // Maps toolCallId -> { messageId, partIndex }
   const activeToolCalls = useState<Map<string, { messageId: string, partIndex: number }>>('chat/active-tool-calls', () => new Map())
@@ -306,7 +306,7 @@ export function useConversation() {
                         timestamp: new Date().toISOString()
                       }
                       message.parts.push(toolPart)
-                      
+
                       // Track by toolCallId (not toolName!)
                       activeToolCalls.value.set(eventData.toolCallId, {
                         messageId: currentAssistantMessageId,
@@ -329,7 +329,7 @@ export function useConversation() {
                     if (toolCallInfo) {
                       const messageIndex = messages.value.findIndex(m => m.id === toolCallInfo.messageId)
                       const message = messageIndex >= 0 ? messages.value[messageIndex] : null
-                      
+
                       if (message) {
                         const toolPart = message.parts[toolCallInfo.partIndex]
                         if (toolPart && toolPart.type === 'tool_call') {
@@ -338,7 +338,7 @@ export function useConversation() {
                           toolPart.error = eventData.error
                         }
                       }
-                      
+
                       // Remove from active tracking
                       activeToolCalls.value.delete(eventData.toolCallId)
                     }

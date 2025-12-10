@@ -173,6 +173,11 @@ const acceptRemoteChanges = () => {
 }
 
 const keepLocalChanges = () => {
+  // Update baseline to remote so we don't re-trigger conflict on same content
+  // User still has unsaved changes (isDirty remains true), but we acknowledge this remote version
+  if (pendingRemoteContent.value !== null) {
+    originalMarkdown.value = pendingRemoteContent.value
+  }
   pendingRemoteContent.value = null
   showConflictModal.value = false
 }
@@ -312,12 +317,20 @@ const handleSave = async () => {
     </div>
 
     <!-- Conflict Resolution Modal -->
-    <UModal v-model="showConflictModal" :prevent-close="true">
+    <UModal
+      v-model="showConflictModal"
+      :prevent-close="true"
+    >
       <UCard>
         <template #header>
           <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-alert-triangle" class="h-5 w-5 text-amber-500" />
-            <h3 class="text-lg font-semibold">Content Conflict Detected</h3>
+            <UIcon
+              name="i-lucide-alert-triangle"
+              class="h-5 w-5 text-amber-500"
+            />
+            <h3 class="text-lg font-semibold">
+              Content Conflict Detected
+            </h3>
           </div>
         </template>
 
@@ -366,7 +379,7 @@ const handleSave = async () => {
         <QuillioWidget
           :content-id="contentEntry.id"
           :conversation-id="contentEntry.conversationId"
-          :initial-mode="'agent'"
+          initial-mode="agent"
           class="h-full"
         />
       </div>

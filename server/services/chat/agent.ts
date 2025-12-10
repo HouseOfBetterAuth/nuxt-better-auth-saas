@@ -87,8 +87,8 @@ export async function runChatAgentWithMultiPassStream({
 }: ChatAgentInput & {
   mode: 'chat' | 'agent'
   onLLMChunk?: (chunk: string) => void
-  onToolStart?: (toolName: string) => void
-  onToolComplete?: (toolName: string, result: ToolExecutionResult) => void
+  onToolStart?: (toolCallId: string, toolName: string) => void
+  onToolComplete?: (toolCallId: string, toolName: string, result: ToolExecutionResult) => void
   onFinalMessage?: (message: string) => void
   executeTool: (invocation: ChatToolInvocation) => Promise<ToolExecutionResult>
 }): Promise<MultiPassAgentResult> {
@@ -336,9 +336,12 @@ export async function runChatAgentWithMultiPassStream({
         await onRetry(toolInvocation, retryCount)
       }
 
-      // Emit tool start event
+      // Generate unique ID for this tool call (for tracking concurrent executions)
+      const toolCallId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2)}`
+
+      // Emit tool start event with unique ID
       if (onToolStart) {
-        onToolStart(toolInvocation.name)
+        onToolStart(toolCallId, toolInvocation.name)
       }
 
       // Execute tool with error handling
@@ -350,11 +353,17 @@ export async function runChatAgentWithMultiPassStream({
         console.error(`Tool execution failed for ${toolInvocation.name}:`, err)
         toolResult = {
           success: false,
-          error: err?.message || String(err),
-          errorStack: err?.stack
+          result: null,
+          error: err?.message || 'Tool execution failed'
         }
       }
 
+      // Emit tool complete event with unique ID
+      if (onToolComplete) {
+        onToolComplete(toolCallId, toolInvocation.name, toolResult)
+      }
+
+      // Add tool result to history
       toolHistory.push({
         toolName: toolInvocation.name,
         invocation: toolInvocation,
@@ -362,11 +371,11 @@ export async function runChatAgentWithMultiPassStream({
         timestamp
       })
 
-      // Emit tool complete event
-      if (onToolComplete) {
-        onToolComplete(toolInvocation.name, toolResult)
-      }
-
+      currentHistory.push({
+        role: 'tool',
+        content: JSON.stringify(toolResult),
+        tool_call_id: toolCall.id
+      })
       if (!toolResult.success) {
         toolRetryCounts.set(toolKey, retryCount + 1)
       } else {

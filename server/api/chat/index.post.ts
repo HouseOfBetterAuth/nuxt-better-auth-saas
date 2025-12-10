@@ -149,13 +149,6 @@ async function logToolEvent(
     })
   }
 
-  if (type === 'tool_started' && writeSSE) {
-    writeSSE('tool:start', {
-      toolName,
-      timestamp: new Date().toISOString()
-    })
-  }
-
   return logEntry
 }
 
@@ -1648,7 +1641,7 @@ export default defineEventHandler(async (event) => {
             chunk
           })
         },
-        onToolStart: async (toolName: string) => {
+        onToolStart: async (toolCallId: string, toolName: string) => {
           // Log tool start to database
           await logToolEvent(
             db,
@@ -1660,11 +1653,18 @@ export default defineEventHandler(async (event) => {
             undefined,
             writeSSE
           )
+          // Emit SSE with toolCallId for client tracking
+          writeSSE('tool:start', {
+            toolCallId,
+            toolName,
+            timestamp: new Date().toISOString()
+          })
         },
-        onToolComplete: async (toolName: string, result: any) => {
+        onToolComplete: async (toolCallId: string, toolName: string, result: any) => {
           // Event: tool:complete - Tool execution finished for current turn
           // Client should update UI to reflect tool completion status
           writeSSE('tool:complete', {
+            toolCallId,
             toolName,
             success: result.success,
             result: result.result,

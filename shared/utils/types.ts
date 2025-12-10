@@ -11,7 +11,7 @@ export type MessagePart =
   | { type: 'text', text: string }
   | {
     type: 'tool_call'
-    toolCallId: string  // Unique identifier for this specific tool invocation
+    toolCallId: string // Unique identifier for this specific tool invocation
     toolName: string
     status: 'running' | 'success' | 'error'
     args?: Record<string, any>
