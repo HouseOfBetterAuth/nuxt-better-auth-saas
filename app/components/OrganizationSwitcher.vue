@@ -1,14 +1,8 @@
 <script setup lang="ts">
-const { organization, session, useActiveOrganization, user } = useAuth()
+const { session, useActiveOrganization, user } = useAuth()
 
-// Use lazy fetch for organizations to not block navigation
-// getCachedData returns undefined to ensure fresh data on each full page load
-const { data: organizations, status } = await useLazyAsyncData('user-organizations', async () => {
-  const { data } = await organization.list()
-  return data
-}, {
-  getCachedData: () => undefined
-})
+// Use shared composable with proper caching
+const { data: organizations, status } = useUserOrganizations({ lazy: true })
 
 const dropdownMenuUi = {
   content: 'w-60 cursor-pointer',

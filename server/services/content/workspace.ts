@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { findConversation, getConversationLogs, getConversationMessages } from '../conversation'
+import { getConversationById, getConversationLogs, getConversationMessages } from '../conversation'
 import { buildWorkspaceSummary } from './workspaceSummary'
 
 export async function getContentWorkspacePayload(
@@ -53,11 +53,12 @@ export async function getContentWorkspacePayload(
 
   let conversation: typeof schema.conversation.$inferSelect | null = null
 
-  try {
-    conversation = await findConversation(db, organizationId, record.content.id)
+  // Get conversation via content.conversationId (proper relationship)
+  if (record.content.conversationId) {
+    try {
+      conversation = await getConversationById(db, record.content.conversationId, organizationId)
 
-    if (conversation) {
-      if (includeChat) {
+      if (conversation && includeChat) {
         const [messages, logs] = await Promise.all([
           getConversationMessages(db, conversation.id, organizationId),
           getConversationLogs(db, conversation.id, organizationId)
@@ -78,13 +79,14 @@ export async function getContentWorkspacePayload(
           createdAt: log.createdAt
         }))
       }
+    } catch (error) {
+      console.error('Failed to load conversation', {
+        conversationId: record.content.conversationId,
+        contentId,
+        organizationId,
+        error
+      })
     }
-  } catch (error) {
-    console.error('Failed to load conversation', {
-      contentId,
-      organizationId,
-      error
-    })
   }
 
   const workspaceSummary = buildWorkspaceSummary({

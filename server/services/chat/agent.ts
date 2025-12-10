@@ -201,7 +201,12 @@ export async function runChatAgentWithMultiPassStream({
             : {})
         })
       }
-      const errorMessage = 'I encountered an error while processing your request. Please try again.'
+      // Include error details in development mode for debugging
+      const isDev = process.env.NODE_ENV === 'development'
+      const errorDetails = error?.message || error?.data?.message || String(error)
+      const errorMessage = isDev && errorDetails
+        ? `I encountered an error while processing your request: ${errorDetails}`
+        : 'I encountered an error while processing your request. Please try again.'
       if (onFinalMessage) {
         onFinalMessage(errorMessage)
       }

@@ -1,11 +1,9 @@
-import type { ContentType } from '#shared/constants/contentTypes'
 import type {
   ChatLogEntry,
   ChatMessage,
   NonEmptyArray
 } from '#shared/utils/types'
 import { useState } from '#app'
-import { DEFAULT_CONTENT_TYPE } from '#shared/constants/contentTypes'
 import { computed } from 'vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
@@ -13,7 +11,6 @@ type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 interface ChatResponse {
   assistantMessage?: string
   conversationId?: string | null
-  conversationContentId?: string | null
   messages?: Array<{
     id: string
     role: 'user' | 'assistant' | 'system'
@@ -70,53 +67,28 @@ function normalizeMessages(list: ChatResponse['messages']): ChatMessage[] {
     })
 }
 
-function normalizeLogs(list: ChatResponse['logs']) {
-  if (!Array.isArray(list)) {
-    return []
-  }
-  return list.map(log => ({
-    id: log.id,
-    type: log.type,
-    message: log.message,
-    payload: log.payload ?? null,
-    createdAt: toDate(log.createdAt)
-  }))
-}
 
 export function useConversation() {
   const messages = useState<ChatMessage[]>('chat/messages', () => [])
   const status = useState<ChatStatus>('chat/status', () => 'ready')
   const errorMessage = useState<string | null>('chat/error', () => null)
-  const selectedContentType = useState<ContentType>('chat/content-type', () => DEFAULT_CONTENT_TYPE)
   const conversationId = useState<string | null>('chat/conversation-id', () => null)
-  const conversationContentId = useState<string | null>('chat/conversation-content-id', () => null)
-  const logs = useState<ChatLogEntry[]>('chat/logs', () => [])
   const requestStartedAt = useState<Date | null>('chat/request-started-at', () => null)
   const activeController = useState<AbortController | null>('chat/active-controller', () => null)
   const prompt = useState<string>('chat/prompt', () => '')
   const mode = useState<'chat' | 'agent'>('chat/mode', () => 'chat')
-  const currentActivity = useState<'llm_thinking' | 'tool_executing' | 'streaming_message' | null>('chat/current-activity', () => null)
+  // Simplified activity tracking - just track if we're thinking (tools running) or streaming (LLM generating)
+  const currentActivity = useState<'thinking' | 'streaming' | null>('chat/current-activity', () => null)
   const currentToolName = useState<string | null>('chat/current-tool-name', () => null)
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
-
-  function withSelectedContentType(body: Record<string, any> = {}) {
-    const contentType = selectedContentType.value
-    const nextBody: Record<string, any> = {
-      ...body,
-      contentType
-    }
-    // Note: contentType is now passed as a separate field, not in action
-    // The agent will use it from context if needed
-    return nextBody
-  }
 
   async function callChatEndpoint(body: Record<string, any>) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
     requestStartedAt.value = new Date()
     status.value = 'submitted'
     errorMessage.value = null
-    currentActivity.value = 'llm_thinking' // Initial state - LLM is thinking about the request
+    currentActivity.value = 'thinking' // Initial state - LLM is thinking about the request
     currentToolName.value = null
 
     if (activeController.value) {
@@ -126,7 +98,7 @@ export function useConversation() {
 
     try {
       status.value = 'streaming'
-      const payload = withSelectedContentType(body)
+      const payload = { ...body }
       if (conversationId.value) {
         payload.conversationId = conversationId.value
       }
@@ -159,10 +131,6 @@ export function useConversation() {
       let currentAssistantMessageId: string | null = null
       let currentAssistantMessageText = ''
       let pendingEventType: string | null = null
-      // Activity state management: tool:start/tool:complete events take precedence over log:entry events
-      // This ensures consistent behavior regardless of which event types the server emits
-      // If both are present, dedicated events (tool:start/tool:complete) control the state
-      let activitySetByDedicatedEvent = false
 
       try {
         while (true) {
@@ -205,9 +173,8 @@ export function useConversation() {
                 switch (eventType) {
                   case 'message:chunk': {
                     // LLM is generating text - server sends chunks for live display
-                    currentActivity.value = 'streaming_message'
+                    currentActivity.value = 'streaming'
                     currentToolName.value = null
-                    activitySetByDedicatedEvent = false // Reset flag when LLM starts streaming
 
                     // Server-provided messageId is required (server generates UUID on first chunk)
                     if (!eventData.messageId) {
@@ -251,26 +218,23 @@ export function useConversation() {
                     // Clear streaming state (tools may still be executing)
                     currentAssistantMessageId = null
                     currentAssistantMessageText = ''
-                    if (currentActivity.value === 'streaming_message') {
+                    if (currentActivity.value === 'streaming') {
                       currentActivity.value = null
-                      activitySetByDedicatedEvent = false // Reset flag
                     }
                     break
                   }
 
                   case 'tool:start': {
-                    // Tool execution started - dedicated event takes precedence
-                    currentActivity.value = 'tool_executing'
+                    // Tool execution started
+                    currentActivity.value = 'thinking'
                     currentToolName.value = eventData.toolName || null
-                    activitySetByDedicatedEvent = true
                     break
                   }
 
                   case 'tool:complete': {
-                    // Tool execution completed - dedicated event takes precedence
-                    currentActivity.value = null
+                    // Tool execution completed - may have more tools or LLM response coming
+                    // Don't clear activity yet, wait for next event (message:chunk or done)
                     currentToolName.value = null
-                    activitySetByDedicatedEvent = true
                     break
                   }
 
@@ -278,42 +242,12 @@ export function useConversation() {
                     if (eventData.conversationId) {
                       conversationId.value = eventData.conversationId ?? conversationId.value
                     }
-                    if (eventData.conversationContentId !== undefined) {
-                      conversationContentId.value = eventData.conversationContentId ?? null
-                    }
                     break
                   }
 
                   case 'log:entry': {
-                    const logEntry = {
-                      id: eventData.id || createId(),
-                      type: eventData.type || 'unknown',
-                      message: eventData.message || '',
-                      payload: eventData.payload ?? null,
-                      createdAt: toDate(eventData.createdAt || new Date())
-                    }
-                    logs.value = [...logs.value, logEntry]
-
-                    // Update activity state based on log type
-                    // Only use log:entry events if dedicated tool:start/tool:complete events haven't been used
-                    // This ensures consistent behavior regardless of which event types the server emits
-                    const logType = logEntry.type?.toLowerCase() || ''
-                    if (logType.startsWith('tool_')) {
-                      if (logType === 'tool_started' && !activitySetByDedicatedEvent) {
-                        // Fallback: only set activity if not already set by dedicated event
-                        currentActivity.value = 'tool_executing'
-                        currentToolName.value = (logEntry.payload as any)?.toolName || null
-                      } else if (logType === 'tool_succeeded' || logType === 'tool_failed') {
-                        // Tool completed, but might have more tools or LLM response coming
-                        // Don't clear activity yet - wait for next event
-                        // Note: If tool:complete was received, it already cleared activity
-                      }
-                    } else if (logType === 'user_message') {
-                      // User message sent, LLM will start thinking
-                      currentActivity.value = 'llm_thinking'
-                      currentToolName.value = null
-                      activitySetByDedicatedEvent = false // Reset flag for next tool cycle
-                    }
+                    // Logs are for server-side observability only, not used in UI
+                    // Activity state is managed by tool:start/tool:complete and message:chunk events
                     break
                   }
 
@@ -334,18 +268,18 @@ export function useConversation() {
                   }
 
                   case 'logs:complete': {
-                    if (Array.isArray(eventData.logs)) {
-                      logs.value = normalizeLogs(eventData.logs)
-                    }
+                    // Logs are for server-side observability only, not used in UI
+                    break
+                  }
+
+                  case 'agentContext:update': {
+                    // Agent context is for server-side observability only, not used in UI
                     break
                   }
 
                   case 'conversation:final': {
                     if (eventData.conversationId) {
                       conversationId.value = eventData.conversationId ?? conversationId.value
-                    }
-                    if (eventData.conversationContentId !== undefined) {
-                      conversationContentId.value = eventData.conversationContentId ?? null
                     }
                     break
                   }
@@ -399,12 +333,11 @@ export function useConversation() {
       // Handle stream errors and aborts
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
         // User aborted the request - clear state gracefully
-        status.value = 'ready'
-        requestStartedAt.value = null
-        currentActivity.value = null
-        currentToolName.value = null
-        // Note: Temporary streaming messages may remain in UI until next successful turn
-        return null
+      status.value = 'ready'
+      requestStartedAt.value = null
+      currentActivity.value = null
+      currentToolName.value = null
+      return null
       }
       // Stream failed (network error, server error, etc.)
       status.value = 'error'
@@ -438,65 +371,23 @@ export function useConversation() {
     return await callChatEndpoint({
       message: trimmed,
       mode: mode.value,
-      contentId: options?.contentId !== undefined
-        ? options.contentId
-        : (conversationContentId.value || undefined)
+      contentId: options?.contentId
     })
   }
 
   function hydrateConversation(payload: {
     messages?: ChatResponse['messages']
-    logs?: ChatResponse['logs']
     conversationId?: string | null
-    conversationContentId?: string | null
   }) {
     if (payload.conversationId !== undefined) {
       conversationId.value = payload.conversationId
     }
 
-    if (payload.conversationContentId !== undefined) {
-      conversationContentId.value = payload.conversationContentId
-    }
-
     if (payload.messages) {
       messages.value = normalizeMessages(payload.messages)
     }
-
-    if (payload.logs) {
-      logs.value = normalizeLogs(payload.logs)
-    }
   }
 
-  async function loadConversationForContent(contentId: string) {
-    const response = await $fetch<{ workspace: Record<string, any> | null }>(`/api/content/${contentId}`)
-
-    const workspace = response?.workspace
-    if (workspace?.content?.id) {
-      if (workspace.chatSession?.id && (!workspace.chatMessages || !workspace.chatLogs)) {
-        try {
-          // Use conversation endpoints for messages and logs
-          const conversationId = workspace.chatSession.id
-          const [messagesResponse, logsResponse] = await Promise.all([
-            $fetch<{ messages: any[] }>(`/api/conversations/${conversationId}/messages`),
-            $fetch<{ logs: any[] }>(`/api/conversations/${conversationId}/logs`)
-          ])
-          workspace.chatMessages = messagesResponse.messages
-          workspace.chatLogs = logsResponse.logs
-        } catch (error) {
-          console.error('[useConversation] Failed to fetch conversation history', error)
-        }
-      }
-
-      hydrateConversation({
-        conversationId: workspace.chatSession?.id ?? null,
-        conversationContentId: workspace.chatSession?.contentId ?? workspace.content.id,
-        messages: workspace.chatMessages,
-        logs: workspace.chatLogs
-      })
-    }
-
-    return workspace
-  }
 
   function stopResponse() {
     if (activeController.value) {
@@ -511,8 +402,6 @@ export function useConversation() {
     status.value = 'ready'
     errorMessage.value = null
     conversationId.value = null
-    conversationContentId.value = null
-    logs.value = []
     requestStartedAt.value = null
     prompt.value = ''
     currentActivity.value = null
@@ -524,15 +413,11 @@ export function useConversation() {
     status,
     errorMessage,
     isBusy,
-    selectedContentType,
     sendMessage,
     conversationId,
-    conversationContentId,
     stopResponse,
-    logs,
     requestStartedAt,
     hydrateConversation,
-    loadConversationForContent,
     resetConversation,
     prompt,
     mode,

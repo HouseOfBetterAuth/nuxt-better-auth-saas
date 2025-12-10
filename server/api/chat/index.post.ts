@@ -1210,7 +1210,6 @@ async function executeChatTool(
  * {
  *   message: string (required) - Natural language user message
  *   conversationId?: string - Existing conversation ID to continue conversation
- *   contentId?: string - Content ID to link the conversation to (provides workspace context)
  *   mode: 'chat' | 'agent' - Mode selector (required)
  * }
  * ```
@@ -1218,7 +1217,7 @@ async function executeChatTool(
  * **Output (SSE Stream):**
  * This endpoint returns a Server-Sent Events (SSE) stream with the following events:
  *
- * - `conversation:update` - Conversation state changes (conversationId, conversationContentId)
+ * - `conversation:update` - Conversation state changes (conversationId)
  * - `message:chunk` - Incremental LLM text chunks (`{ messageId: string, chunk: string }`)
  * - `message:complete` - LLM text generation finished (`{ messageId: string, message: string }`)
  * - `tool:start` - Tool execution started (`{ toolName: string, timestamp: string }`)
@@ -1227,7 +1226,7 @@ async function executeChatTool(
  * - `messages:complete` - **Authoritative message list from database** (`{ messages: Array }`)
  * - `logs:complete` - Authoritative log list from database (`{ logs: Array }`)
  * - `agentContext:update` - Final agent context (`{ readySources, ingestFailures, lastAction, toolHistory }`)
- * - `conversation:final` - Final conversation state (`{ conversationId, conversationContentId }`)
+ * - `conversation:final` - Final conversation state (`{ conversationId }`)
  * - `done` - Stream completion signal (`{}`)
  *
  * **Important:** The `messages:complete` event contains the authoritative, DB-backed message list.
@@ -1304,6 +1303,15 @@ export default defineEventHandler(async (event) => {
   const VALID_MODES = ['chat', 'agent'] as const
   const mode = validateEnum(body.mode, VALID_MODES, 'mode')
 
+  // Block agent mode for anonymous users
+  if (mode === 'agent' && user.isAnonymous) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Agent mode requires authentication',
+      message: 'Please sign in to use agent mode and save content.'
+    })
+  }
+
   const message = typeof body.message === 'string' ? body.message : ''
   const trimmedMessage = message.trim()
   const requestConversationId = body.conversationId
@@ -1366,7 +1374,6 @@ export default defineEventHandler(async (event) => {
     const lastAction = trimmedMessage ? 'message' : null
     conversation = await getOrCreateConversationForContent(db, {
       organizationId,
-      contentId: _initialSessionContentId ?? null, // Explicitly null if undefined
       sourceContentId: null, // Tools will set this when sources are created
       createdByUserId: user.id,
       metadata: {
@@ -1549,11 +1556,10 @@ export default defineEventHandler(async (event) => {
       let _currentAssistantMessage = ''
 
       // Send initial conversation update
-      // Event: conversation:update - Emitted when conversation state changes (e.g., conversation created, contentId updated)
-      // Client should update conversationId and conversationContentId state
+      // Event: conversation:update - Emitted when conversation state changes
+      // Client should update conversationId state
       writeSSE('conversation:update', {
-        conversationId: activeConversation.id,
-        conversationContentId: activeConversation.contentId
+        conversationId: activeConversation.id
       })
 
       multiPassResult = await runChatAgentWithMultiPassStream({
@@ -1648,8 +1654,7 @@ export default defineEventHandler(async (event) => {
               if (updatedConversation) {
                 activeConversation = updatedConversation
                 writeSSE('conversation:update', {
-                  conversationId: activeConversation.id,
-                  conversationContentId: activeConversation.contentId
+                  conversationId: activeConversation.id
                 })
               }
             }
@@ -1686,8 +1691,7 @@ export default defineEventHandler(async (event) => {
               if (updatedConversation) {
                 activeConversation = updatedConversation
                 writeSSE('conversation:update', {
-                  conversationId: activeConversation.id,
-                  conversationContentId: activeConversation.contentId
+                  conversationId: activeConversation.id
                 })
               }
             }
@@ -1746,11 +1750,17 @@ export default defineEventHandler(async (event) => {
       }
     } catch (error) {
       console.error('Agent turn failed', error)
+      const errorDetails = error instanceof Error ? error.message : String(error)
+      const isDev = process.env.NODE_ENV === 'development'
+      const errorMessage = isDev && errorDetails
+        ? `The assistant encountered an error processing your request: ${errorDetails}`
+        : 'The assistant encountered an error processing your request. Please try again.'
       ingestionErrors.push({
-        content: 'The assistant encountered an error processing your request. Please try again.',
+        content: errorMessage,
         payload: {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          type: 'agent_failure'
+          error: errorDetails,
+          type: 'agent_failure',
+          stack: error instanceof Error ? error.stack : undefined
         }
       })
     }
@@ -1972,10 +1982,9 @@ export default defineEventHandler(async (event) => {
   writeSSE('agentContext:update', agentContext)
 
   // Event: conversation:final - Final conversation state after all processing
-  // Client should update conversationId and conversationContentId with final values
+  // Client should update conversationId with final value
   writeSSE('conversation:final', {
-    conversationId: activeConversation.id,
-    conversationContentId: activeConversation.contentId
+    conversationId: activeConversation.id
   })
 
   // Event: done - Stream completion signal

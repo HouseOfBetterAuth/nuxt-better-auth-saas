@@ -24,7 +24,6 @@ export default defineEventHandler(async (event) => {
   const db = getDB()
 
   const body = await readBody(event)
-  const contentId = body.contentId ? validateOptionalUUID(body.contentId, 'contentId') : null
   const sourceContentId = body.sourceContentId ? validateOptionalUUID(body.sourceContentId, 'sourceContentId') : null
 
   let validatedMetadata: Record<string, any> | null = null
@@ -44,7 +43,6 @@ export default defineEventHandler(async (event) => {
 
   const conversation = await getOrCreateConversationForContent(db, {
     organizationId,
-    contentId,
     sourceContentId,
     createdByUserId: user.id,
     status: 'active',
@@ -55,7 +53,6 @@ export default defineEventHandler(async (event) => {
     conversation: {
       id: conversation.id,
       organizationId: conversation.organizationId,
-      contentId: conversation.contentId,
       sourceContentId: conversation.sourceContentId,
       createdByUserId: conversation.createdByUserId,
       status: conversation.status,

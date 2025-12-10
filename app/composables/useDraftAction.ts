@@ -4,7 +4,7 @@ import { ref } from 'vue'
 interface DraftActionOptions {
   isBusy: Ref<boolean> | (() => boolean)
   status: Ref<string> | (() => string)
-  conversationContentId: Ref<string | null> | (() => string | null)
+  conversationContentId?: Ref<string | null> | (() => string | null) // Optional - legacy field, content links to conversation via content.conversationId
   contentId?: Ref<string> | (() => string | null)
   selectedContentType?: Ref<string | null> | (() => string | null)
   pendingDrafts?: Ref<Array<{ id: string, contentType: string | null }>> // Legacy name, represents pending content items
@@ -38,6 +38,7 @@ export function useDraftAction(options: DraftActionOptions) {
   }
 
   const getConversationContentId = () => {
+    if (!conversationContentId) return null
     return typeof conversationContentId === 'function' ? conversationContentId() : conversationContentId.value
   }
 

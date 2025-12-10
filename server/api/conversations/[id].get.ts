@@ -29,7 +29,6 @@ export default defineEventHandler(async (event) => {
     conversation: {
       id: conversation.id,
       organizationId: conversation.organizationId,
-      contentId: conversation.contentId,
       sourceContentId: conversation.sourceContentId,
       createdByUserId: conversation.createdByUserId,
       status: conversation.status,

@@ -54,7 +54,6 @@ export default defineEventHandler(async (event) => {
       conversation: {
         id: schema.conversation.id,
         organizationId: schema.conversation.organizationId,
-        contentId: schema.conversation.contentId,
         sourceContentId: schema.conversation.sourceContentId,
         createdByUserId: schema.conversation.createdByUserId,
         status: schema.conversation.status,
@@ -75,6 +74,14 @@ export default defineEventHandler(async (event) => {
         WHERE ${schema.content.conversationId} = ${schema.conversation.id}
         ORDER BY ${schema.content.updatedAt} DESC
         LIMIT 1
+      )`,
+      // Get last message content for preview (most recent message)
+      lastMessage: sql<string | null>`(
+        SELECT ${schema.conversationMessage.content}
+        FROM ${schema.conversationMessage}
+        WHERE ${schema.conversationMessage.conversationId} = ${schema.conversation.id}
+        ORDER BY ${schema.conversationMessage.createdAt} DESC
+        LIMIT 1
       )`
     })
     .from(schema.conversation)
@@ -90,7 +97,6 @@ export default defineEventHandler(async (event) => {
       return {
         id: row.conversation.id,
         organizationId: row.conversation.organizationId,
-        contentId: row.conversation.contentId,
         sourceContentId: row.conversation.sourceContentId,
         createdByUserId: row.conversation.createdByUserId,
         status: row.conversation.status,
@@ -100,7 +106,8 @@ export default defineEventHandler(async (event) => {
         _computed: {
           artifactCount: Number(row.artifactCount) || 0,
           firstArtifactTitle: row.firstArtifactTitle || null,
-          title // Include computed title
+          title, // Include computed title
+          lastMessage: row.lastMessage || null
         }
       }
     }),

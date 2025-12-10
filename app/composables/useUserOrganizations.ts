@@ -1,11 +1,17 @@
 interface UserOrganization {
   id: string
   slug: string
+  name?: string
   [key: string]: any
 }
 
 const USER_ORGANIZATIONS_KEY = 'user-organizations'
 
+/**
+ * Shared composable for fetching user organizations with proper caching.
+ * This is the single source of truth to avoid duplicate fetches.
+ * Caching is enabled by default to improve performance.
+ */
 export function useUserOrganizations(options?: { lazy?: boolean }) {
   const { organization, user } = useAuth()
 
@@ -32,7 +38,9 @@ export function useUserOrganizations(options?: { lazy?: boolean }) {
     }
   }
 
+  // Enable proper caching - remove getCachedData: () => undefined to allow Nuxt to cache
   return useAsyncData<UserOrganization[]>(() => cacheKey.value, fetchOrganizations, {
     lazy: options?.lazy
+    // Caching is enabled by default - Nuxt will cache based on the key
   })
 }

@@ -1,3 +1,5 @@
+import { useUserOrganizations } from '~/composables/useUserOrganizations'
+
 export default defineNuxtRouteMiddleware(async (to) => {
   const { loggedIn, organization, useActiveOrganization, fetchSession, session } = useAuth()
 
@@ -8,20 +10,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!routeSlug || routeSlug === 't')
     return
 
-  // Don't run on non-dashboard routes if they happen to have a slug param but aren't organization related
-  // Assuming all routes with :slug are organization routes based on app structure
+  // Only handle routes that still use slug-based routing (settings, billing, etc.)
+  // New routes (/conversations, /content) don't use slugs, so this middleware won't run for them
 
   // Check if we need to switch organization
   const activeOrgId = (session.value as any)?.activeOrganizationId
 
-  // Use cached org list to avoid fetching on every navigation
-  // getCachedData returns undefined to ensure fresh data on each full page load
-  const { data: orgs } = await useAsyncData('user-organizations', async () => {
-    const { data } = await organization.list()
-    return data
-  }, {
-    getCachedData: () => undefined
-  })
+  // Use shared composable with proper caching enabled
+  const { data: orgs } = useUserOrganizations()
 
   if (!orgs.value || orgs.value.length === 0)
     return
@@ -42,7 +38,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   } else {
     // Invalid slug, redirect to first available org or handle error
-    // We can redirect to the first org's dashboard if the user has access to any orgs
     const firstOrg = orgs.value?.[0]
     if (firstOrg) {
       // Prevent infinite redirect if we are already redirected

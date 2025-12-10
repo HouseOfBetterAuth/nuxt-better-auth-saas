@@ -1,9 +1,3 @@
-export interface AiThinkingLogEntry {
-  type?: string | null
-  message?: string | null
-  createdAt?: string | Date | null
-}
-
 interface IndicatorPreset {
   label: string
   message: string
@@ -22,18 +16,17 @@ const PRESETS = {
 
 export function resolveAiThinkingIndicator(input: {
   status?: string | null
-  logs?: AiThinkingLogEntry[] | null
   fallbackMessage?: string
   activeSince?: Date | string | number | null
-  currentActivity?: 'llm_thinking' | 'tool_executing' | 'streaming_message' | null
+  currentActivity?: 'thinking' | 'streaming' | null
   currentToolName?: string | null
 }): IndicatorPreset {
   // Priority 1: Use currentActivity state (most accurate for streaming)
-  if (input.currentActivity === 'streaming_message') {
+  if (input.currentActivity === 'streaming') {
     return PRESETS.generating
   }
 
-  if (input.currentActivity === 'llm_thinking' || input.currentActivity === 'tool_executing') {
+  if (input.currentActivity === 'thinking') {
     return PRESETS.thinking
   }
 

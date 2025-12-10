@@ -1,95 +1,14 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
-import type { PublishContentResponse } from '~~/server/types/content'
-import type { WorkspaceHeaderState } from './workspaceHeader'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
-import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, watch } from 'vue'
 
 import BillingUpgradeModal from '~/components/billing/UpgradeModal.vue'
-import { useDraftAction } from '~/composables/useDraftAction'
 import { resolveAiThinkingIndicator } from '~/utils/aiThinkingIndicators'
 import ChatMessageContent from './ChatMessageContent.vue'
+import FilesChanged from './FilesChanged.vue'
 import PromptComposer from './PromptComposer.vue'
 import QuotaLimitModal from './QuotaLimitModal.vue'
-
-// Workspace types and interfaces
-type ContentStatus = 'draft' | 'published' | 'archived' | 'generating' | 'error' | 'loading'
-
-interface ContentVersionSection {
-  id: string
-  title: string
-  body?: string
-  body_mdx?: string
-  wordCount?: number
-  index?: number
-  type?: string
-  meta?: Record<string, any>
-  level?: number
-  anchor?: string
-  summary?: string | null
-}
-
-interface ContentVersion {
-  id: string
-  bodyMdx?: string
-  bodyHtml?: string
-  frontmatter?: Record<string, any>
-  version?: number
-  updatedAt?: string
-  createdByUserId?: string
-  diffStats?: {
-    additions?: number
-    deletions?: number
-  }
-  assets?: {
-    generator?: {
-      engine?: string
-      generatedAt?: string
-      stages?: string[]
-    }
-    source?: {
-      id?: string
-      type?: string
-      externalId?: string
-      originalUrl?: string
-      [key: string]: any
-    }
-  }
-  sections?: ContentVersionSection[]
-  seoSnapshot?: Record<string, any>
-}
-
-interface SourceContent {
-  id: string
-  sourceType: string
-  externalId?: string
-  sourceText?: string
-  sourceUrl?: string
-  ingestStatus?: 'pending' | 'processing' | 'ingested' | 'failed'
-  metadata?: {
-    duration?: number
-    [key: string]: any
-  }
-  createdAt: string | Date
-}
-
-interface ContentEntity {
-  id: string
-  title?: string
-  status?: ContentStatus
-  sourceContent?: SourceContent | null
-  updatedAt?: string
-  createdByUserId?: string
-  metadata?: Record<string, any>
-}
-
-interface ContentConversation {
-  id: string
-  status?: string | null
-  contentId?: string | null
-  sourceContentId?: string | null
-  metadata?: Record<string, any> | null
-}
 
 interface ContentConversationMessage {
   id: string
@@ -97,24 +16,6 @@ interface ContentConversationMessage {
   content: string
   payload?: Record<string, any> | null
   createdAt: string | Date
-}
-
-interface ContentConversationLog {
-  id: string
-  type: string
-  message: string
-  payload?: Record<string, any> | null
-  createdAt: string | Date
-}
-
-interface ContentResponse {
-  content: ContentEntity
-  currentVersion?: ContentVersion | null
-  sourceContent?: SourceContent | null
-  chatSession?: ContentConversation | null
-  chatMessages?: ContentConversationMessage[] | null
-  chatLogs?: ContentConversationLog[] | null
-  workspaceSummary?: string | null
 }
 
 const router = useRouter()
@@ -129,12 +30,8 @@ const {
   errorMessage,
   sendMessage,
   isBusy,
-  conversationContentId,
   conversationId,
   resetConversation,
-  selectedContentType,
-  stopResponse,
-  logs,
   requestStartedAt,
   prompt,
   mode,
@@ -146,6 +43,7 @@ const promptSubmitting = ref(false)
 const showQuotaModal = ref(false)
 const quotaModalData = ref<{ limit: number | null, used: number | null, remaining: number | null, planLabel: string | null } | null>(null)
 const showUpgradeModal = ref(false)
+const showAgentModeLoginModal = ref(false)
 const LONG_PRESS_DELAY_MS = 500
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10
 
@@ -192,58 +90,10 @@ const parseConversationLimitValue = (value: unknown, fallback: number) => {
 const guestConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.anonymous, 10))
 const verifiedConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.verified, 50))
 
-const activeWorkspaceId = ref<string | null>(null)
-const workspaceDetail = shallowRef<any | null>(null)
-const workspaceLoading = ref(false)
+const activeConversationId = ref<string | null>(null)
 const archivingConversationId = ref<string | null>(null)
-const pendingDrafts = ref<Array<{ id: string, contentType: string | null }>>([])
 const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
-const workspacePayloadCache = useState<Record<string, { payload: any | null, timestamp: number }>>('workspace-payload-cache', () => ({}))
-const WORKSPACE_CACHE_TTL_MS = 30_000
 
-const scheduleIdleTask = (fn: () => void) => {
-  if (typeof window === 'undefined')
-    return
-  const idle = (window as any).requestIdleCallback as ((cb: () => void) => number) | undefined
-  if (typeof idle === 'function') {
-    idle(() => fn())
-  } else {
-    setTimeout(() => fn(), 200)
-  }
-}
-
-const prefetchWorkspacePayload = (conversationId?: string | null) => {
-  if (!import.meta.client || !conversationId) {
-    return
-  }
-  scheduleIdleTask(() => {
-    const cacheEntry = workspacePayloadCache.value[conversationId]
-    const now = Date.now()
-    if (cacheEntry && (now - cacheEntry.timestamp) < WORKSPACE_CACHE_TTL_MS) {
-      return
-    }
-    // Prefetch conversation and its artifacts
-    Promise.all([
-      $fetch<{ conversation: any }>(`/api/conversations/${conversationId}`).catch(() => null),
-      $fetch<{ artifacts: Array<{ contentId: string }> }>(`/api/conversations/${conversationId}/artifacts`).catch(() => ({ artifacts: [] }))
-    ]).then(([convResponse, artifactsResponse]) => {
-      if (!convResponse)
-        return
-      const contentId = artifactsResponse.artifacts?.[0]?.contentId || convResponse.conversation.contentId
-      if (contentId) {
-        return $fetch<{ workspace?: any | null }>(`/api/content/${contentId}`)
-          .then((response) => {
-            workspacePayloadCache.value[conversationId] = {
-              payload: response?.workspace ?? null,
-              timestamp: Date.now()
-            }
-          })
-      }
-    }).catch(() => {
-      // Ignore prefetch errors
-    })
-  })
-}
 interface ConversationQuotaUsagePayload {
   limit: number | null
   used: number | null
@@ -272,7 +122,6 @@ interface ConversationListResponse {
 
 const {
   data: conversationsPayload,
-  pending: conversationsPending,
   refresh: refreshConversations
 } = await useFetch<ConversationListResponse>('/api/conversations', {
   default: () => ({
@@ -307,18 +156,6 @@ const updateLocalConversationStatus = (conversationId: string, status: string) =
     conversationListCache.value.set(conversationId, archivedConversation)
   }
 }
-const isWorkspaceActive = computed(() => Boolean(activeWorkspaceId.value))
-
-// Workspace-specific state (merged from ConversationWorkspace)
-// Use instance-scoped ref instead of global useState to avoid wiping state for other widget instances
-const workspaceHeaderState = ref<WorkspaceHeaderState | null>(null)
-const workspaceContent = ref<ContentResponse | null>(null)
-const workspacePending = ref(false)
-const workspaceError = ref<any>(null)
-const workspaceChatLoading = ref(false)
-const pendingWorkspaceChatFetches = new Set<string>()
-const selectedSectionId = ref<string | null>(null)
-const isPublishing = ref(false)
 
 const conversationQuotaUsage = computed<ConversationQuotaUsagePayload | null>(() =>
   conversationsPayload.value?.conversationQuota ?? null
@@ -353,73 +190,41 @@ const fetchedConversationEntries = computed(() => {
       title: conv._computed?.title || conv._computed?.firstArtifactTitle || 'Untitled conversation',
       status: conv.status,
       updatedAt,
-      artifactCount: conv._computed?.artifactCount ?? 0,
-      contentId: conv.contentId,
-      sourceContentId: conv.sourceContentId,
-      metadata: conv.metadata
+      lastMessage: conv._computed?.lastMessage || null
     }
   }).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 })
 
-const pendingConversationEntries = computed(() => {
-  const existingIds = new Set(fetchedConversationEntries.value.map(entry => entry.id))
-
-  return pendingDrafts.value
-    .filter(entry => entry.id && !existingIds.has(entry.id))
-    .map(entry => ({
-      id: entry.id,
-      title: 'New conversation',
-      status: 'active',
-      updatedAt: null,
-      artifactCount: 0,
-      contentId: null,
-      sourceContentId: null,
-      metadata: null,
-      isPending: true
-    }))
-})
-
+// Filter out archived conversations - show only active/completed
 const conversationEntries = computed(() => {
-  return [
-    ...pendingConversationEntries.value,
-    ...fetchedConversationEntries.value
-  ]
+  return fetchedConversationEntries.value.filter((entry) => {
+    const status = (entry.status || '').toLowerCase().trim()
+    return status !== 'archived'
+  })
 })
 
-watch(conversationId, (value, previous) => {
-  if (!value || value === previous)
-    return
-
-  const alreadyPresent = fetchedConversationEntries.value.some(entry => entry.id === value)
-    || pendingDrafts.value.some(entry => entry.id === value)
-
-  if (alreadyPresent)
-    return
-
-  // Remove any temp entries (they'll be replaced by the real conversation)
-  pendingDrafts.value = pendingDrafts.value.filter(entry => !entry.id.startsWith('temp-'))
-
-  pendingDrafts.value = [
-    { id: value, contentType: selectedContentType.value || null },
-    ...pendingDrafts.value
-  ]
-
-  debouncedRefreshConversations()
+// Convert conversations to UNavigationMenu format (array of arrays for groups)
+const conversationMenuItems = computed(() => {
+  const items = conversationEntries.value.map(conv => ({
+    label: conv.title,
+    to: `/conversations/${conv.id}`,
+    badge: ('isPending' in conv && conv.isPending) ? 'pending' : undefined
+  }))
+  // Return as array of arrays (groups) like other menus
+  return items.length > 0 ? [items] : []
 })
 
-watch(fetchedConversationEntries, (entries) => {
-  const presentIds = new Set(entries.map(entry => entry.id))
-  pendingDrafts.value = pendingDrafts.value.filter(entry => !presentIds.has(entry.id))
-})
+// Share conversation menu items via shared state (accessible from layout)
+const conversationMenuItemsState = useState<any[][]>('conversation-menu-items', () => [])
+watch(conversationMenuItems, (items) => {
+  conversationMenuItemsState.value = items
+}, { immediate: true })
 
-const activeWorkspaceEntry = computed(() => conversationEntries.value.find(entry => entry.id === activeWorkspaceId.value) ?? null)
 const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
-const shouldShowWhatsNew = computed(() => !isWorkspaceActive.value && messages.value.length === 0)
 const THINKING_MESSAGE_ID = 'quillio-thinking-placeholder'
 const aiThinkingIndicator = computed(() => resolveAiThinkingIndicator({
   status: status.value,
-  logs: logs.value,
   activeSince: requestStartedAt.value,
   fallbackMessage: 'Working on your content...',
   currentActivity: currentActivity.value,
@@ -444,22 +249,6 @@ const displayMessages = computed<ChatMessage[]>(() => {
 
   return baseMessages.filter(message => message.id !== THINKING_MESSAGE_ID)
 })
-
-useDraftAction({
-  isBusy,
-  status,
-  conversationContentId,
-  selectedContentType,
-  pendingDrafts,
-  sendMessage,
-  onRefresh: async () => {
-    await refreshConversations()
-    if (activeWorkspaceId.value) {
-      prefetchWorkspacePayload(activeWorkspaceId.value)
-    }
-  }
-})
-
 const openQuotaModal = (payload?: { limit?: number | null, used?: number | null, remaining?: number | null, label?: string | null } | null) => {
   const fallback = conversationQuotaUsage.value
 
@@ -529,8 +318,16 @@ const handleQuotaModalCancel = () => {
 
 const handleUpgradeSuccess = async () => {
   showUpgradeModal.value = false
-  await refreshActiveOrg()
-  await refreshConversations()
+  // Wait for modal to close and DOM to update before refreshing
+  await nextTick()
+  try {
+    await refreshActiveOrg()
+    await refreshConversations()
+  } catch (error) {
+    // Silently handle errors during refresh to prevent crashes
+    // Component may be unmounting or in a transitional state
+    console.error('Error refreshing after upgrade:', error)
+  }
 }
 
 const handleQuotaGoogleSignup = () => {
@@ -551,6 +348,32 @@ const handleQuotaEmailSignup = () => {
   showQuotaModal.value = false
   const redirect = route.fullPath || '/'
   router.push(`/signup?redirect=${encodeURIComponent(redirect)}`)
+}
+
+const handleAgentModeGoogleSignup = () => {
+  showAgentModeLoginModal.value = false
+  if (typeof window === 'undefined')
+    return
+  try {
+    signIn.social?.({
+      provider: 'google',
+      callbackURL: window.location.href
+    })
+  } catch (error) {
+    console.error('Failed to start Google signup', error)
+  }
+}
+
+const handleAgentModeEmailSignup = () => {
+  showAgentModeLoginModal.value = false
+  const redirect = route.fullPath || '/'
+  router.push(`/signup?redirect=${encodeURIComponent(redirect)}`)
+}
+
+const handleAgentModeSignIn = () => {
+  showAgentModeLoginModal.value = false
+  const redirect = route.fullPath || '/'
+  router.push(`/signin?redirect=${encodeURIComponent(redirect)}`)
 }
 
 if (import.meta.client) {
@@ -575,141 +398,85 @@ const handlePromptSubmit = async (value?: string) => {
   promptSubmitting.value = true
   try {
     await sendMessage(trimmed)
-    if (activeWorkspaceId.value) {
-      prefetchWorkspacePayload(activeWorkspaceId.value)
-    }
     prompt.value = ''
   } finally {
     promptSubmitting.value = false
   }
 }
 
-const loadWorkspaceDetail = async (conversationId: string) => {
+// Get conversationId from route params (for /conversations/[id] route)
+const routeConversationId = computed(() => {
+  const id = route.params.id
+  if (Array.isArray(id)) {
+    return id[0] || null
+  }
+  return id || null
+})
+
+const loadConversationMessages = async (conversationId: string) => {
   if (!conversationId) {
-    workspaceDetail.value = null
     return
   }
 
-  const cacheEntry = workspacePayloadCache.value[conversationId]
-  const now = Date.now()
-
-  if (cacheEntry) {
-    workspaceDetail.value = cacheEntry.payload
-    if (now - cacheEntry.timestamp < WORKSPACE_CACHE_TTL_MS) {
-      workspaceLoading.value = false
-      return
-    }
-  } else {
-    workspaceDetail.value = null
-  }
-
-  workspaceLoading.value = !cacheEntry
   try {
-    // First, get the conversation to find its content artifacts
-    const conversationResponse = await $fetch<{ conversation: any }>(`/api/conversations/${conversationId}`)
-    const conversation = conversationResponse.conversation
+    const messagesResponse = await $fetch<{ data: ContentConversationMessage[] }>(`/api/conversations/${conversationId}/messages`)
 
-    // Get artifacts for this conversation
-    const artifactsResponse = await $fetch<{ artifacts: Array<{ contentId: string, data: any }> }>(`/api/conversations/${conversationId}/artifacts`)
+    // Convert ContentConversationMessage to ChatResponse format
+    const convertedMessages = (messagesResponse.data || []).map(msg => ({
+      id: msg.id,
+      role: msg.role,
+      content: msg.content,
+      parts: msg.content ? [{ type: 'text' as const, text: msg.content }] : [],
+      payload: msg.payload,
+      createdAt: msg.createdAt
+    }))
 
-    // Use the first content artifact, or the legacy contentId if available
-    const contentIdToLoad = artifactsResponse.artifacts?.[0]?.contentId || conversation.contentId
-
-    if (contentIdToLoad) {
-      // Load the content workspace
-      const workspaceResponse = await $fetch<{ workspace?: any | null }>(`/api/content/${contentIdToLoad}`)
-      const payload = workspaceResponse.workspace ?? null
-      workspaceDetail.value = payload
-      workspacePayloadCache.value[conversationId] = {
-        payload,
-        timestamp: Date.now()
-      }
-    } else {
-      // No content artifacts yet - create a minimal workspace payload
-      workspaceDetail.value = {
-        conversation: {
-          id: conversation.id,
-          status: conversation.status,
-          metadata: conversation.metadata
-        },
-        content: null,
-        artifacts: artifactsResponse.artifacts || []
-      }
-      workspacePayloadCache.value[conversationId] = {
-        payload: workspaceDetail.value,
-        timestamp: Date.now()
-      }
-    }
+    hydrateConversation({
+      conversationId,
+      messages: convertedMessages
+    })
   } catch (error) {
-    console.error('Unable to load conversation workspace', error)
-    if (!cacheEntry) {
-      workspaceDetail.value = null
-    }
-  } finally {
-    workspaceLoading.value = false
+    console.error('Unable to load conversation messages', error)
   }
 }
 
-const normalizeContentId = (value: unknown): string | null => {
-  if (Array.isArray(value)) {
-    const first = value[0]
-    return typeof first === 'string' ? first : null
+// Load conversation from route param when component mounts or route changes
+watch(routeConversationId, async (newId) => {
+  if (newId && newId !== activeConversationId.value) {
+    activeConversationId.value = newId
+    await loadConversationMessages(newId)
+  } else if (!newId && activeConversationId.value) {
+    // Route changed to a non-conversation route, reset
+    activeConversationId.value = null
+    resetConversation()
   }
-  return typeof value === 'string' ? value : null
-}
+}, { immediate: true })
 
-const resetWorkspaceState = () => {
-  activeWorkspaceId.value = null
-  workspaceDetail.value = null
-  workspaceLoading.value = false
-}
-
-const routeContentId = computed(() => normalizeContentId(route.query.content))
-
-const syncWorkspace = async (conversationId: string | null) => {
-  if (!conversationId) {
-    resetWorkspaceState()
+// Watch composable conversationId - when chat creates/updates conversation, navigate to it
+watch(conversationId, (value, previous) => {
+  if (!value || value === previous)
     return
+
+  // Navigate to conversation route when a new conversation is created
+  if (value !== routeConversationId.value) {
+    router.push(`/conversations/${value}`)
   }
-  if (activeWorkspaceId.value === conversationId && workspaceDetail.value) {
-    return
+
+  // Refresh conversations to ensure new conversation appears in list
+  const alreadyPresent = fetchedConversationEntries.value.some(entry => entry.id === value)
+
+  if (!alreadyPresent) {
+    debouncedRefreshConversations()
   }
-  activeWorkspaceId.value = conversationId
-  await loadWorkspaceDetail(conversationId)
+})
+
+const closeConversation = async () => {
+  router.push('/conversations')
+  resetConversation()
 }
 
-const scheduleSyncWorkspace = useDebounceFn((conversationId: string | null) => {
-  void syncWorkspace(conversationId)
-}, 200)
-
-const updateContentRoute = async (contentId: string | null) => {
-  const nextQuery = { ...route.query }
-  if (contentId) {
-    nextQuery.content = contentId
-  } else {
-    delete nextQuery.content
-  }
-  try {
-    await router.replace({ query: nextQuery })
-  } catch (error) {
-    console.warn('Failed to update content route', error)
-  }
-}
-
-const initialContentId = computed(() => routeContentId.value ?? null)
-
-await syncWorkspace(initialContentId.value)
-
-const activateWorkspace = async (conversationId: string | null) => {
-  await updateContentRoute(conversationId)
-}
-
-const openConversation = async (entry: { id: string }) => {
-  // Open conversation by conversationId (not contentId)
-  await activateWorkspace(entry.id)
-}
-
-const archiveConversation = async (entry: { id: string, title?: string | null }) => {
+// Archive via context menu or other UI - not used in navigation menu
+const _archiveConversation = async (entry: { id: string, title?: string | null }) => {
   if (!entry?.id || archivingConversationId.value === entry.id)
     return
 
@@ -722,8 +489,8 @@ const archiveConversation = async (entry: { id: string, title?: string | null })
 
     updateLocalConversationStatus(entry.id, 'archived')
 
-    if (activeWorkspaceId.value === entry.id) {
-      await activateWorkspace(null)
+    if (activeConversationId.value === entry.id) {
+      router.push('/conversations')
       resetConversation()
     }
 
@@ -748,328 +515,17 @@ const archiveConversation = async (entry: { id: string, title?: string | null })
   }
 }
 
-const stopWorkingContent = (entry: { id: string }) => {
-  if (!entry?.id || entry.id !== conversationContentId.value) {
-    return
-  }
-
-  const stopped = stopResponse()
-  pendingDrafts.value = pendingDrafts.value.filter(content => content.id !== entry.id)
-
-  if (stopped) {
-    toast.add({
-      title: 'Generation stopped',
-      description: 'Draft generation halted.',
-      color: 'neutral',
-      icon: 'i-lucide-square'
-    })
-  }
-}
-
-const closeWorkspace = async () => {
-  const previousWorkspaceId = activeWorkspaceId.value
-  await activateWorkspace(null)
-  resetConversation()
-  prefetchWorkspacePayload(previousWorkspaceId)
-  // Clean up workspace state
-  workspaceContent.value = null
-  workspaceHeaderState.value = null
-  selectedSectionId.value = null
-}
-
-// Workspace content management functions (from ConversationWorkspace)
-const { formatDateRelative } = useDate()
-
-const workspaceContentId = computed(() => {
-  if (workspaceDetail.value?.content?.id) {
-    return workspaceDetail.value.content.id
-  }
-  return null
-})
-
-function handleBackNavigation() {
-  if (activeWorkspaceId.value) {
-    closeWorkspace()
+// Keep for potential future use (e.g., back button in UI)
+function _handleBackNavigation() {
+  if (activeConversationId.value) {
+    closeConversation()
   } else {
     router.push('/')
   }
 }
 
-const fetchWorkspaceChat = async (workspaceContentId: string | null, existingConversationId: string | null) => {
-  if (!workspaceContentId) {
-    return
-  }
-  if (pendingWorkspaceChatFetches.has(workspaceContentId)) {
-    return
-  }
-
-  pendingWorkspaceChatFetches.add(workspaceContentId)
-  workspaceChatLoading.value = true
-  try {
-    let conversationId = existingConversationId
-    if (!conversationId) {
-      const workspaceResponse = await $fetch<{ workspace: ContentResponse | null }>(`/api/content/${workspaceContentId}`)
-      conversationId = workspaceResponse.workspace?.chatSession?.id ?? null
-    }
-
-    if (!conversationId) {
-      return
-    }
-
-    const [messagesResponse, logsResponse] = await Promise.all([
-      $fetch<{ messages: ContentConversationMessage[] }>(`/api/conversations/${conversationId}/messages`),
-      $fetch<{ logs: ContentConversationLog[] }>(`/api/conversations/${conversationId}/logs`)
-    ])
-
-    if (!workspaceContent.value || workspaceContent.value?.content?.id !== workspaceContentId) {
-      return
-    }
-
-    workspaceContent.value = {
-      ...workspaceContent.value,
-      chatMessages: messagesResponse.messages,
-      chatLogs: logsResponse.logs
-    }
-  } catch (error) {
-    console.error('Unable to fetch conversation data', error)
-  } finally {
-    pendingWorkspaceChatFetches.delete(workspaceContentId)
-    workspaceChatLoading.value = false
-  }
-}
-
-const maybeFetchChatData = (payload: ContentResponse | null) => {
-  const workspaceContentId = payload?.content?.id || null
-  const conversationId = payload?.chatSession?.id || null
-  if (!workspaceContentId || !conversationId) {
-    return
-  }
-  if (Array.isArray(payload?.chatMessages) && Array.isArray(payload?.chatLogs)) {
-    return
-  }
-  void fetchWorkspaceChat(workspaceContentId, conversationId)
-}
-
-async function loadWorkspacePayload() {
-  const contentId = workspaceContentId.value
-  if (!contentId) {
-    workspaceContent.value = null
-    return
-  }
-  workspacePending.value = true
-  workspaceError.value = null
-  try {
-    const response = await $fetch<{ workspace: ContentResponse | null }>(`/api/content/${contentId}`)
-    workspaceContent.value = response.workspace ?? null
-    maybeFetchChatData(workspaceContent.value)
-  } catch (err: any) {
-    workspaceError.value = err
-  } finally {
-    workspacePending.value = false
-  }
-}
-
-// Type guard to verify if an object is a valid ContentResponse
-function isContentResponse(obj: any): obj is ContentResponse {
-  // Must be an object (not null/undefined)
-  if (!obj || typeof obj !== 'object') {
-    return false
-  }
-  // Must have content with a valid id
-  if (!obj.content || typeof obj.content !== 'object' || !obj.content.id || typeof obj.content.id !== 'string') {
-    return false
-  }
-  // Must have currentVersion that is not null and has required fields
-  if (!obj.currentVersion || typeof obj.currentVersion !== 'object') {
-    return false
-  }
-  // currentVersion must have at least an id or version number
-  if (!obj.currentVersion.id && (obj.currentVersion.version === undefined || obj.currentVersion.version === null)) {
-    return false
-  }
-  return true
-}
-
-// Initialize workspace when workspaceDetail changes
-watch(() => workspaceDetail.value, async (detail) => {
-  if (detail?.content?.id) {
-    // If detail is already a valid ContentResponse, use it directly
-    if (isContentResponse(detail)) {
-      workspaceContent.value = detail
-      maybeFetchChatData(workspaceContent.value)
-    } else {
-      // Otherwise load it
-      await loadWorkspacePayload()
-    }
-  } else if (detail?.conversation) {
-    // Conversation without content yet - just clear workspace content
-    workspaceContent.value = null
-  } else {
-    // No workspace detail
-    workspaceContent.value = null
-  }
-}, { immediate: true })
-
-// Workspace computed properties
-const workspaceContentRecord = computed(() => workspaceContent.value?.content ?? null)
-const workspaceCurrentVersion = computed(() => workspaceContent.value?.currentVersion ?? null)
-const workspaceGeneratedContent = computed(() => workspaceCurrentVersion.value?.bodyMdx || workspaceCurrentVersion.value?.bodyHtml || null)
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-const workspaceSections = computed(() => {
-  const sectionsData = workspaceCurrentVersion.value?.sections
-  if (!Array.isArray(sectionsData)) {
-    return []
-  }
-
-  return sectionsData.map((section: Record<string, any>, idx: number) => {
-    const body = typeof section.body_mdx === 'string'
-      ? section.body_mdx
-      : typeof section.body === 'string'
-        ? section.body
-        : ''
-
-    return {
-      ...section,
-      id: section.id || section.section_id || `section-${idx}`,
-      index: Number.isFinite(section.index) ? section.index : idx,
-      title: section.title || `Section ${idx + 1}`,
-      type: section.type || section.meta?.planType || 'body',
-      level: section.level || 2,
-      anchor: section.anchor || slugify(section.title || `section-${idx}`),
-      wordCount: Number.isFinite(section.wordCount)
-        ? section.wordCount
-        : body.split(/\s+/).filter(Boolean).length,
-      summary: section.summary || section.meta?.summary || null,
-      body
-    }
-  }).sort((a, b) => a.index - b.index)
-})
-
-watch(workspaceSections, (list) => {
-  if (!list.length) {
-    selectedSectionId.value = null
-    return
-  }
-
-  if (!selectedSectionId.value || !list.some(section => section.id === selectedSectionId.value)) {
-    selectedSectionId.value = list[0]?.id ?? null
-  }
-}, { immediate: true })
-
-function setActiveSection(sectionId: string | null) {
-  if (!sectionId) {
-    return
-  }
-  selectedSectionId.value = sectionId
-}
-
-// Workspace MDX helpers - simplified for copy button only
-const workspaceFullMdx = computed(() => {
-  const body = typeof workspaceGeneratedContent.value === 'string' ? workspaceGeneratedContent.value.trim() : ''
-  // If body already has frontmatter, return as-is
-  const isEnriched = /^---\n[\s\S]*?\n---\n/m.test(body)
-  if (isEnriched) {
-    return body
-  }
-  // If no frontmatter in body, just return the body without adding frontmatter
-  // The server handles proper MDX enrichment when needed
-  return body
-})
-
-const workspaceHasFullMdx = computed(() => workspaceFullMdx.value.trim().length > 0)
-const workspaceCanPublish = computed(() => {
-  return workspaceHasFullMdx.value && Boolean(workspaceContentRecord.value?.id && workspaceCurrentVersion.value?.id)
-})
-const workspacePublishActionLabel = computed(() => isPublishing.value ? 'Publishing…' : 'Publish draft')
-
-// Workspace header state
-const workspaceHeaderPayload = computed<WorkspaceHeaderState | null>(() => {
-  if (!isWorkspaceActive.value || !workspaceContentId.value) {
-    return null
-  }
-
-  const content = workspaceContent.value?.content
-  const version = workspaceContent.value?.currentVersion
-  const frontmatter = version?.frontmatter
-
-  if (!content) {
-    return null
-  }
-
-  const title = frontmatter?.seoTitle || frontmatter?.title || content.title || 'Untitled content'
-  const updatedAtLabel = formatDateRelative(content.updatedAt, { includeTime: true })
-  const additions = version?.diffStats?.additions || frontmatter?.diffStats?.additions || 0
-  const deletions = version?.diffStats?.deletions || frontmatter?.diffStats?.deletions || 0
-
-  return {
-    title,
-    status: content.status || 'draft',
-    contentType: frontmatter?.contentType || 'content',
-    updatedAtLabel,
-    versionId: version?.id || null,
-    additions,
-    deletions,
-    tabs: null,
-    contentId: content.id || workspaceContentId.value || null,
-    showBackButton: true,
-    onBack: handleBackNavigation,
-    onArchive: null,
-    onShare: workspaceHasFullMdx.value ? handleCopyFullMdx : null,
-    onPrimaryAction: workspaceCanPublish.value ? handlePublishDraft : null,
-    primaryActionLabel: workspacePublishActionLabel.value,
-    primaryActionColor: 'primary',
-    primaryActionDisabled: !workspaceCanPublish.value || isPublishing.value
-  }
-})
-
-watch(workspaceHeaderPayload, (value) => {
-  workspaceHeaderState.value = value
-}, { immediate: true })
-
-// Update cache when workspace content loads
-watch(workspaceContent, (value) => {
-  if (!value?.content?.id) {
-    return
-  }
-
-  const contentListCache = useState<Map<string, any>>('content-list-cache', () => new Map())
-  contentListCache.value.set(value.content.id, {
-    content: value.content,
-    currentVersion: value.currentVersion,
-    sourceContent: value.sourceContent,
-    _computed: {
-      wordCount: value.currentVersion?.sections?.reduce((sum: number, section: any) => {
-        const wc = typeof section.wordCount === 'number' ? section.wordCount : 0
-        return sum + wc
-      }, 0) || 0,
-      sectionsCount: Array.isArray(value.currentVersion?.sections) ? value.currentVersion.sections.length : 0,
-      additions: value.currentVersion?.diffStats?.additions || value.currentVersion?.frontmatter?.diffStats?.additions || 0,
-      deletions: value.currentVersion?.diffStats?.deletions || value.currentVersion?.frontmatter?.diffStats?.deletions || 0
-    }
-  })
-
-  hydrateConversation({
-    conversationId: value.chatSession?.id ?? conversationId.value,
-    conversationContentId: value.chatSession?.contentId ?? value.content.id,
-    messages: value.chatMessages ?? undefined,
-    logs: value.chatLogs ?? undefined
-  })
-}, { immediate: true })
-
-watch(routeContentId, (contentId) => {
-  scheduleSyncWorkspace(contentId ?? null)
-})
-
 onBeforeUnmount(() => {
   clearMessageLongPress()
-  workspaceHeaderState.value = null
 })
 
 function getMessageText(message: ChatMessage) {
@@ -1110,99 +566,6 @@ async function handleCopy(message: ChatMessage) {
   }
 }
 
-// Workspace handlers
-async function handleCopyFullMdx() {
-  if (!workspaceHasFullMdx.value) {
-    toast.add({
-      title: 'No MDX available',
-      description: 'Generate content before copying the draft.',
-      color: 'error'
-    })
-    return
-  }
-
-  try {
-    await copy(workspaceFullMdx.value)
-    toast.add({
-      title: 'Draft copied',
-      description: 'Content copied to clipboard.',
-      color: 'primary'
-    })
-  } catch (error) {
-    console.error('Failed to copy MDX', error)
-    toast.add({
-      title: 'Copy failed',
-      description: 'Could not copy the MDX draft.',
-      color: 'error'
-    })
-  }
-}
-
-async function handlePublishDraft() {
-  if (!workspaceCanPublish.value || !workspaceContentRecord.value?.id || !workspaceCurrentVersion.value?.id) {
-    toast.add({
-      title: 'Cannot publish yet',
-      description: 'Generate content before publishing.',
-      color: 'error'
-    })
-    return
-  }
-  if (isPublishing.value) {
-    return
-  }
-  try {
-    isPublishing.value = true
-    const response = await $fetch<PublishContentResponse>(`/api/content/${workspaceContentRecord.value.id}/publish`, {
-      method: 'POST',
-      body: {
-        versionId: workspaceCurrentVersion.value.id
-      }
-    })
-
-    // Reload workspace payload to get complete data including sections, diffStats, seoSnapshot, etc.
-    // This ensures we preserve all metadata after publishing instead of only mapping a subset of fields
-    await loadWorkspacePayload()
-
-    toast.add({
-      title: 'Draft published',
-      description: response.file.url
-        ? `Available at ${response.file.url}`
-        : 'The latest version has been saved to your content storage.',
-      color: 'primary'
-    })
-  } catch (error: any) {
-    console.error('Failed to publish content', error)
-    const description = error?.data?.message || error?.message || 'An unexpected error occurred while publishing.'
-    toast.add({
-      title: 'Publish failed',
-      description,
-      color: 'error'
-    })
-  } finally {
-    isPublishing.value = false
-  }
-}
-
-// Workspace-aware submit handler
-async function _handleWorkspaceSubmit() {
-  const trimmed = prompt.value.trim()
-  if (!trimmed) {
-    return
-  }
-
-  try {
-    await sendMessage(trimmed, {
-      displayContent: trimmed,
-      contentId: workspaceContentId.value || conversationContentId.value
-    })
-    prompt.value = ''
-    await loadWorkspacePayload()
-  } catch (error: any) {
-    errorMessage.value = error?.data?.statusMessage || error?.data?.message || error?.message || 'Unable to send that message.'
-  }
-}
-
-// Update handleRegenerate to be workspace-aware
 const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value) {
     return
@@ -1218,33 +581,8 @@ const handleRegenerate = async (message: ChatMessage) => {
     return
   }
 
-  // Workspace-aware: check for section selection
-  if (isWorkspaceActive.value && workspaceSections.value.length > 0) {
-    if (!selectedSectionId.value) {
-      const fallbackSectionId = workspaceSections.value[0]?.id
-      if (fallbackSectionId) {
-        setActiveSection(fallbackSectionId)
-        toast.add({
-          title: 'Section auto-selected',
-          description: `Regenerating content for "${workspaceSections.value[0]?.title || 'Untitled section'}".`,
-          color: 'info'
-        })
-      } else {
-        toast.add({
-          title: 'Select a section',
-          description: 'Pick a section before regenerating content.',
-          color: 'error'
-        })
-        return
-      }
-    }
-    prompt.value = text
-    await _handleWorkspaceSubmit()
-  } else {
-    // Non-workspace: simple regenerate
-    prompt.value = text
-    await handlePromptSubmit(text)
-  }
+  prompt.value = text
+  await handlePromptSubmit(text)
 }
 
 async function handleSendAgain(message: ChatMessage) {
@@ -1252,11 +590,7 @@ async function handleSendAgain(message: ChatMessage) {
   if (text) {
     prompt.value = text
     try {
-      if (isWorkspaceActive.value) {
-        await _handleWorkspaceSubmit()
-      } else {
-        await handlePromptSubmit(text)
-      }
+      await handlePromptSubmit(text)
     } catch (error) {
       console.error('Failed to send message again', error)
       toast.add({
@@ -1393,22 +727,34 @@ if (import.meta.client) {
   watch(loggedIn, () => {
     debouncedRefreshConversations()
   }, { immediate: true })
+
+  // Watch mode changes - block agent mode for anonymous users
+  watch(mode, (newMode) => {
+    if (newMode === 'agent' && !loggedIn.value) {
+      // Reset to chat mode
+      mode.value = 'chat'
+      // Show login prompt
+      showAgentModeLoginModal.value = true
+    }
+  })
 }
 </script>
 
 <template>
   <div class="w-full py-8 sm:py-12 space-y-8">
     <div class="w-full">
-      <div
-        v-if="!isWorkspaceActive"
-        class="space-y-6 mb-8"
-      >
-        <h1 class="text-2xl font-semibold text-center">
-          What should we write next?
-        </h1>
-      </div>
       <div class="space-y-8">
-        <!-- Error messages are now shown in chat, but keep banner as fallback for non-chat errors -->
+        <!-- Welcome message -->
+        <div
+          v-if="!messages.length && !conversationId"
+          class="space-y-6 mb-8"
+        >
+          <h1 class="text-2xl font-semibold text-center">
+            What should we write next?
+          </h1>
+        </div>
+
+        <!-- Error banner -->
         <UAlert
           v-if="errorMessage && !messages.length"
           color="error"
@@ -1418,181 +764,96 @@ if (import.meta.client) {
           class="w-full"
         />
 
+        <!-- Messages -->
         <div
-          v-if="isWorkspaceActive && activeWorkspaceEntry"
+          v-if="messages.length"
           class="space-y-6 w-full"
         >
-          <ClientOnly>
-            <div
-              v-if="workspaceDetail?.content?.id"
-              class="space-y-6"
+          <div class="w-full">
+            <UChatMessages
+              class="py-4"
+              :messages="displayMessages"
+              :status="uiStatus"
+              should-auto-scroll
+              :assistant="{
+                actions: [
+                  {
+                    label: 'Copy',
+                    icon: 'i-lucide-copy',
+                    onClick: (e, message) => handleCopy(message as ChatMessage)
+                  },
+                  {
+                    label: 'Regenerate',
+                    icon: 'i-lucide-rotate-ccw',
+                    onClick: (e, message) => handleRegenerate(message as ChatMessage)
+                  }
+                ]
+              }"
+              :user="{
+                actions: [
+                  {
+                    label: 'Copy',
+                    icon: 'i-lucide-copy',
+                    onClick: (e, message) => handleCopy(message as ChatMessage)
+                  },
+                  {
+                    label: 'Send again',
+                    icon: 'i-lucide-send',
+                    onClick: (e, message) => handleSendAgain(message as ChatMessage)
+                  }
+                ]
+              }"
             >
-              <section class="space-y-4 pt-2">
-                <div class="space-y-6">
-                  <UAlert
-                    v-if="errorMessage"
-                    color="error"
-                    variant="soft"
-                    icon="i-lucide-alert-triangle"
-                    :description="errorMessage"
+              <template #content="{ message }">
+                <div
+                  :class="message.role === 'user' ? 'cursor-pointer select-text' : 'select-text'"
+                  @touchstart.passive="startMessageLongPress(message, $event)"
+                  @touchmove.passive="handleMessageLongPressMove"
+                  @touchend.passive="clearMessageLongPress"
+                  @touchcancel.passive="clearMessageLongPress"
+                  @mousedown="startMessageLongPress(message, $event)"
+                  @mousemove="handleMessageLongPressMove"
+                  @mouseup="clearMessageLongPress"
+                  @mouseleave="clearMessageLongPress"
+                  @contextmenu.prevent="handleUserMessageContextMenu(message, $event)"
+                >
+                  <ChatMessageContent
+                    :message="message"
+                    :display-text="getDisplayMessageText(message)"
                   />
-
-                  <div class="flex-1 flex flex-col gap-4">
-                    <UChatMessages
-                      :messages="messages"
-                      :status="uiStatus"
-                      should-auto-scroll
-                      :assistant="{
-                        actions: [
-                          {
-                            label: 'Copy',
-                            icon: 'i-lucide-copy',
-                            onClick: (e, message) => handleCopy(message as ChatMessage)
-                          },
-                          {
-                            label: 'Regenerate',
-                            icon: 'i-lucide-rotate-ccw',
-                            onClick: (e, message) => handleRegenerate(message as ChatMessage)
-                          }
-                        ]
-                      }"
-                      :user="{
-                        actions: [
-                          {
-                            label: 'Copy',
-                            icon: 'i-lucide-copy',
-                            onClick: (e, message) => handleCopy(message as ChatMessage)
-                          },
-                          {
-                            label: 'Send again',
-                            icon: 'i-lucide-send',
-                            onClick: (e, message) => handleSendAgain(message as ChatMessage)
-                          }
-                        ]
-                      }"
-                    >
-                      <template #content="{ message }">
-                        <ChatMessageContent
-                          :message="message"
-                          body-class="text-[15px] leading-6 text-muted-800 dark:text-muted-100"
-                        />
-                      </template>
-                    </UChatMessages>
-
-                    <div class="space-y-2">
-                      <PromptComposer
-                        v-model="prompt"
-                        placeholder="Describe the change you want..."
-                        :disabled="
-                          isBusy
-                            || status === 'submitted'
-                            || status === 'streaming'
-                            || !selectedSectionId
-                        "
-                        :status="uiStatus"
-                        @submit="_handleWorkspaceSubmit"
-                      />
-                    </div>
-                  </div>
                 </div>
-              </section>
-            </div>
-            <div
-              v-else
-              class="space-y-6 w-full"
-            >
-              <div class="text-center text-muted-500">
-                Conversation loaded. No content artifacts yet.
-              </div>
-            </div>
-            <template #fallback>
-              <div class="space-y-6 w-full" />
-            </template>
-          </ClientOnly>
-        </div>
-
-        <template v-else>
-          <div
-            v-if="messages.length"
-            class="space-y-6 w-full"
-          >
-            <div class="w-full">
-              <UChatMessages
-                class="py-4"
-                :messages="displayMessages"
-                :status="uiStatus"
-                should-auto-scroll
-                :assistant="{
-                  actions: [
-                    {
-                      label: 'Copy',
-                      icon: 'i-lucide-copy',
-                      onClick: (e, message) => handleCopy(message as ChatMessage)
-                    },
-                    {
-                      label: 'Regenerate',
-                      icon: 'i-lucide-rotate-ccw',
-                      onClick: (e, message) => handleRegenerate(message as ChatMessage)
-                    }
-                  ]
-                }"
-                :user="{
-                  actions: [
-                    {
-                      label: 'Copy',
-                      icon: 'i-lucide-copy',
-                      onClick: (e, message) => handleCopy(message as ChatMessage)
-                    },
-                    {
-                      label: 'Send again',
-                      icon: 'i-lucide-send',
-                      onClick: (e, message) => handleSendAgain(message as ChatMessage)
-                    }
-                  ]
-                }"
-              >
-                <template #content="{ message }">
-                  <div
-                    :class="message.role === 'user' ? 'cursor-pointer select-text' : 'select-text'"
-                    @touchstart.passive="startMessageLongPress(message, $event)"
-                    @touchmove.passive="handleMessageLongPressMove"
-                    @touchend.passive="clearMessageLongPress"
-                    @touchcancel.passive="clearMessageLongPress"
-                    @mousedown="startMessageLongPress(message, $event)"
-                    @mousemove="handleMessageLongPressMove"
-                    @mouseup="clearMessageLongPress"
-                    @mouseleave="clearMessageLongPress"
-                    @contextmenu.prevent="handleUserMessageContextMenu(message, $event)"
-                  >
-                    <ChatMessageContent
-                      :message="message"
-                      :display-text="getDisplayMessageText(message)"
-                    />
-                  </div>
-                </template>
-              </UChatMessages>
-            </div>
+              </template>
+            </UChatMessages>
           </div>
 
-          <div class="w-full space-y-6 mt-8">
-            <!-- Main chat input -->
-            <div class="w-full flex justify-center">
-              <div class="w-full">
-                <PromptComposer
-                  v-model="prompt"
-                  placeholder="Paste a transcript or describe what you need..."
-                  :disabled="isBusy || promptSubmitting"
-                  :status="promptSubmitting ? 'submitted' : uiStatus"
-                  :context-label="isWorkspaceActive ? 'Active content' : undefined"
-                  :context-value="activeWorkspaceEntry?.title || null"
-                  @submit="handlePromptSubmit"
-                >
-                  <template #footer>
+          <!-- Files Changed Summary -->
+          <FilesChanged
+            v-if="conversationId"
+            :conversation-id="conversationId"
+          />
+        </div>
+
+        <!-- Main chat input - always visible -->
+        <div class="w-full space-y-6 mt-8">
+          <div class="w-full flex justify-center">
+            <div class="w-full">
+              <PromptComposer
+                v-model="prompt"
+                placeholder="Paste a transcript or describe what you need..."
+                :disabled="isBusy || promptSubmitting"
+                :status="promptSubmitting ? 'submitted' : uiStatus"
+                @submit="handlePromptSubmit"
+              >
+                <template #footer>
+                  <UTooltip
+                    v-if="!loggedIn"
+                    text="Sign in to unlock agent mode"
+                  >
                     <USelectMenu
                       v-model="mode"
                       :items="[
                         { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' },
-                        { value: 'agent', label: 'Agent', icon: 'i-lucide-bot' }
+                        { value: 'agent', label: 'Agent', icon: 'i-lucide-bot', disabled: !loggedIn }
                       ]"
                       value-key="value"
                       option-attribute="label"
@@ -1604,36 +865,36 @@ if (import.meta.client) {
                         <UIcon
                           :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
                           class="w-4 h-4"
+                          :class="{ 'opacity-50': mode === 'agent' && !loggedIn }"
                         />
                       </template>
                     </USelectMenu>
-                  </template>
-                </PromptComposer>
-              </div>
-            </div>
-
-            <div
-              v-if="shouldShowWhatsNew"
-              class="w-full mt-8"
-            >
-              <ChatWhatsNewRow />
+                  </UTooltip>
+                  <USelectMenu
+                    v-else
+                    v-model="mode"
+                    :items="[
+                      { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' },
+                      { value: 'agent', label: 'Agent', icon: 'i-lucide-bot' }
+                    ]"
+                    value-key="value"
+                    option-attribute="label"
+                    variant="ghost"
+                    size="sm"
+                    :searchable="false"
+                  >
+                    <template #leading>
+                      <UIcon
+                        :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
+                        class="w-4 h-4"
+                      />
+                    </template>
+                  </USelectMenu>
+                </template>
+              </PromptComposer>
             </div>
           </div>
-        </template>
-      </div>
-      <div
-        v-if="!isWorkspaceActive && conversationEntries.length > 0"
-        class="mt-8"
-      >
-        <ChatContentList
-          :drafts-pending="conversationsPending"
-          :content-entries="conversationEntries"
-          :archiving-draft-id="archivingConversationId"
-          :pending-message="aiThinkingIndicator.message"
-          @open-workspace="openConversation"
-          @archive-entry="archiveConversation"
-          @stop-entry="stopWorkingContent"
-        />
+        </div>
       </div>
     </div>
 
@@ -1722,5 +983,56 @@ if (import.meta.client) {
       :organization-id="activeOrgState?.value?.data?.id || undefined"
       @upgraded="handleUpgradeSuccess"
     />
+
+    <!-- Agent Mode Login Modal -->
+    <UModal
+      v-model:open="showAgentModeLoginModal"
+      title="Sign in to unlock agent mode"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <p class="text-sm text-muted-600 dark:text-muted-400">
+            Agent mode requires authentication to create and save content. Sign in to unlock the full power of AI-assisted content creation.
+          </p>
+
+          <div class="flex flex-col gap-3 pt-4">
+            <UButton
+              color="primary"
+              block
+              icon="i-simple-icons-google"
+              @click="handleAgentModeGoogleSignup"
+            >
+              Continue with Google
+            </UButton>
+            <div class="flex items-center gap-2">
+              <UButton
+                color="neutral"
+                variant="outline"
+                block
+                @click="handleAgentModeSignIn"
+              >
+                Sign In
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="outline"
+                block
+                @click="handleAgentModeEmailSignup"
+              >
+                Sign Up
+              </UButton>
+            </div>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              block
+              @click="showAgentModeLoginModal = false"
+            >
+              Maybe later
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

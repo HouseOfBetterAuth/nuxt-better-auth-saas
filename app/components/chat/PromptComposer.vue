@@ -27,8 +27,9 @@ const modelValue = defineModel<string>({ default: '' })
 const composerRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-const handleSubmit = (value: string) => {
-  const trimmed = value.trim()
+const handleSubmit = (value?: string | unknown) => {
+  const input = typeof value === 'string' ? value : modelValue.value
+  const trimmed = String(input || '').trim()
   if (trimmed) {
     emit('submit', trimmed)
   }

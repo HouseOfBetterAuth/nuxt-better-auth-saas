@@ -22,6 +22,8 @@ const ALLOWED_EMBED_DOMAINS = [
 const payload = computed(() => (props.message.payload as Record<string, any> | null) ?? null)
 const resolvedText = computed(() => props.displayText ?? props.message.parts?.[0]?.text ?? '')
 const preview = computed(() => payload.value?.preview ?? null)
+const isError = computed(() => payload.value?.type === 'agent_failure' || payload.value?.type === 'error')
+const errorDetails = computed(() => payload.value?.error || null)
 
 const safeEmbedUrl = computed(() => {
   const embedUrl = preview.value?.embedUrl
@@ -126,6 +128,17 @@ function toSummaryBullets(summary: string | null | undefined) {
           {{ preview.title || 'View source' }}
         </div>
       </NuxtLink>
+    </div>
+    <div
+      v-if="isError && errorDetails"
+      class="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm"
+    >
+      <p class="font-semibold text-red-400 mb-1">
+        Error Details:
+      </p>
+      <p class="text-red-300/80 font-mono text-xs break-all">
+        {{ errorDetails }}
+      </p>
     </div>
     <p class="whitespace-pre-line">
       {{ resolvedText }}

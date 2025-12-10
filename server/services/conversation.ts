@@ -8,33 +8,10 @@ type ConversationStatus = typeof schema.conversation.$inferSelect['status']
 
 export interface EnsureConversationInput {
   organizationId: string
-  contentId?: string | null
   sourceContentId?: string | null
   createdByUserId?: string | null
   status?: ConversationStatus
   metadata?: Record<string, any> | null
-}
-
-export async function findConversation(
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  contentId?: string | null
-) {
-  if (!contentId) {
-    return null
-  }
-
-  const [conv] = await db
-    .select()
-    .from(schema.conversation)
-    .where(and(
-      eq(schema.conversation.organizationId, organizationId),
-      eq(schema.conversation.contentId, contentId)
-    ))
-    .orderBy(desc(schema.conversation.createdAt))
-    .limit(1)
-
-  return conv ?? null
 }
 
 export async function getConversationById(
@@ -55,76 +32,45 @@ export async function getConversationById(
 }
 
 /**
- * Gets an existing conversation for content or creates a new one
+ * Creates a new conversation
+ * Note: contentId parameter is removed - content should link to conversation via content.conversationId
  *
  * @param db - Database instance
  * @param input - Input parameters for conversation
- * @returns Existing or newly created conversation
+ * @returns Newly created conversation
  */
-export async function getOrCreateConversationForContent(
+export async function createConversation(
   db: NodePgDatabase<typeof schema>,
   input: EnsureConversationInput
 ) {
   const status: ConversationStatus = input.status ?? 'active'
-
-  const contentId = input.contentId?.trim() || null
   const sourceContentId = input.sourceContentId?.trim() || null
   const createdByUserId = input.createdByUserId?.trim() || null
-
-  if (!contentId) {
-    const result = await db
-      .insert(schema.conversation)
-      .values({
-        organizationId: input.organizationId,
-        contentId: null,
-        sourceContentId,
-        createdByUserId,
-        status,
-        metadata: input.metadata ?? null
-      })
-      .returning()
-
-    const conv = (Array.isArray(result) ? result[0] : null) as typeof schema.conversation.$inferSelect | null
-    if (!conv) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to create conversation'
-      })
-    }
-
-    return conv
-  }
 
   const result = await db
     .insert(schema.conversation)
     .values({
       organizationId: input.organizationId,
-      contentId,
       sourceContentId,
       createdByUserId,
       status,
       metadata: input.metadata ?? null
     })
-    .onConflictDoNothing({
-      target: [schema.conversation.organizationId, schema.conversation.contentId]
-    })
     .returning()
 
   const conv = (Array.isArray(result) ? result[0] : null) as typeof schema.conversation.$inferSelect | null
-
   if (!conv) {
-    const existing = await findConversation(db, input.organizationId, contentId)
-    if (!existing) {
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to create or retrieve conversation'
-      })
-    }
-    return existing
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Failed to create conversation'
+    })
   }
 
   return conv
 }
+
+// Legacy function name for backwards compatibility
+export const getOrCreateConversationForContent = createConversation
 
 export interface AddConversationMessageInput {
   conversationId: string
