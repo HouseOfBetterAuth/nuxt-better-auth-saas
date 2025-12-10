@@ -201,7 +201,6 @@ export async function runChatAgentWithMultiPassStream({
       // Extract detailed error information
       const errorMessage = error?.message || error?.data?.message || error?.statusMessage || 'Unknown error'
       const errorStatus = error?.statusCode || error?.status || 'N/A'
-      const errorData = error?.data || {}
 
       // Log comprehensive error details with full context
       // Note: tools may not be defined if error occurred before tool selection
@@ -222,7 +221,7 @@ export async function runChatAgentWithMultiPassStream({
       }
 
       const isDev = process.env.NODE_ENV === 'development'
-      
+
       const agentErrorContext = {
         mode,
         iteration,

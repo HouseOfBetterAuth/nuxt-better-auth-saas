@@ -1864,11 +1864,15 @@ export default defineEventHandler(async (event) => {
           error: errorMessage,
           status: errorStatus,
           type: 'agent_failure',
-          ...(isDev && error instanceof Error && error.stack ? { stack: error.stack } : {}),
-          ...(isDev && error instanceof Error ? { 
-            errorName: error.name,
-            errorCause: error.cause ? String(error.cause) : undefined 
-          } : {})
+          ...(isDev && error instanceof Error && error.stack
+            ? { stack: error.stack }
+            : {}),
+          ...(isDev && error instanceof Error
+            ? {
+                errorName: error.name,
+                errorCause: error.cause ? String(error.cause) : undefined
+              }
+            : {})
         }
       })
     }

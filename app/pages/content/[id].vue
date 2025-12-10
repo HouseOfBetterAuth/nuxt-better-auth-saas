@@ -90,7 +90,7 @@ setShellHeader()
 
 // Fetch content data
 const { data: contentData, pending, error, refresh } = useFetch(() => `/api/content/${contentId.value}`, {
-  key: `content-${contentId.value}`,
+  key: () => `content-${contentId.value}`,
   lazy: true,
   server: true,
   default: () => null

@@ -298,7 +298,7 @@ export async function* callChatCompletionsStream({
         statusMessage: 'AI Gateway request failed',
         data: {
           message: 'AI Gateway request failed',
-          ...(process.env.NODE_ENV === 'development' 
+          ...(process.env.NODE_ENV === 'development'
             ? { details: errorDetails }
             : {})
         }

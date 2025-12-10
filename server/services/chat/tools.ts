@@ -566,7 +566,7 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
   if (toolCall.function.name === 'content_write') {
     const { type: _omit, ...rest } = args
     const invocation = rest as ChatToolInvocation<'content_write'>['arguments']
-    
+
     // Runtime validation for conditional requirements
     if (invocation.action === 'create') {
       const hasSource = !!(invocation.sourceContentId || invocation.sourceText || invocation.context)
@@ -580,7 +580,7 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
         return null
       }
     }
-    
+
     return {
       name: 'content_write',
       arguments: invocation
@@ -598,7 +598,7 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
   if (toolCall.function.name === 'source_ingest') {
     const { type: _omit, ...rest } = args
     const invocation = rest as ChatToolInvocation<'source_ingest'>['arguments']
-    
+
     // Runtime validation for conditional requirements
     if (invocation.sourceType === 'youtube') {
       if (!invocation.youtubeUrl) {
@@ -611,7 +611,7 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
         return null
       }
     }
-    
+
     return {
       name: 'source_ingest',
       arguments: invocation
