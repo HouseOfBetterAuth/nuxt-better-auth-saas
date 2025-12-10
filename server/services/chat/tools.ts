@@ -281,8 +281,7 @@ function buildContentWriteParameters(): ParameterSchema {
         description: 'Optional base URL for generating absolute URLs in JSON-LD structured data (for action="enrich").'
       }
     },
-    required: ['action'],
-
+    required: ['action']
   }
 }
 
@@ -342,8 +341,7 @@ function buildSourceIngestParameters(): ParameterSchema {
         description: 'Optional title for context source content (only used when sourceType="context").'
       }
     },
-    required: ['sourceType'],
-
+    required: ['sourceType']
   }
 }
 
@@ -567,9 +565,25 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
 
   if (toolCall.function.name === 'content_write') {
     const { type: _omit, ...rest } = args
+    const invocation = rest as ChatToolInvocation<'content_write'>['arguments']
+    
+    // Runtime validation for conditional requirements
+    if (invocation.action === 'create') {
+      const hasSource = !!(invocation.sourceContentId || invocation.sourceText || invocation.context)
+      if (!hasSource) {
+        console.error('[Tool Validation] content_write with action="create" requires at least one of: sourceContentId, sourceText, or context')
+        return null
+      }
+    } else if (invocation.action === 'enrich') {
+      if (!invocation.contentId) {
+        console.error('[Tool Validation] content_write with action="enrich" requires contentId')
+        return null
+      }
+    }
+    
     return {
       name: 'content_write',
-      arguments: rest as ChatToolInvocation<'content_write'>['arguments']
+      arguments: invocation
     }
   }
 
@@ -583,9 +597,24 @@ export function parseChatToolCall(toolCall: ChatCompletionToolCall): ChatToolInv
 
   if (toolCall.function.name === 'source_ingest') {
     const { type: _omit, ...rest } = args
+    const invocation = rest as ChatToolInvocation<'source_ingest'>['arguments']
+    
+    // Runtime validation for conditional requirements
+    if (invocation.sourceType === 'youtube') {
+      if (!invocation.youtubeUrl) {
+        console.error('[Tool Validation] source_ingest with sourceType="youtube" requires youtubeUrl')
+        return null
+      }
+    } else if (invocation.sourceType === 'context') {
+      if (!invocation.context) {
+        console.error('[Tool Validation] source_ingest with sourceType="context" requires context')
+        return null
+      }
+    }
+    
     return {
       name: 'source_ingest',
-      arguments: rest as ChatToolInvocation<'source_ingest'>['arguments']
+      arguments: invocation
     }
   }
 

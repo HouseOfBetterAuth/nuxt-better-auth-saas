@@ -202,7 +202,7 @@ export async function runChatAgentWithMultiPassStream({
       const errorMessage = error?.message || error?.data?.message || error?.statusMessage || 'Unknown error'
       const errorStatus = error?.statusCode || error?.status || 'N/A'
       const errorData = error?.data || {}
-      
+
       // Log comprehensive error details with full context
       // Note: tools may not be defined if error occurred before tool selection
       let toolCount = 0
@@ -220,16 +220,15 @@ export async function runChatAgentWithMultiPassStream({
       } catch (toolError) {
         console.error('[Agent] Failed to access tools in error handler:', toolError)
       }
+
+      const isDev = process.env.NODE_ENV === 'development'
       
       const agentErrorContext = {
         mode,
         iteration,
         message: errorMessage,
         status: errorStatus,
-        error: error,
-        stack: error instanceof Error ? error.stack : undefined,
-        data: errorData,
-        response: error?.response || error?.data?.response || undefined,
+        stack: isDev && error instanceof Error ? error.stack : undefined,
         // Context about what was being attempted
         messageCount: messages.length,
         systemPromptLength: messages.find(m => m.role === 'system')?.content?.length || 0,
@@ -240,12 +239,11 @@ export async function runChatAgentWithMultiPassStream({
         userMessageLength: userMessage.length,
         conversationHistoryLength: conversationHistory.length,
         accumulatedContentLength: accumulatedContent.length,
-        accumulatedToolCallsCount: accumulatedToolCalls.length,
-        errorLocation: 'runChatAgentWithMultiPassStream - tools variable scope issue detected'
+        accumulatedToolCallsCount: accumulatedToolCalls.length
       }
-      
+
       console.error('[Agent] Streaming error with full context:', agentErrorContext)
-      
+
       // Return graceful error result instead of re-throwing
       // Add any accumulated content to history for consistency
       if (accumulatedContent || accumulatedToolCalls.length > 0) {
@@ -264,7 +262,6 @@ export async function runChatAgentWithMultiPassStream({
         })
       }
       // Include error details in development mode for debugging
-      const isDev = process.env.NODE_ENV === 'development'
       const errorDetails = errorMessage
       const userErrorMessage = isDev && errorDetails
         ? `I encountered an error while processing your request: ${errorDetails}`

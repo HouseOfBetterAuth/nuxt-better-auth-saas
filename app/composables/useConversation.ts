@@ -130,7 +130,7 @@ export function useConversation() {
       let currentAssistantMessageId: string | null = null
       let currentAssistantMessageText = ''
       let pendingEventType: string | null = null
-      let activeToolCalls = new Map<string, number>() // toolName -> part index
+      const activeToolCalls = new Map<string, number>() // toolName -> part index
 
       try {
         while (true) {
@@ -182,13 +182,27 @@ export function useConversation() {
                       break
                     }
 
+                    const serverMessageId = eventData.messageId
+
+                    // Reconcile temp ID with server ID if we have a temp message
+                    if (currentAssistantMessageId && currentAssistantMessageId !== serverMessageId) {
+                      // Check if we have an existing message with the temp ID
+                      const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
+                      const message = messageIndex >= 0 ? messages.value[messageIndex] : null
+                      if (message) {
+                        // Update the existing message's ID to the server ID and preserve all parts
+                        message.id = serverMessageId
+                        currentAssistantMessageId = serverMessageId
+                      }
+                    }
+
                     // Create TEMPORARY assistant message on first chunk using SERVER-GENERATED messageId
                     // This is optimistic UI for live streaming; the authoritative message list comes in messages:complete
-                    if (!currentAssistantMessageId && eventData.messageId) {
-                      currentAssistantMessageId = eventData.messageId
+                    if (!currentAssistantMessageId && serverMessageId) {
+                      currentAssistantMessageId = serverMessageId
                       currentAssistantMessageText = ''
                       messages.value.push({
-                        id: eventData.messageId, // Use server-provided ID
+                        id: serverMessageId, // Use server-provided ID
                         role: 'assistant' as const,
                         parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<MessagePart>,
                         createdAt: new Date()
@@ -202,8 +216,9 @@ export function useConversation() {
                       if (message) {
                         // Find or create text part (should be first non-tool part)
                         const textPartIndex = message.parts.findIndex(p => p.type === 'text')
-                        if (textPartIndex >= 0 && message.parts[textPartIndex].type === 'text') {
-                          message.parts[textPartIndex].text = currentAssistantMessageText
+                        const textPart = textPartIndex >= 0 ? message.parts[textPartIndex] : null
+                        if (textPart && textPart.type === 'text') {
+                          textPart.text = currentAssistantMessageText
                         } else {
                           // Add text part if it doesn't exist
                           message.parts.push({ type: 'text', text: currentAssistantMessageText })
@@ -243,13 +258,35 @@ export function useConversation() {
 
                     // Ensure we have an assistant message to add the tool call to
                     if (!currentAssistantMessageId) {
-                      currentAssistantMessageId = createId()
-                      messages.value.push({
-                        id: currentAssistantMessageId,
-                        role: 'assistant' as const,
-                        parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<MessagePart>,
-                        createdAt: new Date()
-                      })
+                      // If server provided a messageId, use it; otherwise create a temp ID
+                      if (eventData.messageId) {
+                        currentAssistantMessageId = eventData.messageId
+                        messages.value.push({
+                          id: eventData.messageId,
+                          role: 'assistant' as const,
+                          parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<MessagePart>,
+                          createdAt: new Date()
+                        })
+                      } else {
+                        // Create temp ID - will be reconciled when message:chunk arrives with server messageId
+                        const tempId = createId()
+                        currentAssistantMessageId = tempId
+                        messages.value.push({
+                          id: tempId,
+                          role: 'assistant' as const,
+                          parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<MessagePart>,
+                          createdAt: new Date()
+                        })
+                      }
+                    } else if (eventData.messageId && currentAssistantMessageId !== eventData.messageId) {
+                      // We already have a message (possibly with temp ID), but server provided a different messageId
+                      // Update the message ID to the server ID and preserve all parts
+                      const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
+                      const message = messageIndex >= 0 ? messages.value[messageIndex] : null
+                      if (message) {
+                        message.id = eventData.messageId
+                        currentAssistantMessageId = eventData.messageId
+                      }
                     }
 
                     const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)

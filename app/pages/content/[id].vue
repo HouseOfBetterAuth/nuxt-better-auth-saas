@@ -90,7 +90,7 @@ setShellHeader()
 
 // Fetch content data
 const { data: contentData, pending, error, refresh } = useFetch(() => `/api/content/${contentId.value}`, {
-  key: computed(() => `content-${contentId.value}`),
+  key: `content-${contentId.value}`,
   lazy: true,
   server: true,
   default: () => null
@@ -140,7 +140,7 @@ const contentEntry = computed<ContentEntry | null>(() => {
 
 // Sync markdown with content
 watch(contentEntry, (entry) => {
-  if (entry && entry.bodyMdx) {
+  if (entry && typeof entry.bodyMdx === 'string') {
     markdown.value = entry.bodyMdx
   }
 }, { immediate: true })
@@ -183,7 +183,8 @@ watchEffect(() => {
 
 // Save handler
 const handleSave = async () => {
-  if (!contentId.value || isSaving.value) return
+  if (!contentId.value || isSaving.value)
+    return
 
   try {
     isSaving.value = true
@@ -292,11 +293,10 @@ const handleSave = async () => {
         <QuillioWidget
           :content-id="contentEntry.id"
           :conversation-id="contentEntry.conversationId"
-          :initial-mode="'agent'"
+          initial-mode="agent"
           class="h-full"
         />
       </div>
     </Transition>
   </div>
 </template>
-

@@ -31,7 +31,7 @@ export function useUserOrganizations(options?: { lazy?: boolean }) {
         !org.slug.startsWith('anonymous-')
       )
       if (sanitized.length !== data.length) {
-        console.warn('[useUserOrganizations] Filtered organizations due to missing id/slug', { total: data.length, sanitized: sanitized.length })
+        console.warn('Filtered organizations due to missing id/slug or anonymous slug', { total: data.length, sanitized: sanitized.length })
       }
       return sanitized
     } catch (error) {

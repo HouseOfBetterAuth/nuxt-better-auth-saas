@@ -25,6 +25,7 @@ describe('app', async () => {
     const url = page.url()
     expect(url).toBeTruthy()
     // The page should have loaded content (not an error state)
-    expect(pageContent.length).toBeGreaterThan(0)
+    expect(pageContent).toBeTruthy()
+    expect(pageContent!.length).toBeGreaterThan(0)
   })
 })

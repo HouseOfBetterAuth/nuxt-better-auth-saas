@@ -19,9 +19,9 @@ interface ContentConversationMessage {
 
 // Props for embedding the widget
 interface Props {
-  contentId?: string | null          // Link chat to specific content
-  conversationId?: string | null     // Resume existing conversation
-  initialMode?: 'chat' | 'agent'     // Default chat mode
+  contentId?: string | null // Link chat to specific content
+  conversationId?: string | null // Resume existing conversation
+  initialMode?: 'chat' | 'agent' // Default chat mode
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,11 +44,8 @@ const {
   isBusy,
   conversationId: activeConversationId,
   resetConversation,
-  requestStartedAt,
   prompt,
   mode,
-  currentActivity,
-  currentToolName,
   hydrateConversation
 } = useConversation()
 
@@ -108,7 +105,6 @@ const parseConversationLimitValue = (value: unknown, fallback: number) => {
 const guestConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.anonymous, 10))
 const verifiedConversationLimit = computed(() => parseConversationLimitValue((runtimeConfig.public as any)?.conversationQuota?.verified, 50))
 
-const activeConversationId = ref<string | null>(null)
 const archivingConversationId = ref<string | null>(null)
 const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 
@@ -239,7 +235,6 @@ watch(conversationMenuItems, (items) => {
   conversationMenuItemsState.value = items
 }, { immediate: true })
 
-const isStreaming = computed(() => ['submitted', 'streaming'].includes(status.value))
 const uiStatus = computed(() => status.value)
 
 // Tool progress is now shown inline as message parts, no need for placeholder
@@ -464,7 +459,7 @@ const loadConversationMessages = async (conversationId: string) => {
 // Load conversation from prop or route param when component mounts or changes
 watch([() => props.conversationId, routeConversationId], async ([propId, routeId]) => {
   const targetId = propId || routeId
-  
+
   if (targetId && targetId !== activeConversationId.value) {
     if (isValidUUID(targetId)) {
       activeConversationId.value = targetId

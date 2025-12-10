@@ -193,7 +193,8 @@ export const createBetterAuth = () => betterAuth({
                   })
                   .returning()
 
-                if (!newOrg) return
+                if (!newOrg)
+                  return
 
                 await tx.insert(schema.member).values({
                   id: uuidv7(),
@@ -314,7 +315,8 @@ export const createBetterAuth = () => betterAuth({
             .where(eq(schema.user.id, session.userId))
             .limit(1)
 
-          if (users.length === 0) return
+          if (users.length === 0)
+            return
 
           let activeOrgId = users[0]?.lastActiveOrganizationId
 

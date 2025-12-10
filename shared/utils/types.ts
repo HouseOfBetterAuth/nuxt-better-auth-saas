@@ -10,14 +10,14 @@ export type NonEmptyArray<T> = [T, ...T[]]
 export type MessagePart =
   | { type: 'text', text: string }
   | {
-      type: 'tool_call'
-      toolName: string
-      status: 'running' | 'success' | 'error'
-      args?: Record<string, any>
-      result?: any
-      error?: string
-      timestamp?: string
-    }
+    type: 'tool_call'
+    toolName: string
+    status: 'running' | 'success' | 'error'
+    args?: Record<string, any>
+    result?: any
+    error?: string
+    timestamp?: string
+  }
 
 export interface ChatMessage {
   id: string

@@ -1298,7 +1298,6 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody<ChatRequestBody>(event)
 
-
   validateRequestBody(body)
 
   const VALID_MODES = ['chat', 'agent'] as const
@@ -1820,42 +1819,37 @@ export default defineEventHandler(async (event) => {
       }
     } catch (error: any) {
       const isDev = process.env.NODE_ENV === 'development'
-      
+
       // Extract detailed error information
       const errorMessage = error?.message || error?.data?.message || error?.statusMessage || 'Unknown error'
       const errorStatus = error?.statusCode || error?.status || 'N/A'
       const errorData = error?.data || {}
-      
+
       // Log comprehensive error details with full request context
       const chatApiErrorContext = {
         mode,
         conversationId: activeConversation.id,
         organizationId,
         userId: user.id,
-        userMessage: trimmedMessage,
         userMessageLength: trimmedMessage.length,
+        userMessagePreview: isDev ? trimmedMessage.slice(0, 100) + (trimmedMessage.length > 100 ? '...' : '') : undefined,
         conversationHistoryLength: conversationHistory.length,
         contextBlocksCount: contextBlocks.length,
         readySourcesCount: readySources.length,
         ingestionErrorsCount: ingestionErrors.length,
         message: errorMessage,
         status: errorStatus,
-        error: error,
-        stack: error instanceof Error ? error.stack : undefined,
-        data: errorData,
-        errorDetails: error?.data?.details || error?.data || {},
-        // Include AI Gateway specific error details if available
-        gatewayError: error?.data?.details || error?.response || undefined
+        stack: isDev && error instanceof Error ? error.stack : undefined
       }
-      
+
       console.error('[Chat API] Agent turn failed with full context:', chatApiErrorContext)
-      
+
       // Include actual error details in dev mode, generic message in prod
       // Add helpful context about what failed
       let userErrorMessage = isDev
         ? `I encountered an error while processing your request: ${errorMessage}`
         : 'I encountered an error while processing your request. Please try again.'
-      
+
       // Add mode-specific context to error message
       if (isDev && mode === 'agent') {
         userErrorMessage += `\n\n[Debug Info] Mode: ${mode}, Error Status: ${errorStatus}`
@@ -1863,7 +1857,7 @@ export default defineEventHandler(async (event) => {
           userErrorMessage += `\n[Debug Info] Gateway Response: ${JSON.stringify(errorData.details, null, 2)}`
         }
       }
-      
+
       ingestionErrors.push({
         content: userErrorMessage,
         payload: {
@@ -1871,7 +1865,10 @@ export default defineEventHandler(async (event) => {
           status: errorStatus,
           type: 'agent_failure',
           ...(isDev && error instanceof Error && error.stack ? { stack: error.stack } : {}),
-          ...(isDev ? { originalError: error } : {})
+          ...(isDev && error instanceof Error ? { 
+            errorName: error.name,
+            errorCause: error.cause ? String(error.cause) : undefined 
+          } : {})
         }
       })
     }

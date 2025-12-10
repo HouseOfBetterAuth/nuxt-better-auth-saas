@@ -207,7 +207,7 @@ export async function* callChatCompletionsStream({
   // Declare url outside try block so it's available in catch block for error logging
   const modelName = model.startsWith('openai/') ? model : `openai/${model}`
   const url = `${gatewayBase}/chat/completions`
-  
+
   try {
     if (!OPENAI_API_KEY) {
       throw createError({
@@ -290,15 +290,17 @@ export async function* callChatCompletionsStream({
         hasGatewayToken: !!CF_AI_GATEWAY_TOKEN,
         errorResponse: errorText
       }
-      
+
       console.error('[AI Gateway] Request failed with non-OK status:', errorDetails)
-      
+
       throw createError({
         statusCode: response.status,
         statusMessage: 'AI Gateway request failed',
         data: {
-          message: errorText || 'Unknown AI Gateway error',
-          details: errorDetails
+          message: 'AI Gateway request failed',
+          ...(process.env.NODE_ENV === 'development' 
+            ? { details: errorDetails }
+            : {})
         }
       })
     }
@@ -369,7 +371,7 @@ export async function* callChatCompletionsStream({
     const errorStatus = error?.statusCode || error?.status || 502
     const errorResponse = error?.response || error?.data?.response || error?.data
     const errorStack = error instanceof Error ? error.stack : undefined
-    
+
     // Log comprehensive error details
     const errorContext = {
       model,
@@ -402,7 +404,7 @@ export async function* callChatCompletionsStream({
         stream: true
       }
     }
-    
+
     console.error('[AI Gateway] Streaming request failed with detailed context:', errorContext)
 
     // Preserve original error status code if it exists, otherwise default to 502
@@ -417,10 +419,12 @@ export async function* callChatCompletionsStream({
         message: finalErrorMessage,
         originalStatus: error?.status,
         originalStatusText: error?.statusText,
-        ...(process.env.NODE_ENV === 'development' ? {
-          response: errorResponse,
-          stack: errorStack
-        } : {})
+        ...(process.env.NODE_ENV === 'development'
+          ? {
+              response: errorResponse,
+              stack: errorStack
+            }
+          : {})
       }
     })
   }
