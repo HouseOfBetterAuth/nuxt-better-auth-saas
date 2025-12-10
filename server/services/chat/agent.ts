@@ -88,7 +88,15 @@ export async function runChatAgentWithMultiPassStream({
 }: ChatAgentInput & {
   mode: 'chat' | 'agent'
   onLLMChunk?: (chunk: string) => void
+  onToolPreparing?: (toolCallId: string, toolName: string) => void
   onToolStart?: (toolCallId: string, toolName: string) => void
+  // TODO: onToolProgress is currently unused. To implement:
+  // 1. Update executeTool signature to accept onToolProgress: (toolCallId: string, message: string) => void
+  // 2. Pass onToolProgress through to executeTool so tools can emit progress events
+  // 3. Tools that support progress (e.g., content_write, source_ingest) should call this callback
+  //    during long-running operations to provide real-time updates to the client
+  // Example usage location: around line 366-371 where executeTool is called, pass onToolProgress
+  //   so tools can emit progress like: onToolProgress?.(toolCallId, "Processing step 1 of 3...")
   onToolProgress?: (toolCallId: string, message: string) => void
   onToolComplete?: (toolCallId: string, toolName: string, result: ToolExecutionResult) => void
   onFinalMessage?: (message: string) => void
@@ -184,10 +192,20 @@ export async function runChatAgentWithMultiPassStream({
                   arguments: toolCallDelta.function?.arguments || ''
                 }
               }
+
+              // Emit preparing event as soon as tool name is detected (even if args aren't complete)
+              if (toolCallDelta.function?.name && onToolPreparing) {
+                onToolPreparing(toolCallDelta.id || '', toolCallDelta.function.name)
+              }
             } else {
               // Append to existing tool call
+              const hadNameBefore = !!accumulatedToolCalls[index].function.name
               if (toolCallDelta.function?.name) {
                 accumulatedToolCalls[index].function.name = toolCallDelta.function.name
+                // Emit preparing if this is the first time we see the name for this tool call
+                if (onToolPreparing && !hadNameBefore) {
+                  onToolPreparing(accumulatedToolCalls[index].id, toolCallDelta.function.name)
+                }
               }
               if (toolCallDelta.function?.arguments) {
                 accumulatedToolCalls[index].function.arguments += toolCallDelta.function.arguments
@@ -363,6 +381,9 @@ export async function runChatAgentWithMultiPassStream({
 
       try {
         // Wrap tool execution with timeout
+        // TODO: When executeTool signature is updated to accept onToolProgress, pass it here:
+        //   executeTool(toolInvocation, { onToolProgress: (message) => onToolProgress?.(toolCallId, message) })
+        // This will allow tools to emit progress events during long-running operations (e.g., content_write, source_ingest)
         toolResult = await Promise.race([
           executeTool(toolInvocation),
           new Promise<ToolExecutionResult>((_, reject) =>

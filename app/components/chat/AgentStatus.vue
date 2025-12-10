@@ -22,6 +22,8 @@ const displayName = computed(() => toolDisplayNames[props.part.toolName] || prop
 
 const statusIcon = computed(() => {
   switch (props.part.status) {
+    case 'preparing':
+      return 'i-lucide-clock'
     case 'running':
       return 'i-lucide-loader-circle'
     case 'success':
@@ -32,6 +34,21 @@ const statusIcon = computed(() => {
       return 'i-lucide-circle'
   }
 })
+
+const statusText = computed(() => {
+  switch (props.part.status) {
+    case 'preparing':
+      return 'Preparing...'
+    case 'running':
+      return props.part.progressMessage || 'Running...'
+    case 'success':
+      return 'Complete'
+    case 'error':
+      return 'Failed'
+    default:
+      return ''
+  }
+})
 </script>
 
 <template>
@@ -40,10 +57,16 @@ const statusIcon = computed(() => {
       <UIcon
         :name="statusIcon"
         class="h-4 w-4"
-        :class="part.status === 'running' ? 'animate-spin' : ''"
+        :class="part.status === 'running' ? 'animate-spin' : (part.status === 'preparing' ? 'animate-pulse' : '')"
         :dynamic="true"
       />
       <span class="font-medium">{{ displayName }}</span>
+      <span
+        v-if="statusText && (part.status === 'preparing' || part.status === 'success' || part.status === 'error')"
+        class="text-xs text-muted-600 dark:text-muted-400 ml-1"
+      >
+        {{ statusText }}
+      </span>
       <UBadge
         v-if="part.status === 'error' && part.error"
         color="error"
@@ -54,7 +77,7 @@ const statusIcon = computed(() => {
       </UBadge>
     </div>
     <div
-      v-if="part.progressMessage && part.status === 'running'"
+      v-if="part.progressMessage && (part.status === 'running' || part.status === 'preparing')"
       class="mt-1 text-xs text-muted-600 dark:text-muted-400 italic"
     >
       {{ part.progressMessage }}

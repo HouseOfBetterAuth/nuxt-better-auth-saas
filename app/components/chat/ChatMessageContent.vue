@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
-import ToolCallPart from './ToolCallPart.vue'
+import AgentStatus from './AgentStatus.vue'
 import WorkspaceFilesAccordion from './WorkspaceFilesAccordion.vue'
 
 const props = withDefaults(defineProps<{
@@ -148,7 +148,7 @@ function toSummaryBullets(summary: string | null | undefined) {
       v-for="(part, index) in message.parts"
       :key="index"
     >
-      <ToolCallPart
+      <AgentStatus
         v-if="part.type === 'tool_call'"
         :part="part"
       />

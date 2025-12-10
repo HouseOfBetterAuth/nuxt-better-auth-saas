@@ -26,7 +26,7 @@ import {
 } from './assembly'
 import {
   ensureSourceContentChunksExist,
-  findRelevantChunksForSection
+  findGlobalRelevantChunks
 } from './chunking'
 import {
   determineGenerationMode,
@@ -193,14 +193,34 @@ export const generateContentDraftFromSource = async (
     })
   }
 
-  // If we have sourceContent, use its chunks; otherwise create temporary chunks for inline text
+  // If we have sourceContent, use its chunks
   let chunks: Awaited<ReturnType<typeof ensureSourceContentChunksExist>> | null = null
+  const _resolvedSourceId = sourceContent?.id ?? null // Not currently used
+
   if (sourceContent) {
     chunks = await ensureSourceContentChunksExist(db, sourceContent, resolvedSourceText!)
+  } else if (resolvedSourceText && resolvedIngestMethod === 'conversation_context') {
+    // FIX: Persist conversation context as a SourceContent record
+    // This ensures future tools (like edit_section) can reference the original context
+    const [newSource] = await db.insert(schema.sourceContent).values({
+      organizationId,
+      createdByUserId: userId,
+      sourceType: 'conversation', // You might need to ensure this is a valid enum value or string
+      title: `Conversation Context - ${new Date().toLocaleString()}`,
+      sourceText: resolvedSourceText,
+      ingestStatus: 'ingested'
+    }).returning()
+
+    if (newSource) {
+      sourceContent = newSource
+      // _resolvedSourceId = newSource.id // Not currently used
+      resolvedSourceText = newSource.sourceText // Ensure consistency
+      // Generate chunks for this new source so vector search works immediately
+      chunks = await ensureSourceContentChunksExist(db, newSource, newSource.sourceText)
+    }
   } else if (resolvedSourceText) {
-    // For inline sourceText without sourceContent, we'll need to create chunks on the fly
-    // For now, we'll skip chunking for inline text (the generation will work without chunks)
-    // In the future, we could create temporary chunks here
+    // For inline sourceText (not conversation), we typically skip chunking
+    // unless we want to persist that too. For now, keeping original behavior for non-conversation inline text.
     chunks = null
   }
 
@@ -616,28 +636,20 @@ export const updateContentSectionWithAI = async (
     version: currentVersion
   })
 
-  const chunks = await ensureSourceContentChunksExist(
+  // RAG: Search global context instead of partial source
+  const relevantChunks = await findGlobalRelevantChunks({
     db,
-    record.sourceContent ?? null,
-    record.sourceContent?.sourceText ?? null
-  )
-
-  const relevantChunks = await findRelevantChunksForSection({
-    chunks,
-    outline: {
-      id: targetSection.id,
-      index: targetSection.index,
-      title: targetSection.title,
-      type: targetSection.type,
-      notes: trimmedInstructions
-    },
     organizationId,
-    sourceContentId: record.sourceContent?.id ?? frontmatter.sourceContentId ?? null
+    queryText: `${targetSection.title} ${trimmedInstructions}`
   })
 
-  const contextBlock = relevantChunks.length
-    ? relevantChunks.map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text.slice(0, 600)}`).join('\n\n')
-    : 'No context available.'
+  // Format context for the AI
+  let contextBlock = 'No external context available.'
+  if (relevantChunks.length) {
+    contextBlock = relevantChunks
+      .map(chunk => `[Source: ${chunk.sourceContentId?.slice(0, 8) ?? 'Unknown'}] ${chunk.text.slice(0, 600)}`)
+      .join('\n\n')
+  }
 
   const prompt = [
     `You are editing a single section of a ${frontmatter.contentType}.`,

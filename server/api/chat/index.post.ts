@@ -1207,8 +1207,9 @@ async function executeChatTool(
  * - `conversation:update` - Conversation state changes (conversationId)
  * - `message:chunk` - Incremental LLM text chunks (`{ messageId: string, chunk: string }`)
  * - `message:complete` - LLM text generation finished (`{ messageId: string, message: string }`)
- * - `tool:start` - Tool execution started (`{ toolName: string, timestamp: string }`)
- * - `tool:complete` - Tool execution completed (`{ toolName, success, result, error, timestamp }`)
+ * - `tool:preparing` - Tool call detected but arguments not yet complete (`{ toolCallId, toolName, timestamp }`)
+ * - `tool:start` - Tool execution started (`{ toolCallId, toolName, timestamp }`)
+ * - `tool:complete` - Tool execution completed (`{ toolCallId, toolName, success, result, error, timestamp }`)
  * - `log:entry` - Log entries (`{ id, type, message, payload, createdAt }`)
  * - `messages:complete` - **Authoritative message list from database** (`{ messages: Array }`)
  * - `logs:complete` - Authoritative log list from database (`{ logs: Array }`)
@@ -1686,6 +1687,15 @@ export default defineEventHandler(async (event) => {
               writeSSE('message:chunk', {
                 messageId: currentMessageId,
                 chunk
+              })
+            },
+            onToolPreparing: (toolCallId: string, toolName: string) => {
+              // Event: tool:preparing - Tool call detected but arguments not yet complete
+              // Client should show "Preparing [tool name]..." immediately for better UX
+              writeSSE('tool:preparing', {
+                toolCallId,
+                toolName,
+                timestamp: new Date().toISOString()
               })
             },
             onToolStart: async (toolCallId: string, toolName: string) => {

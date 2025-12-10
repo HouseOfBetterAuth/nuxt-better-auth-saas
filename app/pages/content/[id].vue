@@ -74,11 +74,7 @@ const setShellHeader = () => {
     deletions: 0,
     contentId: contentId.value || undefined,
     showBackButton: true,
-    onBack: import.meta.client
-      ? () => {
-          router.push('/content')
-        }
-      : null,
+    onBack: null, // Set to function in onMounted to avoid hydration mismatch
     onArchive: null,
     onShare: null,
     onPrimaryAction: null,
@@ -184,6 +180,24 @@ const keepLocalChanges = () => {
   showConflictModal.value = false
 }
 
+// Helper to set onBack callback (used after mount to avoid hydration mismatch)
+const setOnBackCallback = () => {
+  if (workspaceHeader.value) {
+    workspaceHeader.value.onBack = () => {
+      router.push('/content')
+    }
+  }
+}
+
+// Track if component is mounted (client-side only)
+const isMounted = ref(false)
+
+// Set onBack callback after mount to avoid hydration mismatch
+onMounted(() => {
+  isMounted.value = true
+  setOnBackCallback()
+})
+
 // Update workspace header when content loads
 watch(contentEntry, (entry) => {
   if (entry) {
@@ -199,17 +213,18 @@ watch(contentEntry, (entry) => {
       deletions: entry.deletions ?? 0,
       contentId: entry.id,
       showBackButton: true,
-      onBack: import.meta.client
-        ? () => {
-            router.push('/content')
-          }
-        : null,
+      onBack: null, // Set to function after mount to avoid hydration mismatch
       onArchive: null,
       onShare: null,
       onPrimaryAction: null,
       primaryActionLabel: '',
       primaryActionColor: '',
       primaryActionDisabled: false
+    }
+
+    // Update onBack callback if already mounted (in case this watch runs after mount)
+    if (isMounted.value) {
+      setOnBackCallback()
     }
 
     workspaceHeaderLoading.value = false

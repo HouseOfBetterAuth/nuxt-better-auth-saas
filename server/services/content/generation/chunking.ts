@@ -1,6 +1,6 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { ContentChunk, ContentOutlineSection } from './types'
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 import { createChunksFromSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
@@ -270,6 +270,117 @@ export const findRelevantChunksForSection = async (params: {
   }
 
   return scored.slice(0, SECTION_CONTEXT_LIMIT).map(item => item.chunk)
+}
+
+/**
+ * Searches the entire organization's vector index for relevant chunks
+ * (Global RAG Retrieval)
+ */
+export const findGlobalRelevantChunks = async (params: {
+  db: NodePgDatabase<typeof schema>
+  organizationId: string
+  queryText: string
+  limit?: number
+}): Promise<ContentChunk[]> => {
+  const { db, organizationId, queryText, limit = SECTION_CONTEXT_LIMIT } = params
+
+  if (!isVectorizeConfigured) {
+    return []
+  }
+
+  // 1. Generate embedding for the query
+  const queryEmbedding = await embedText(queryText)
+  if (!queryEmbedding || queryEmbedding.length === 0) {
+    return []
+  }
+
+  // 2. Search entire organization index
+  const matches = await queryVectorMatches({
+    vector: queryEmbedding,
+    topK: limit,
+    filter: {
+      organizationId // Scoped to organization only, not specific source
+    }
+  })
+
+  if (!matches.length) {
+    return []
+  }
+
+  // 3. Resolve Chunk IDs from Vector IDs
+  // Vector ID format is "sourceContentId:chunkIndex"
+  // We need to query the database to get the text for these chunks
+  const chunkIdentifiers = matches.map((match) => {
+    const [sourceContentId, chunkIndexStr] = match.id.split(':')
+    return {
+      sourceContentId,
+      chunkIndex: parseInt(chunkIndexStr, 10),
+      score: match.score
+    }
+  }).filter((item): item is { sourceContentId: string, chunkIndex: number, score: number } =>
+    !!item.sourceContentId && !isNaN(item.chunkIndex)
+  )
+
+  if (!chunkIdentifiers.length) {
+    return []
+  }
+
+  // 4. Fetch actual chunk text from DB
+  // Note: conditions variable is prepared but not used - using Promise.all approach instead
+  const _conditions = chunkIdentifiers.map(item =>
+    and(
+      eq(schema.chunk.sourceContentId, item.sourceContentId),
+      eq(schema.chunk.chunkIndex, item.chunkIndex)
+    )
+  )
+
+  // Use 'or' to combine conditions - need to import 'or' from drizzle-orm
+  // efficient lookup for specific chunks
+  // Since 'or' with many conditions can be slow/limit, we'll fetch by sourceContentIds and memory filter if list is small
+  // For RAG top-K (usually small < 10), specific lookup is fine.
+
+  // Actually, let's just fetch all chunks for these source IDs and filter in memory?
+  // No, that's inefficient if sources are huge.
+  // Best way with Drizzle ORM for composite key lookup is somewhat verbose.
+  // Let's rely on the fact that we have the IDs.
+
+  // Alternative: We can fetch by just matching the sourceContentIds and then filtering.
+  // But wait, the `chunk` table usually has a primary key `id`?
+  // Checking schema... `chunk.id` is PK uuid.
+  // But we don't have the UUID in the vector ID (we used sourceId:index).
+  // So we must query by (sourceId, index).
+
+  // We will loop parallel queries or build a composite OR clause.
+  // Given limit is small (3-5), Promise.all is acceptable.
+
+  const chunkResults = await Promise.all(
+    chunkIdentifiers.map(async (ident) => {
+      const rows = await db
+        .select()
+        .from(schema.chunk)
+        .where(and(
+          eq(schema.chunk.sourceContentId, ident.sourceContentId),
+          eq(schema.chunk.chunkIndex, ident.chunkIndex)
+        ))
+        .limit(1)
+
+      return { row: rows[0], score: ident.score }
+    })
+  )
+
+  const resolvedChunks = chunkResults
+    .filter(item => !!item.row)
+    .map(({ row, score }) => ({
+      chunkIndex: row!.chunkIndex,
+      text: row!.text,
+      textPreview: row!.textPreview ?? row!.text.slice(0, 280),
+      sourceContentId: row!.sourceContentId,
+      embedding: row!.embedding,
+      score // Attach score for debugging or sorting if needed
+    }))
+    .sort((a, b) => b.score - a.score)
+
+  return resolvedChunks
 }
 
 export const ensureSourceContentChunksExist = async (

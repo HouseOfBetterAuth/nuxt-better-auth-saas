@@ -25,11 +25,9 @@ useHead({
   <div class="w-full">
     <ClientOnly>
       <!-- KeepAlive prevents component remount on navigation (saves 250ms) -->
+      <!-- QuillioWidget watches :conversation-id prop and handles changes reactively -->
       <KeepAlive>
-        <QuillioWidget
-          :key="conversationId"
-          :conversation-id="conversationId"
-        />
+        <QuillioWidget :conversation-id="conversationId" />
       </KeepAlive>
     </ClientOnly>
   </div>
