@@ -208,7 +208,7 @@ const conversationMenuItems = computed(() => {
   const items = conversationEntries.value.map(conv => ({
     label: conv.title,
     to: `/conversations/${conv.id}`,
-    badge: ('isPending' in conv && conv.isPending) ? 'pending' : undefined
+    badge: conv.status === 'pending' ? 'pending' : undefined
   }))
   // Return as array of arrays (groups) like other menus
   return items.length > 0 ? [items] : []

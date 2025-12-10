@@ -1752,7 +1752,7 @@ export default defineEventHandler(async (event) => {
       console.error('Agent turn failed', error)
       const errorDetails = error instanceof Error ? error.message : String(error)
       const isDev = process.env.NODE_ENV === 'development'
-      const errorMessage = isDev && errorDetails
+      const errorMessage = isDev
         ? `The assistant encountered an error processing your request: ${errorDetails}`
         : 'The assistant encountered an error processing your request. Please try again.'
       ingestionErrors.push({
@@ -1760,7 +1760,7 @@ export default defineEventHandler(async (event) => {
         payload: {
           error: errorDetails,
           type: 'agent_failure',
-          stack: error instanceof Error ? error.stack : undefined
+          ...(isDev && error instanceof Error && error.stack ? { stack: error.stack } : {})
         }
       })
     }

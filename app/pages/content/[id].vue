@@ -15,6 +15,33 @@ interface ContentEntry {
   conversationId?: string | null
 }
 
+interface ContentApiResponse {
+  workspace?: {
+    content?: {
+      id?: string
+      title?: string
+      slug?: string
+      status?: string
+      updatedAt?: string
+      contentType?: string
+      conversationId?: string | null
+    }
+    currentVersion?: {
+      diffStats?: {
+        additions?: number
+        deletions?: number
+      }
+      frontmatter?: {
+        contentType?: string
+        diffStats?: {
+          additions?: number
+          deletions?: number
+        }
+      }
+    }
+  }
+}
+
 definePageMeta({
   // Uses default layout which adapts based on workspace header state
 })
@@ -56,8 +83,8 @@ const setShellHeader = () => {
 setShellHeader()
 
 // Fetch content data - API uses active organization from session, no slug needed
-const { data: contentData, pending, error } = useFetch(`/api/content/${contentId.value}`, {
-  key: `content-${contentId.value}`,
+const { data: contentData, pending, error } = useFetch(() => `/api/content/${contentId.value}`, {
+  key: computed(() => `content-${contentId.value}`),
   lazy: true,
   server: true,
   default: () => null
@@ -68,7 +95,7 @@ const contentEntry = computed<ContentEntry | null>(() => {
   if (!contentData.value)
     return null
 
-  const entry = contentData.value as any
+  const entry = contentData.value as ContentApiResponse
   const workspace = entry.workspace
   const content = workspace?.content
   const currentVersion = workspace?.currentVersion

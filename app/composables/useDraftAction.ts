@@ -38,7 +38,8 @@ export function useDraftAction(options: DraftActionOptions) {
   }
 
   const getConversationContentId = () => {
-    if (!conversationContentId) return null
+    if (!conversationContentId)
+      return null
     return typeof conversationContentId === 'function' ? conversationContentId() : conversationContentId.value
   }
 

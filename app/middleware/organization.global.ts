@@ -17,7 +17,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const activeOrgId = (session.value as any)?.activeOrganizationId
 
   // Use shared composable with proper caching enabled
-  const { data: orgs } = useUserOrganizations()
+  const { data: orgs, pending } = useUserOrganizations()
+
+  // Wait for organizations to load
+  if (pending.value) {
+    return
+  }
 
   if (!orgs.value || orgs.value.length === 0)
     return

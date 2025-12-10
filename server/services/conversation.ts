@@ -1,6 +1,6 @@
 import type { ChatMessage } from '#shared/utils/types'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
 
@@ -69,7 +69,11 @@ export async function createConversation(
   return conv
 }
 
-// Legacy function name for backwards compatibility
+/**
+ * @deprecated This function now always creates a new conversation.
+ * The get-or-create behavior has been removed.
+ * Update your code to use createConversation() and handle conversation lookup separately.
+ */
 export const getOrCreateConversationForContent = createConversation
 
 export interface AddConversationMessageInput {

@@ -39,7 +39,7 @@ export function useUserOrganizations(options?: { lazy?: boolean }) {
   }
 
   // Enable proper caching - remove getCachedData: () => undefined to allow Nuxt to cache
-  return useAsyncData<UserOrganization[]>(() => cacheKey.value, fetchOrganizations, {
+  return useAsyncData<UserOrganization[]>(cacheKey.value, fetchOrganizations, {
     lazy: options?.lazy
     // Caching is enabled by default - Nuxt will cache based on the key
   })

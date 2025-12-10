@@ -9,7 +9,7 @@ interface ConversationQuotaUsagePayload {
 
 const localePath = useLocalePath()
 const { t } = useI18n()
-const { loggedIn, signOut, user, activeStripeSubscription, organization, session } = useAuth()
+const { loggedIn, signOut, user, activeStripeSubscription, session } = useAuth()
 const sharedQuotaUsage = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 
 const userInitials = computed(() => {

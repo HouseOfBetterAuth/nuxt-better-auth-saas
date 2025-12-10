@@ -41,7 +41,7 @@ useSeoMeta({
           {{ t('home.slogan') }}
         </h1>
         <p class="text-lg text-muted-600 dark:text-muted-400 max-w-2xl mx-auto">
-          Create, edit, and manage your content with AI-powered conversations. Start a conversation to generate content or continue where you left off.
+          {{ t('home.description') }}
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center pt-4">
           <UButton
@@ -50,7 +50,7 @@ useSeoMeta({
             color="primary"
             icon="i-lucide-message-circle"
           >
-            Start Conversation
+            {{ t('home.startConversation') }}
           </UButton>
           <UButton
             :to="localePath('/content')"
@@ -58,7 +58,7 @@ useSeoMeta({
             variant="outline"
             icon="i-lucide-file-text"
           >
-            View Content
+            {{ t('home.viewContent') }}
           </UButton>
         </div>
       </div>
@@ -68,40 +68,49 @@ useSeoMeta({
     <section class="py-16 border-t border-muted-200 dark:border-muted-800">
       <div class="max-w-6xl mx-auto px-4">
         <h2 class="text-2xl font-semibold text-center mb-12">
-          Features
+          {{ t('home.features.title') }}
         </h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div class="text-center space-y-3">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/20">
-              <UIcon name="i-lucide-message-circle" class="w-6 h-6 text-primary" />
+              <UIcon
+                name="i-lucide-message-circle"
+                class="w-6 h-6 text-primary"
+              />
             </div>
             <h3 class="font-semibold text-lg">
-              AI Conversations
+              {{ t('home.features.aiConversations.title') }}
             </h3>
             <p class="text-sm text-muted-600 dark:text-muted-400">
-              Chat with AI to generate and refine your content through natural conversations.
+              {{ t('home.features.aiConversations.description') }}
             </p>
           </div>
           <div class="text-center space-y-3">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/20">
-              <UIcon name="i-lucide-file-text" class="w-6 h-6 text-primary" />
+              <UIcon
+                name="i-lucide-file-text"
+                class="w-6 h-6 text-primary"
+              />
             </div>
             <h3 class="font-semibold text-lg">
-              Content Management
+              {{ t('home.features.contentManagement.title') }}
             </h3>
             <p class="text-sm text-muted-600 dark:text-muted-400">
-              Organize and manage all your generated content in one place.
+              {{ t('home.features.contentManagement.description') }}
             </p>
           </div>
           <div class="text-center space-y-3">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/20">
-              <UIcon name="i-lucide-zap" class="w-6 h-6 text-primary" />
+              <UIcon
+                name="i-lucide-zap"
+                class="w-6 h-6 text-primary"
+              />
             </div>
             <h3 class="font-semibold text-lg">
-              Fast & Efficient
+              {{ t('home.features.fastEfficient.title') }}
             </h3>
             <p class="text-sm text-muted-600 dark:text-muted-400">
-              Streamlined workflow to create and publish content faster than ever.
+              {{ t('home.features.fastEfficient.description') }}
             </p>
           </div>
         </div>

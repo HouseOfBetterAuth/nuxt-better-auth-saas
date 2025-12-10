@@ -24,7 +24,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { data: artifactsData, pending } = await useFetch<{ artifacts: ContentArtifact[] }>(
+const { data: artifactsData, pending, error } = await useFetch<{ artifacts: ContentArtifact[] }>(
   `/api/conversations/${props.conversationId}/artifacts`,
   {
     default: () => ({ artifacts: [] })
@@ -53,6 +53,12 @@ const hasFiles = computed(() => artifacts.value.length > 0)
       >
         ({{ artifacts.length }})
       </span>
+    </div>
+    <div
+      v-if="error"
+      class="text-sm text-red-500 dark:text-red-400"
+    >
+      Failed to load files
     </div>
     <div
       v-if="pending"
@@ -87,7 +93,7 @@ const hasFiles = computed(() => artifacts.value.length > 0)
         </div>
         <UBadge
           v-if="artifact.data.status"
-          :color="artifact.data.status === 'published' ? 'green' : 'neutral'"
+          :color="artifact.data.status === 'published' ? 'success' : 'neutral'"
           variant="soft"
           size="xs"
         >

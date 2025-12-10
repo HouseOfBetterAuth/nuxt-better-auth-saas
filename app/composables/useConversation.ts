@@ -1,5 +1,4 @@
 import type {
-  ChatLogEntry,
   ChatMessage,
   NonEmptyArray
 } from '#shared/utils/types'
@@ -66,7 +65,6 @@ function normalizeMessages(list: ChatResponse['messages']): ChatMessage[] {
       }
     })
 }
-
 
 export function useConversation() {
   const messages = useState<ChatMessage[]>('chat/messages', () => [])
@@ -333,11 +331,11 @@ export function useConversation() {
       // Handle stream errors and aborts
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
         // User aborted the request - clear state gracefully
-      status.value = 'ready'
-      requestStartedAt.value = null
-      currentActivity.value = null
-      currentToolName.value = null
-      return null
+        status.value = 'ready'
+        requestStartedAt.value = null
+        currentActivity.value = null
+        currentToolName.value = null
+        return null
       }
       // Stream failed (network error, server error, etc.)
       status.value = 'error'
@@ -387,7 +385,6 @@ export function useConversation() {
       messages.value = normalizeMessages(payload.messages)
     }
   }
-
 
   function stopResponse() {
     if (activeController.value) {

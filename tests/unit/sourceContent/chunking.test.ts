@@ -144,5 +144,3 @@ Third paragraph here.`
     })
   })
 })
-
-

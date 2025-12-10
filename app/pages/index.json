@@ -2,11 +2,11 @@
   "en": {
     "home": {
       "slogan": "Create SEO-ready blogs from YouTube",
-      "getStarted": "Get Started",
-      "viewOnGithub": "View on GitHub",
-      "tryQuillioChat": "Try Quillio chat",
+      "description": "Create, edit, and manage your content with AI-powered conversations. Start a conversation to generate content or continue where you left off.",
+      "startConversation": "Start Conversation",
+      "viewContent": "View Content",
       "features": {
-        "title": "Transform YouTube Videos into SEO-Ready Blogs",
+        "title": "Features",
         "items": {
           "youtube": {
             "title": "YouTube Integration",
@@ -36,6 +36,18 @@
             "title": "Team Collaboration",
             "description": "Multi-tenant workspaces with team members, role-based permissions, and collaborative content creation workflows."
           }
+        },
+        "aiConversations": {
+          "title": "AI Conversations",
+          "description": "Chat with AI to generate and refine your content through natural conversations."
+        },
+        "contentManagement": {
+          "title": "Content Management",
+          "description": "Organize and manage all your generated content in one place."
+        },
+        "fastEfficient": {
+          "title": "Fast & Efficient",
+          "description": "Streamlined workflow to create and publish content faster than ever."
         }
       },
       "screenshots": {
@@ -51,11 +63,11 @@
   "zh-CN": {
     "home": {
       "slogan": "从 YouTube 创建 SEO 就绪的博客",
-      "getStarted": "开始使用",
-      "viewOnGithub": "在 GitHub 上查看",
-      "tryQuillioChat": "试用 Quillio 聊天",
+      "description": "通过 AI 驱动的对话创建、编辑和管理您的内容。开始对话以生成内容或继续之前的工作。",
+      "startConversation": "开始对话",
+      "viewContent": "查看内容",
       "features": {
-        "title": "将 YouTube 视频转换为 SEO 就绪的博客",
+        "title": "功能特性",
         "items": {
           "youtube": {
             "title": "YouTube 集成",
@@ -85,6 +97,18 @@
             "title": "团队协作",
             "description": "多租户工作空间，支持团队成员、基于角色的权限和协作内容创建工作流程。"
           }
+        },
+        "aiConversations": {
+          "title": "AI 对话",
+          "description": "与 AI 聊天，通过自然对话生成和完善您的内容。"
+        },
+        "contentManagement": {
+          "title": "内容管理",
+          "description": "在一个地方组织和管理所有生成的内容。"
+        },
+        "fastEfficient": {
+          "title": "快速高效",
+          "description": "简化的工作流程，比以往更快地创建和发布内容。"
         }
       },
       "screenshots": {
@@ -100,11 +124,11 @@
   "ja": {
     "home": {
       "slogan": "YouTubeからSEO対応のブログを作成",
-      "getStarted": "始めましょう",
-      "viewOnGithub": "GitHub で見る",
-      "tryQuillioChat": "Quillio チャットを試す",
+      "description": "AIを活用した会話でコンテンツを作成、編集、管理します。会話を開始してコンテンツを生成するか、前回の続きから始めます。",
+      "startConversation": "会話を開始",
+      "viewContent": "コンテンツを表示",
       "features": {
-        "title": "YouTube動画をSEO対応のブログに変換",
+        "title": "機能",
         "items": {
           "youtube": {
             "title": "YouTube統合",
@@ -134,6 +158,18 @@
             "title": "チームコラボレーション",
             "description": "チームメンバー、ロールベースの権限、コラボレーティブなコンテンツ作成ワークフローを備えたマルチテナントワークスペース。"
           }
+        },
+        "aiConversations": {
+          "title": "AI会話",
+          "description": "AIとチャットして、自然な会話を通じてコンテンツを生成し、改善します。"
+        },
+        "contentManagement": {
+          "title": "コンテンツ管理",
+          "description": "生成されたすべてのコンテンツを一箇所で整理・管理します。"
+        },
+        "fastEfficient": {
+          "title": "高速で効率的",
+          "description": "これまで以上に速くコンテンツを作成・公開できる合理化されたワークフロー。"
         }
       },
       "screenshots": {
@@ -149,11 +185,11 @@
   "fr": {
     "home": {
       "slogan": "Créez des blogs optimisés SEO à partir de YouTube",
-      "getStarted": "Commencer",
-      "viewOnGithub": "Voir sur GitHub",
-      "tryQuillioChat": "Essayer le chat Quillio",
+      "description": "Créez, modifiez et gérez votre contenu avec des conversations alimentées par l'IA. Démarrez une conversation pour générer du contenu ou continuez où vous vous êtes arrêté.",
+      "startConversation": "Démarrer une conversation",
+      "viewContent": "Voir le contenu",
       "features": {
-        "title": "Transformez les vidéos YouTube en blogs optimisés SEO",
+        "title": "Fonctionnalités",
         "items": {
           "youtube": {
             "title": "Intégration YouTube",
@@ -183,6 +219,18 @@
             "title": "Collaboration d'Équipe",
             "description": "Espaces de travail multi-locataires avec membres d'équipe, permissions basées sur les rôles et flux de travail de création de contenu collaboratif."
           }
+        },
+        "aiConversations": {
+          "title": "Conversations IA",
+          "description": "Discutez avec l'IA pour générer et affiner votre contenu grâce à des conversations naturelles."
+        },
+        "contentManagement": {
+          "title": "Gestion de contenu",
+          "description": "Organisez et gérez tout votre contenu généré en un seul endroit."
+        },
+        "fastEfficient": {
+          "title": "Rapide et efficace",
+          "description": "Workflow rationalisé pour créer et publier du contenu plus rapidement que jamais."
         }
       },
       "screenshots": {

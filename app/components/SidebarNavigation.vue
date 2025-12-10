@@ -1,12 +1,11 @@
 <script setup lang="ts">
-const route = useRoute()
 const { loggedIn } = useAuth()
 
 // Get conversation menu items from shared state (set by QuillioWidget)
 const conversationMenuItems = useState<any[][]>('conversation-menu-items', () => [])
 
 // Fetch content list (only for logged in users)
-const { data: contentData } = await useFetch('/api/content', {
+const { data: contentData } = useFetch('/api/content', {
   default: () => [],
   lazy: true,
   server: false
@@ -20,7 +19,8 @@ const contentMenuItems = computed(() => {
 
   const items = contentData.value.map((row: any) => {
     const content = row.content
-    if (!content) return null
+    if (!content)
+      return null
 
     return {
       label: content.title || 'Untitled',

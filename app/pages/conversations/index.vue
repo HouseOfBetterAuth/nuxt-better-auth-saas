@@ -3,9 +3,6 @@ definePageMeta({
   auth: false // Allow anonymous users
 })
 
-const { t } = useI18n()
-const localePath = useLocalePath()
-
 const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
 setHeaderTitle?.('Conversations')
 
