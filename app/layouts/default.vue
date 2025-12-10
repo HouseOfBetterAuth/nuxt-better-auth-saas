@@ -275,7 +275,10 @@ const primaryActionColor = computed(() => {
         </template>
 
         <div class="flex-1 overflow-y-auto min-h-0">
-          <div class="max-w-3xl mx-auto w-full px-4 py-6">
+          <div
+            class="w-full mx-auto"
+            :class="shouldShowChat ? 'h-full' : 'max-w-3xl px-4 py-6'"
+          >
             <!-- Chat interface - only on conversation routes -->
             <ClientOnly>
               <QuillioWidget v-if="shouldShowChat" />

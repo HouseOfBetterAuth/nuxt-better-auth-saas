@@ -741,7 +741,7 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full py-8 sm:py-12 space-y-8">
+  <div class="w-full h-full flex flex-col py-4 px-4 sm:px-6">
     <div class="w-full">
       <div class="space-y-8">
         <!-- Welcome message -->

@@ -15,14 +15,9 @@ useHead({
 </script>
 
 <template>
-  <div class="w-full py-8 sm:py-12">
-    <div class="text-center space-y-4">
-      <h1 class="text-2xl font-semibold">
-        Select a conversation to continue
-      </h1>
-      <p class="text-muted-600 dark:text-muted-400">
-        Choose a conversation from the sidebar to view and continue your chat
-      </p>
-    </div>
+  <div class="w-full h-full">
+    <ClientOnly>
+      <QuillioWidget />
+    </ClientOnly>
   </div>
 </template>
