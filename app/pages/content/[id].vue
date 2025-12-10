@@ -74,9 +74,11 @@ const setShellHeader = () => {
     deletions: 0,
     contentId: contentId.value || undefined,
     showBackButton: true,
-    onBack: import.meta.client ? () => {
-      router.push('/content')
-    } : null,
+    onBack: import.meta.client
+      ? () => {
+          router.push('/content')
+        }
+      : null,
     onArchive: null,
     onShare: null,
     onPrimaryAction: null,
@@ -88,11 +90,11 @@ const setShellHeader = () => {
 
 setShellHeader()
 
-// Fetch content data
+// Fetch content data (client-side only for instant navigation)
 const { data: contentData, pending, error, refresh } = useFetch(() => `/api/content/${contentId.value}`, {
   key: () => `content-${contentId.value}`,
   lazy: true,
-  server: true,
+  server: false, // Client-side only - instant skeleton, no SSR blocking
   default: () => null
 })
 
@@ -197,9 +199,11 @@ watch(contentEntry, (entry) => {
       deletions: entry.deletions ?? 0,
       contentId: entry.id,
       showBackButton: true,
-      onBack: import.meta.client ? () => {
-        router.push('/content')
-      } : null,
+      onBack: import.meta.client
+        ? () => {
+            router.push('/content')
+          }
+        : null,
       onArchive: null,
       onShare: null,
       onPrimaryAction: null,

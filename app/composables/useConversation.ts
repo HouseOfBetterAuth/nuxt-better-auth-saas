@@ -83,6 +83,11 @@ export function useConversation() {
   // Maps toolCallId -> { messageId, partIndex }
   const activeToolCalls = useState<Map<string, { messageId: string, partIndex: number }>>('chat/active-tool-calls', () => new Map())
 
+  // Client-side message cache for instant navigation
+  // Maps conversationId -> { messages, timestamp }
+  const messageCache = useState<Map<string, { messages: ChatMessage[], timestamp: number }>>('chat/message-cache', () => new Map())
+  const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
   const resetConversation = () => {
@@ -96,7 +101,7 @@ export function useConversation() {
     activeToolCalls.value.clear()
   }
 
-  const hydrateConversation = ({ conversationId: id, messages: msgs }: { conversationId: string, messages: ChatMessage[] }) => {
+  const hydrateConversation = ({ conversationId: id, messages: msgs }: { conversationId: string, messages: ChatMessage[] }, options?: { skipCache?: boolean }) => {
     conversationId.value = id
     messages.value = msgs
     status.value = 'ready'
@@ -105,6 +110,30 @@ export function useConversation() {
     currentActivity.value = null
     currentToolName.value = null
     activeToolCalls.value.clear()
+
+    // Cache messages for instant future navigation (unless explicitly skipped)
+    if (!options?.skipCache) {
+      messageCache.value.set(id, {
+        messages: msgs,
+        timestamp: Date.now()
+      })
+    }
+  }
+
+  // Get cached messages if available and fresh
+  const getCachedMessages = (id: string): ChatMessage[] | null => {
+    const cached = messageCache.value.get(id)
+    if (!cached)
+      return null
+
+    const age = Date.now() - cached.timestamp
+    if (age > CACHE_TTL_MS) {
+      // Cache expired, remove it
+      messageCache.value.delete(id)
+      return null
+    }
+
+    return cached.messages
   }
 
   async function callChatEndpoint(body: Record<string, any>) {
@@ -309,7 +338,7 @@ export function useConversation() {
 
                       // Track by toolCallId (not toolName!)
                       activeToolCalls.value.set(eventData.toolCallId, {
-                        messageId: currentAssistantMessageId,
+                        messageId: message.id,
                         partIndex: message.parts.length - 1
                       })
                     }
@@ -498,6 +527,7 @@ export function useConversation() {
     requestStartedAt,
     hydrateConversation,
     resetConversation,
+    getCachedMessages,
     prompt,
     mode,
     currentActivity,

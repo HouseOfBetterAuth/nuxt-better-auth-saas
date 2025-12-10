@@ -80,7 +80,7 @@ export async function runChatAgentWithMultiPassStream({
   contextBlocks = [],
   onLLMChunk,
   onToolStart,
-  onToolProgress,
+  onToolProgress: _onToolProgress,
   onToolComplete,
   onFinalMessage,
   onRetry,
@@ -349,7 +349,7 @@ export async function runChatAgentWithMultiPassStream({
       // Execute tool with timeout and error handling
       let toolResult: ToolExecutionResult
       const timestamp = new Date()
-      
+
       // Set timeout based on tool type (in milliseconds)
       // ChatGPT approach: long timeouts for complex operations, no timeout on LLM streaming
       let toolTimeout: number
@@ -360,7 +360,7 @@ export async function runChatAgentWithMultiPassStream({
       } else {
         toolTimeout = 120000 // 2 minutes - default for other tools
       }
-      
+
       try {
         // Wrap tool execution with timeout
         toolResult = await Promise.race([
@@ -372,7 +372,7 @@ export async function runChatAgentWithMultiPassStream({
       } catch (err: any) {
         const isTimeout = err?.message?.includes('timed out')
         console.error(`Tool execution ${isTimeout ? 'timed out' : 'failed'} for ${toolInvocation.name}:`, err)
-        
+
         toolResult = {
           success: false,
           result: null,

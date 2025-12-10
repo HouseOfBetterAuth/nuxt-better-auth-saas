@@ -2,6 +2,14 @@
   // Disable the default formatter, use eslint instead
   "editor.formatOnSave": false,
 
+  // Remove trailing whitespace on save
+  "files.trimTrailingWhitespace": true,
+  "files.trimFinalNewlines": true,
+  "files.insertFinalNewline": true,
+
+  // Show whitespace characters (optional, helps visualize issues)
+  "editor.renderWhitespace": "boundary",
+
   "editor.gotoLocation.multipleDefinitions": "goto",
   "editor.quickSuggestions": {
     "strings": "on"
@@ -10,7 +18,7 @@
     "*.css": "tailwindcss"
   },
 
-  // Auto fix
+  // Auto fix on save
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
     "source.organizeImports": "never"

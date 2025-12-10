@@ -46,7 +46,8 @@ const {
   resetConversation,
   prompt,
   mode,
-  hydrateConversation
+  hydrateConversation,
+  getCachedMessages
 } = useConversation()
 
 // Set initial mode from props
@@ -428,6 +429,17 @@ const loadConversationMessages = async (conversationId: string) => {
     return
   }
 
+  // OPTIMIZATION: Check cache first for instant display
+  const cached = getCachedMessages(conversationId)
+  if (cached) {
+    // Show cached messages immediately (optimistic navigation)
+    hydrateConversation({
+      conversationId,
+      messages: cached
+    }, { skipCache: true }) // Don't re-cache what we just loaded from cache
+  }
+
+  // Fetch fresh data in background (even if cached)
   try {
     const messagesResponse = await $fetch<{ data: ContentConversationMessage[] }>(`/api/conversations/${conversationId}/messages`)
 
@@ -441,18 +453,25 @@ const loadConversationMessages = async (conversationId: string) => {
       createdAt: msg.createdAt
     }))
 
+    // Update with fresh data (this will also update the cache)
     hydrateConversation({
       conversationId,
       messages: convertedMessages
     })
   } catch (error) {
-    console.error('Unable to load conversation messages', error)
-    toast.add({
-      title: 'Failed to load messages',
-      description: 'Unable to load conversation history. Please try refreshing.',
-      color: 'error',
-      icon: 'i-lucide-alert-triangle'
-    })
+    // Only show error if we didn't have cached data
+    if (!cached) {
+      console.error('Unable to load conversation messages', error)
+      toast.add({
+        title: 'Failed to load messages',
+        description: 'Unable to load conversation history. Please try refreshing.',
+        color: 'error',
+        icon: 'i-lucide-alert-triangle'
+      })
+    } else {
+      // Silently fail if we have cached data - user can still interact
+      console.warn('Failed to refresh conversation messages, using cached data', error)
+    }
   }
 }
 
@@ -764,6 +783,16 @@ if (import.meta.client) {
   <div class="w-full h-full flex flex-col py-4 px-4 sm:px-6">
     <div class="w-full">
       <div class="space-y-8">
+        <!-- Loading skeleton (shown when loading conversation without cache) -->
+        <div
+          v-if="!messages.length && conversationId && status === 'ready' && !errorMessage"
+          class="space-y-4"
+        >
+          <USkeleton class="h-20 w-full rounded-lg" />
+          <USkeleton class="h-32 w-3/4 rounded-lg" />
+          <USkeleton class="h-24 w-full rounded-lg" />
+        </div>
+
         <!-- Welcome message -->
         <div
           v-if="!messages.length && !conversationId && !isBusy && !promptSubmitting"

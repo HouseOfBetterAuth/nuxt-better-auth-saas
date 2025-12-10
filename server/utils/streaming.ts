@@ -1,14 +1,14 @@
 /**
  * SSE Streaming Utility for Cloudflare Workers
- * 
+ *
  * Provides a clean Web Streams API-based implementation for Server-Sent Events.
  * This is designed specifically for Cloudflare Workers runtime.
  */
 
 export interface SSEWriter {
-  write(eventType: string, data: any): void
-  close(): void
-  error(err: Error): void
+  write: (eventType: string, data: any) => void
+  close: () => void
+  error: (err: Error) => void
 }
 
 export interface SSEStreamResult {
@@ -18,12 +18,12 @@ export interface SSEStreamResult {
 
 /**
  * Creates an SSE stream using Web Streams API
- * 
+ *
  * @returns Object containing the ReadableStream and a writer interface
- * 
+ *
  * @example
  * const { stream, writer } = createSSEStream()
- * 
+ *
  * // Return stream immediately to start response
  * return new Response(stream, {
  *   headers: {
@@ -32,7 +32,7 @@ export interface SSEStreamResult {
  *     'Connection': 'keep-alive'
  *   }
  * })
- * 
+ *
  * // Write events asynchronously
  * writer.write('message', { text: 'Hello' })
  * writer.close()
@@ -111,7 +111,7 @@ export function createSSEStream(): SSEStreamResult {
 
 /**
  * Format SSE event string (for compatibility with existing code)
- * 
+ *
  * @deprecated Use createSSEStream() instead for proper streaming
  */
 export function formatSSEEvent(eventType: string, data: any): string {
