@@ -746,11 +746,11 @@ if (import.meta.client) {
       <div class="space-y-8">
         <!-- Welcome message -->
         <div
-          v-if="!messages.length && !conversationId"
+          v-if="!messages.length && !conversationId && !isBusy && !promptSubmitting"
           class="space-y-6 mb-8"
         >
           <h1 class="text-2xl font-semibold text-center">
-            What should we write next?
+            What would you like to write today?
           </h1>
         </div>
 
@@ -892,6 +892,64 @@ if (import.meta.client) {
                   </USelectMenu>
                 </template>
               </PromptComposer>
+            </div>
+          </div>
+
+          <!-- What's New Section - Below Input -->
+          <div
+            v-if="!messages.length && !conversationId && !isBusy && !promptSubmitting"
+            class="space-y-4 pt-4"
+          >
+            <div class="flex items-center gap-2 justify-center text-xs font-semibold text-muted-500 uppercase tracking-wider">
+              <UIcon
+                name="i-lucide-sparkles"
+                class="w-3 h-3"
+              />
+              <span>What's new in Quillio</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+              <button
+                type="button"
+                class="text-left p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
+              >
+                <div class="flex items-start gap-3">
+                  <div class="p-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary group-hover:bg-primary-100 dark:group-hover:bg-primary-900/30 transition-colors">
+                    <UIcon
+                      name="i-lucide-brain-circuit"
+                      class="w-5 h-5"
+                    />
+                  </div>
+                  <div>
+                    <h3 class="font-medium text-sm">
+                      Deep Reasoning
+                    </h3>
+                    <p class="text-xs text-muted-500 mt-1">
+                      Ask complex questions requiring multi-step analysis.
+                    </p>
+                  </div>
+                </div>
+              </button>
+              <button
+                type="button"
+                class="text-left p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
+              >
+                <div class="flex items-start gap-3">
+                  <div class="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors">
+                    <UIcon
+                      name="i-lucide-file-code"
+                      class="w-5 h-5"
+                    />
+                  </div>
+                  <div>
+                    <h3 class="font-medium text-sm">
+                      Artifacts
+                    </h3>
+                    <p class="text-xs text-muted-500 mt-1">
+                      Generate and edit code, documents, and diagrams visually.
+                    </p>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
