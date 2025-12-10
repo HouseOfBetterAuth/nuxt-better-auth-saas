@@ -15,6 +15,8 @@ const { data: contentData, execute: fetchContent } = useFetch('/api/content', {
 watch(loggedIn, (isLoggedIn) => {
   if (isLoggedIn) {
     fetchContent()
+  } else {
+    contentData.value = []
   }
 }, { immediate: true })
 
