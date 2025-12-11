@@ -137,7 +137,6 @@ const emitQuotaEvent = () => {
           color="neutral"
           class="flex items-center gap-2"
           data-testid="user-menu"
-          aria-label="User menu"
         >
           <UAvatar
             :src="userAvatar || undefined"
