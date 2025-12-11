@@ -4,7 +4,7 @@ import { extname } from 'node:path'
 import { format } from 'date-fns'
 import { and, desc, eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
-import { file as fileTable } from '~~/server/database/schema'
+import { file as fileTable } from '~~/server/db/schema'
 import { logAuditEvent } from '~~/server/utils/auditLogger'
 
 export const useFileManagerConfig = () => {

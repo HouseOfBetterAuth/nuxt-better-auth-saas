@@ -4,7 +4,7 @@
  */
 
 import { and, eq } from 'drizzle-orm'
-import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '../../database/schema'
+import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '../../db/schema'
 import { getAuthSession } from '../../utils/auth'
 import { useDB } from '../../utils/db'
 

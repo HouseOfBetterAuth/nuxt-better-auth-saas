@@ -6,7 +6,7 @@ import { generateRuntimeConfig } from './server/utils/runtimeConfig'
 console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`)
 
 export default defineNuxtConfig({
-  compatibilityDate: '2025-07-22',
+  compatibilityDate: '2025-12-10',
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
   modules: [
@@ -21,15 +21,10 @@ export default defineNuxtConfig({
   ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
     ? {
         hub: {
-          workers: true,
+          db: 'postgresql',
           kv: true,
-          blob: true,
-          bindings: {
-            hyperdrive: {
-              HYPERDRIVE: process.env.NUXT_CF_HYPERDRIVE_ID as string
-            }
-          }
-        }
+          blob: true
+        } as any
       }
     : {}),
   i18n: {
@@ -123,6 +118,14 @@ export default defineNuxtConfig({
   },
   nitro: {
     preset: process.env.NUXT_NITRO_PRESET,
+    ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+      ? {
+          cloudflare: {
+            deployConfig: true,
+            nodeCompat: true
+          }
+        }
+      : {}),
     rollupConfig: {
       external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
     },

@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/database/schema'
+import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { createStripeClient } from '~~/server/utils/stripe'

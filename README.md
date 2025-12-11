@@ -46,7 +46,7 @@ A production-ready Nuxt SaaS starter with authentication, billing, teams, and mo
 - [x] **Connected accounts** — link/unlink multiple OAuth providers
 - [x] **Account deletion** — secure deletion with email verification
 - [ ] **More Testing** — I'm sure there are some bugs, will activtly test and make updates.
-- [ ] **NuxHub self-hosted** — self-hosted deployment guide
+- [x] **NuxtHub self-hosted** — self-hosted deployment guide (see below)
 - [ ] **Abandoned cart emails** — email users with incomplete subscription status
 - [ ] **Usage-based billing** — metered billing support
 
@@ -130,6 +130,89 @@ Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfi
 - **Redis** — use Redis if you're not on Cloudflare (Upstash, Railway, Vercel etc.)
 
 The app automatically uses Cloudflare KV when deployed to Cloudflare Workers. No additional configuration needed.
+
+---
+
+<details>
+<summary><h2>🚀 NuxtHub Self-Hosted Deployment</h2></summary>
+
+This project supports **self-hosted Cloudflare Workers** deployment instead of using NuxtHub Admin. This gives you full control over your infrastructure.
+
+### Prerequisites
+
+- Cloudflare account with Workers enabled
+- PostgreSQL database (e.g., Neon, Supabase)
+- Cloudflare resources:
+  - **KV Namespace** — for caching
+  - **R2 Bucket** — for file storage
+  - **Hyperdrive** — for PostgreSQL connection pooling
+
+### Quick Setup
+
+#### 1. Create Wrangler Config
+
+```bash
+cp wrangler.example.jsonc wrangler.jsonc
+```
+
+Edit `wrangler.jsonc` with your resource IDs:
+
+```jsonc
+{
+    "name": "your-worker-name",  // ⚠️ Must match your Cloudflare Worker name
+    "kv_namespaces": [{ "binding": "KV", "id": "<your-kv-id>" }],
+    "r2_buckets": [{ "binding": "BLOB", "bucket_name": "<your-bucket>" }],
+    "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<your-hyperdrive-id>" }]
+}
+```
+
+#### 2. Get Resource IDs
+
+```bash
+npx wrangler kv namespace list
+npx wrangler r2 bucket list
+npx wrangler hyperdrive list
+```
+
+#### 3. Environment Variables
+
+> **Important:** `DATABASE_URL` replaces the old `NUXT_DATABASE_URL`
+
+```bash
+# .env
+DATABASE_URL=postgres://user:password@host:5432/database
+NUXT_NITRO_PRESET=cloudflare-module
+```
+
+#### 4. Mark Existing Migrations
+
+If your database already has tables, mark migrations as applied:
+
+```bash
+npx nuxt db mark-as-migrated 0000_your_migration_name
+```
+
+#### 5. Build & Deploy
+
+```bash
+pnpm build
+npx wrangler deploy
+```
+
+### How It Works
+
+| Environment | Database | Cache |
+|-------------|----------|-------|
+| Cloudflare Workers | Hyperdrive | KV |
+| Node.js hosting | `DATABASE_URL` | Redis |
+
+### Full Documentation
+
+See [docs/NUXTHUB_SELF_HOSTED.md](docs/NUXTHUB_SELF_HOSTED.md) for complete setup guide.
+
+See [docs/MIGRATION_CHECKLIST.md](docs/MIGRATION_CHECKLIST.md) for migration checklist when syncing with your own app.
+
+</details>
 
 ---
 

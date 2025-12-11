@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { EventHandlerRequest, H3Event } from 'h3'
 import { drizzle } from 'drizzle-orm/node-postgres'
 
-import * as schema from '../database/schema'
+import * as schema from '../db/schema'
 import { getPgPool } from './drivers'
 import { runtimeConfig } from './runtimeConfig'
 

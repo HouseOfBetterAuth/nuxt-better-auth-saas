@@ -1,5 +1,5 @@
 import { and, eq, like } from 'drizzle-orm'
-import { apiKey, member } from '../../database/schema'
+import { apiKey, member } from '../../db/schema'
 import { getAuthSession } from '../../utils/auth'
 import { useDB } from '../../utils/db'
 

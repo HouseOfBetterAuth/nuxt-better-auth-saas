@@ -3,7 +3,7 @@
  * These functions are called by Better Auth Stripe webhooks
  */
 
-import { member as memberTable } from '../database/schema'
+import { member as memberTable } from '../db/schema'
 import { useDB } from './db'
 
 /**
