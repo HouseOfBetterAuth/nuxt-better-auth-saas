@@ -4,6 +4,28 @@ import { resolve } from 'node:path'
 import { generateRuntimeConfig } from './server/utils/runtimeConfig'
 import { getAppUrl } from './shared/utils/app-url'
 
+const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
+const hyperdriveBindings = hyperdriveId
+  ? [{
+      binding: 'HYPERDRIVE',
+      id: hyperdriveId
+    }]
+  : undefined
+
+if (process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
+  console.warn('[nuxt.config] NUXT_CF_HYPERDRIVE_ID is not set; Hyperdrive binding will be skipped.')
+}
+
+const resolveMdcHighlighterPlugin = {
+  name: 'resolve-mdc-highlighter',
+  resolveId(id: string) {
+    if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
+      return id.replace(/node_modules\/\.cache\/nuxt\/\.nuxt/, resolve('.nuxt'))
+    }
+    return null
+  }
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-12-11',
   devtools: { enabled: true },
@@ -29,12 +51,13 @@ export default defineNuxtConfig({
           workers: true,
           kv: true,
           blob: true,
-          bindings: {
-            hyperdrive: [{
-              binding: 'HYPERDRIVE',
-              id: process.env.NUXT_CF_HYPERDRIVE_ID as string
-            }]
-          }
+          ...(hyperdriveBindings
+            ? {
+                bindings: {
+                  hyperdrive: hyperdriveBindings
+                }
+              }
+            : {})
         }
       }
     : {}),
@@ -138,25 +161,9 @@ export default defineNuxtConfig({
       : {}),
     rollupConfig: {
       external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined,
-      ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
-        ? {
-            plugins: (existingPlugins: any[]) => {
-              return [
-                ...existingPlugins,
-                {
-                  name: 'resolve-mdc-highlighter',
-                  resolveId(id: string) {
-                    if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
-                      // Resolve to the actual .nuxt directory instead of cache
-                      return id.replace(/node_modules\/\.cache\/nuxt\/\.nuxt/, resolve('.nuxt'))
-                    }
-                    return null
-                  }
-                }
-              ]
-            }
-          }
-        : {})
+      plugins: process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+        ? [resolveMdcHighlighterPlugin]
+        : undefined
     },
     esbuild: {
       options: {

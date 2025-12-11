@@ -2,7 +2,7 @@ import type { Subscription } from '@better-auth/stripe'
 import { stripe } from '@better-auth/stripe'
 import { and, eq } from 'drizzle-orm'
 import Stripe from 'stripe'
-import { member as memberTable, organization as organizationTable } from '~~/server/db/schema'
+import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
 import { PAID_TIERS } from '~~/shared/utils/plans'
 import { logAuditEvent } from './auditLogger'
 import { useDB } from './db'
@@ -140,6 +140,54 @@ export const syncStripeCustomerName = async (organizationId: string, newName?: s
   }
 }
 
+const handleSubscriptionScheduleEvent = async (schedule: Stripe.SubscriptionSchedule) => {
+  const stripeSubscriptionId = typeof schedule.subscription === 'string'
+    ? schedule.subscription
+    : schedule.subscription?.id
+
+  if (!stripeSubscriptionId)
+    return
+
+  const db = await useDB()
+  const existingSub = await db.query.subscription.findFirst({
+    where: eq(subscriptionTable.stripeSubscriptionId, stripeSubscriptionId)
+  })
+
+  if (!existingSub?.scheduledPlanId)
+    return
+
+  const scheduleAdvanced = () => {
+    if (schedule.status === 'completed' || schedule.status === 'released')
+      return true
+    if (!schedule.current_phase || !schedule.phases?.length)
+      return false
+    const phaseIndex = schedule.phases.findIndex(phase => phase.start_date === schedule.current_phase?.start_date)
+    return phaseIndex > 0
+  }
+
+  if (!scheduleAdvanced())
+    return
+
+  const updateData: Record<string, any> = {
+    plan: existingSub.scheduledPlanId,
+    scheduledPlanId: null,
+    scheduledPlanInterval: null,
+    scheduledPlanSeats: null
+  }
+
+  if (typeof existingSub.scheduledPlanSeats === 'number') {
+    updateData.seats = existingSub.scheduledPlanSeats
+  }
+
+  await db.update(subscriptionTable)
+    .set(updateData)
+    .where(eq(subscriptionTable.id, existingSub.id))
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Stripe] Applied scheduled plan change for subscription:', stripeSubscriptionId)
+  }
+}
+
 export const addPaymentLog = async (action: string, subscription: any) => {
   // Handle both Better Auth subscription object and raw Stripe subscription object
   const customerId = subscription.stripeCustomerId ||
@@ -220,6 +268,10 @@ export const setupStripe = () => stripe({
   stripeClient: createStripeClient(),
   stripeWebhookSecret: runtimeConfig.stripeWebhookSecret,
   onEvent: async (event) => {
+    if (event.type === 'subscription_schedule.updated' || event.type === 'subscription_schedule.completed') {
+      await handleSubscriptionScheduleEvent(event.data.object as Stripe.SubscriptionSchedule)
+      return
+    }
     // Handle payment_intent.payment_failed - send email when card is declined
     if (event.type === 'payment_intent.payment_failed') {
       const paymentIntent = event.data.object as Stripe.PaymentIntent

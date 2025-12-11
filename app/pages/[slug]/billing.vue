@@ -1461,23 +1461,25 @@ async function confirmPlanChange() {
       :ui="{ content: 'max-w-3xl' }"
     >
       <template #body>
-        <BillingTierSelector
-          :current-tier-key="currentTierKey"
-          :current-interval="currentBillingInterval"
-          :is-trialing="activeSub?.status === 'trialing'"
-          @select="handleTierSelect"
-        />
+        <div class="relative">
+          <BillingTierSelector
+            :current-tier-key="currentTierKey"
+            :current-interval="currentBillingInterval"
+            :is-trialing="activeSub?.status === 'trialing'"
+            @select="handleTierSelect"
+          />
 
-        <div
-          v-if="tierChangeLoading"
-          class="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
-        >
-          <div class="flex items-center gap-2">
-            <UIcon
-              name="i-lucide-loader-2"
-              class="w-5 h-5 animate-spin"
-            />
-            <span>Loading preview...</span>
+          <div
+            v-if="tierChangeLoading"
+            class="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
+          >
+            <div class="flex items-center gap-2">
+              <UIcon
+                name="i-lucide-loader-2"
+                class="w-5 h-5 animate-spin"
+              />
+              <span>Loading preview...</span>
+            </div>
           </div>
         </div>
       </template>
