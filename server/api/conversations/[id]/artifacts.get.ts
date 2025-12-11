@@ -13,7 +13,7 @@ import { validateUUID } from '~~/server/utils/validation'
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event, { allowAnonymous: true })
   const { organizationId } = await requireActiveOrganization(event, user.id, {
-    isAnonymousUser: Boolean((user as any)?.isAnonymous)
+    isAnonymousUser: Boolean(user.isAnonymous)
   })
   const db = getDB()
 

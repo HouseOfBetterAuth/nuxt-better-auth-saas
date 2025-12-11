@@ -20,10 +20,16 @@ export function useUserOrganizations(options?: { lazy?: boolean }) {
 
   const fetchOrganizations = async () => {
     try {
-      const { data } = await organization.list()
+      const { data, error } = await organization.list()
+      if (error) {
+        if (error.code === 'UNAUTHORIZED' || error.status === 401) {
+          return []
+        }
+        throw error
+      }
       if (!Array.isArray(data)) {
         console.warn('[useUserOrganizations] Unexpected response shape', data)
-        throw new Error('Organization list response is not an array')
+        return []
       }
       const sanitized = data.filter((org: any): org is UserOrganization =>
         typeof org?.id === 'string' &&
