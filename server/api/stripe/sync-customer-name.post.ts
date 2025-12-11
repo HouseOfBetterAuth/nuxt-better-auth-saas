@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { organization as organizationTable } from '../../database/schema'
+import { organization as organizationTable } from '../../db/schema'
 import { getAuthSession } from '../../utils/auth'
 import { useDB } from '../../utils/db'
 import { syncStripeCustomerName } from '../../utils/stripe'

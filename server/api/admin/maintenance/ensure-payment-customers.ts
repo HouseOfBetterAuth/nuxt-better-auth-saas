@@ -1,4 +1,4 @@
-import { organization as organizationTable } from '~~/server/database/schema'
+import { organization as organizationTable } from '~~/server/db/schema'
 import { useDB } from '~~/server/utils/db'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { ensureStripeCustomer } from '~~/server/utils/stripe'

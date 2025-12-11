@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import Stripe from 'stripe'
-import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/database/schema'
+import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'

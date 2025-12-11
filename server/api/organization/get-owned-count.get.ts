@@ -1,5 +1,5 @@
 import { and, count, eq } from 'drizzle-orm'
-import { member } from '../../database/schema'
+import { member } from '../../db/schema'
 import { requireAuth } from '../../utils/auth'
 import { getDB } from '../../utils/db'
 

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { organization } from '../../database/schema'
+import { organization } from '../../db/schema'
 import { requireAuth } from '../../utils/auth'
 import { getDB } from '../../utils/db'
 

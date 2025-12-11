@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import * as schema from '../../../database/schema'
+import * as schema from '../../../db/schema'
 import { requireAuth } from '../../../utils/auth'
 import { getDB } from '../../../utils/db'
 
