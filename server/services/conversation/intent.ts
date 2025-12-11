@@ -92,18 +92,19 @@ function createArrayField(initial?: ArrayField): ArrayField {
     : { value: [], confidence: 'unknown', sourceMessageIds: [] }
 }
 
-function mergeStringField(field: StringField, value: string | null): StringField {
+function mergeStringField(field: StringField, value: string | null, sourceMessageIds: string[] = []): StringField {
   if (value) {
     return {
       ...field,
       value,
-      confidence: 'high'
+      confidence: 'high',
+      sourceMessageIds: Array.from(new Set([...(field.sourceMessageIds || []), ...sourceMessageIds]))
     }
   }
   return field
 }
 
-function mergeArrayField(field: ArrayField, values: string[]): ArrayField {
+function mergeArrayField(field: ArrayField, values: string[], sourceMessageIds: string[] = []): ArrayField {
   if (!values.length) {
     return field
   }
@@ -111,7 +112,8 @@ function mergeArrayField(field: ArrayField, values: string[]): ArrayField {
   return {
     ...field,
     value: merged,
-    confidence: 'high'
+    confidence: 'high',
+    sourceMessageIds: Array.from(new Set([...(field.sourceMessageIds || []), ...sourceMessageIds]))
   }
 }
 
@@ -125,7 +127,7 @@ function buildTranscript(messages: ChatCompletionMessage[]): string {
     .join('\n\n')
 }
 
-function collectUserMessageIds(messages: ChatCompletionMessage[]): string[] {
+const collectUserMessageIds = (messages: ChatCompletionMessage[]): string[] => {
   const ids: string[] = []
 
   messages.forEach((message, index) => {

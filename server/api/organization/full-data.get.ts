@@ -4,43 +4,20 @@
  */
 
 import { and, eq } from 'drizzle-orm'
+import { createError } from 'h3'
 import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
-import { getAuthSession } from '~~/server/utils/auth'
+import { requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
+import { requireActiveOrganization } from '~~/server/utils/organization'
 
 export default defineEventHandler(async (event) => {
   try {
     const db = await useDB()
 
-    // Use Better Auth's official session retrieval
-    // This handles cookie parsing, signature verification, and caching automatically
-    const session = await getAuthSession(event)
-
-    if (!session || !session.user) {
-      throw createError({
-        statusCode: 401,
-        message: 'Invalid session'
-      })
-    }
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Session found:', { userId: session.user.id, activeOrgId: (session.session as any).activeOrganizationId })
-    }
-
-    const activeOrgId = (session.session as any).activeOrganizationId
-
-    if (!activeOrgId) {
-      return {
-        organization: null,
-        subscriptions: [],
-        needsUpgrade: false,
-        user: {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.name
-        }
-      }
-    }
+    const user = await requireAuth(event, { allowAnonymous: true })
+    const { organizationId: activeOrgId } = await requireActiveOrganization(event, user.id, {
+      isAnonymousUser: Boolean((user as any)?.isAnonymous)
+    })
 
     // Fetch organization with all relations in a single database query
     const org = await db.query.organization.findFirst({
@@ -63,15 +40,15 @@ export default defineEventHandler(async (event) => {
         subscriptions: [],
         needsUpgrade: false,
         user: {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.name
+          id: user.id,
+          email: user.email,
+          name: user.name
         }
       }
     }
 
     // Verify that the current user is a member of this organization
-    const isMember = org.members.some((m: any) => m.userId === session.user.id)
+    const isMember = org.members.some((m: any) => m.userId === user.id)
     if (!isMember) {
       console.warn(`User ${session.user.id} attempted to access org ${activeOrgId} without membership`)
       throw createError({
@@ -89,7 +66,7 @@ export default defineEventHandler(async (event) => {
     // 1. Get all organizations owned by this user
     const ownedMemberships = await db.query.member.findMany({
       where: and(
-        eq(memberTable.userId, session.user.id),
+        eq(memberTable.userId, user.id),
         eq(memberTable.role, 'owner')
       ),
       with: {
@@ -123,7 +100,7 @@ export default defineEventHandler(async (event) => {
 
     if (ownerMember) {
       // If I am the owner, I already fetched my orgs.
-      if (ownerMember.userId === session.user.id) {
+      if (ownerMember.userId === user.id) {
         isFreeOrg = activeOrgId === firstOrgId
       } else {
         // I am not the owner. I need to check the OWNER's orgs to see if this is THEIR first org.
@@ -160,9 +137,9 @@ export default defineEventHandler(async (event) => {
       needsUpgrade,
       userOwnsMultipleOrgs,
       user: {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name
+        id: user.id,
+        email: user.email,
+        name: user.name
       }
     }
   } catch (error: any) {

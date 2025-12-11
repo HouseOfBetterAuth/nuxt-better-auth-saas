@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '../db/schema'
 import { setUserActiveOrganization } from '../services/organization/provision'
@@ -66,6 +66,21 @@ export const requireActiveOrganization = async (
     if (anonymousOrg?.id) {
       organizationId = anonymousOrg.id
       await setUserActiveOrganization(userId, anonymousOrg.id)
+    }
+  }
+
+  if (!organizationId) {
+    const [firstOrg] = await db
+      .select({ id: schema.organization.id })
+      .from(schema.member)
+      .innerJoin(schema.organization, eq(schema.member.organizationId, schema.organization.id))
+      .where(eq(schema.member.userId, userId))
+      .orderBy(asc(schema.organization.createdAt))
+      .limit(1)
+
+    if (firstOrg?.id) {
+      organizationId = firstOrg.id
+      await setUserActiveOrganization(userId, firstOrg.id)
     }
   }
 
