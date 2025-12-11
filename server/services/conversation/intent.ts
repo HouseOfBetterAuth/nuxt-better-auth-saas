@@ -125,6 +125,31 @@ function buildTranscript(messages: ChatCompletionMessage[]): string {
     .join('\n\n')
 }
 
+function collectUserMessageIds(messages: ChatCompletionMessage[]): string[] {
+  const ids: string[] = []
+
+  messages.forEach((message, index) => {
+    if (message.role !== 'user') {
+      return
+    }
+
+    let messageId: string | null = null
+    if (typeof (message as any).id === 'string') {
+      messageId = (message as any).id
+    } else if (typeof (message as any).messageId === 'string') {
+      messageId = (message as any).messageId
+    } else {
+      messageId = `user-${index}`
+    }
+
+    if (messageId) {
+      ids.push(messageId)
+    }
+  })
+
+  return ids
+}
+
 function extractJsonPayload(text: string): IntentExtractionResponse | null {
   const trimmed = text.trim()
   const withoutFences = trimmed.startsWith('```')
@@ -167,14 +192,34 @@ function createBaseSnapshot(previous?: ConversationIntentSnapshot | null): Conve
   }
 }
 
-function computeReadiness(snapshot: ConversationIntentSnapshot): IntentReadinessState {
+function computeReadiness(
+  snapshot: ConversationIntentSnapshot,
+  previousSnapshot?: ConversationIntentSnapshot | null
+): IntentReadinessState {
+  const filledRequiredFields = REQUIRED_INTENT_FIELDS.filter((field) => {
+    const value = snapshot.fields[field].value
+    if (Array.isArray(value)) {
+      return value.length > 0
+    }
+    return Boolean(value)
+  })
+
   const requiredMissing = REQUIRED_INTENT_FIELDS.filter((field) => {
     const fieldValue = snapshot.fields[field].value
     return !fieldValue || (Array.isArray(fieldValue) && fieldValue.length === 0)
   })
 
+  if (filledRequiredFields.length === 0) {
+    return 'collecting'
+  }
+
   if (requiredMissing.length > 0) {
     return 'needs_clarification'
+  }
+
+  const previousReady = previousSnapshot?.readiness
+  if (previousReady === 'ready_to_plan' || previousReady === 'ready_to_generate') {
+    return 'ready_to_generate'
   }
 
   return 'ready_to_plan'
