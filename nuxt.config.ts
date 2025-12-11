@@ -5,14 +5,14 @@ import { generateRuntimeConfig } from './server/utils/runtimeConfig'
 import { getAppUrl } from './shared/utils/app-url'
 
 const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
-const hyperdriveBindings = hyperdriveId
+const hyperdriveBindings = hyperdriveId && process.env.NODE_ENV === 'production'
   ? [{
       binding: 'HYPERDRIVE',
       id: hyperdriveId
     }]
   : undefined
 
-if (process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
+if (process.env.NODE_ENV === 'production' && process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
   console.warn('[nuxt.config] NUXT_CF_HYPERDRIVE_ID is not set; Hyperdrive binding will be skipped.')
 }
 
@@ -47,9 +47,18 @@ export default defineNuxtConfig({
   ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
     ? {
         hub: {
-          db: 'postgresql',
+          // Enable db for Cloudflare Workers (production builds), but not in local dev
+          // In local dev, use DATABASE_URL directly via server/utils/db.ts
+          ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module' && process.env.NODE_ENV === 'production'
+            ? { db: 'postgresql' }
+            : {}),
           workers: true,
-          kv: true,
+          kv: process.env.NODE_ENV === 'production'
+            ? true
+            : {
+                driver: 'fs-lite',
+                base: '.data/kv'
+              },
           blob: true,
           ...(hyperdriveBindings
             ? {

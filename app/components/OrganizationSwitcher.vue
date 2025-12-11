@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
 
-const { session, useActiveOrganization, user } = useAuth()
+const { session, useActiveOrganization, user, activeOrgExtras } = useAuth()
 
 // Use shared composable with proper caching
 const { data: organizations, status } = useUserOrganizations({ lazy: true })
@@ -47,22 +47,12 @@ const activeOrgName = computed(() => {
 
 // Compute active subscription from activeOrg state (populated by layout)
 const activeStripeSubscription = computed(() => {
-  const data = activeOrg.value?.data
-
-  // Check if the data matches the currently selected org
-  // If not, it means we are switching and still have stale data
-  if (!data || data.id !== activeOrgId.value) {
+  const subs = activeOrgExtras.value?.subscriptions
+  if (!Array.isArray(subs))
     return null
-  }
-
-  const subs = (data as any)?.subscriptions || []
-
-  if (!subs || !Array.isArray(subs))
-    return null
-
   return subs.find(
     (sub: any) => sub.status === 'active' || sub.status === 'trialing'
-  )
+  ) || null
 })
 
 // Check if current user is owner or admin

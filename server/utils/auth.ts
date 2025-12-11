@@ -62,7 +62,7 @@ const getQuotaAdvisoryLockKeys = (organizationId: string): [number, number] => {
 }
 
 export const createBetterAuth = () => betterAuth({
-  baseURL: runtimeConfig.public.baseURL,
+  baseURL: `${runtimeConfig.public.baseURL}/api/auth`,
   trustedOrigins,
   secret: runtimeConfig.betterAuthSecret,
   session: {
@@ -765,10 +765,16 @@ const createAnonymousUserSession = async (event: H3Event) => {
         headers.set(key, value)
     }
 
+    // Call the anonymous sign-in endpoint directly via the API
     const result = await (serverAuth.api as any).signInAnonymous({
       headers,
       returnHeaders: true
     } as any)
+
+    if (!result) {
+      console.error('[Auth] signInAnonymous returned no result')
+      return null
+    }
 
     if (result?.headers) {
       result.headers.forEach((value: string, key: string) => {
@@ -779,8 +785,10 @@ const createAnonymousUserSession = async (event: H3Event) => {
     }
 
     const userId = (result as any)?.response?.user?.id
-    if (!userId)
+    if (!userId) {
+      console.error('[Auth] signInAnonymous did not return a user ID', { result })
       return null
+    }
 
     const db = getDB()
     const [userRecord] = await db
@@ -789,9 +797,17 @@ const createAnonymousUserSession = async (event: H3Event) => {
       .where(eq(schema.user.id, userId))
       .limit(1)
 
-    return userRecord || null
+    if (!userRecord) {
+      console.error('[Auth] User record not found after anonymous sign-in', { userId })
+      return null
+    }
+
+    return userRecord
   } catch (error) {
-    console.error('Failed to create anonymous session', error)
+    console.error('[Auth] Failed to create anonymous session', error)
+    if (error instanceof Error) {
+      console.error('[Auth] Error details:', error.message, error.stack)
+    }
     return null
   }
 }

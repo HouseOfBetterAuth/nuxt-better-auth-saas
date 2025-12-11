@@ -33,7 +33,7 @@ const props = withDefaults(defineProps<Props>(), {
 const router = useRouter()
 const route = useRoute()
 const auth = useAuth()
-const { loggedIn, useActiveOrganization, refreshActiveOrg, signIn } = auth
+const { loggedIn, useActiveOrganization, refreshActiveOrganizationExtras, signIn } = auth
 const activeOrgState = useActiveOrganization()
 
 const {
@@ -312,7 +312,7 @@ const handleUpgradeSuccess = async () => {
   // Wait for modal to close and DOM to update before refreshing
   await nextTick()
   try {
-    await refreshActiveOrg()
+    await refreshActiveOrganizationExtras(activeOrgState.value?.data?.id)
     await refreshConversations()
   } catch (error) {
     // Silently handle errors during refresh to prevent crashes

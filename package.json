@@ -51,6 +51,7 @@
     "resend": "^6.5.2",
     "sortablejs": "^1.15.6",
     "stripe": "^20.0.0",
+    "unstorage": "^1.17.3",
     "uuid": "^13.0.0",
     "vue": "^3.5.24",
     "vue-component-type-helpers": "3.0.7",

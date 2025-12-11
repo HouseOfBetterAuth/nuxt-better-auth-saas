@@ -11,8 +11,10 @@ import { validateUUID } from '~~/server/utils/validation'
  * Get artifacts (content items) produced in a conversation
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event)
-  const { organizationId } = await requireActiveOrganization(event, user.id)
+  const user = await requireAuth(event, { allowAnonymous: true })
+  const { organizationId } = await requireActiveOrganization(event, user.id, {
+    isAnonymousUser: Boolean(user.isAnonymous)
+  })
   const db = getDB()
 
   const { id } = getRouterParams(event)

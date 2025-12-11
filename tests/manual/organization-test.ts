@@ -288,21 +288,23 @@ async function setActiveOrganization(context: APIRequestContext, organizationId:
   console.log('✅ Active organization updated.')
 }
 
-async function fetchFullData(context: APIRequestContext, results: TestResult[]) {
-  console.log('\nStep 6: Fetching /api/organization/full-data...')
-  const response = await context.get('/api/organization/full-data')
+async function fetchOrganizationList(context: APIRequestContext, results: TestResult[]) {
+  console.log('\nStep 6: Fetching /api/auth/organization/list...')
+  const response = await context.get('/api/auth/organization/list')
   const data = await parseResponse(response)
   const ok = responseOk(response)
+  const organizations = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : null
+  const isArray = Array.isArray(organizations)
   results.push({
-    step: 'Full Data Endpoint',
-    success: ok && !!data.organization,
-    message: data.organization ? `Org: ${data.organization.name}` : 'No organization returned',
-    data: { hasOrg: !!data.organization }
+    step: 'Organization List Endpoint',
+    success: ok && isArray,
+    message: isArray ? `Found ${organizations.length} org(s)` : 'Response not array',
+    data: { raw: data }
   })
-  if (!ok) {
-    throw new Error(`full-data failed: ${response.status()} -> ${JSON.stringify(data)}`)
+  if (!ok || !isArray) {
+    throw new Error(`organization list failed: ${response.status()} -> ${JSON.stringify(data)}`)
   }
-  console.log('✅ full-data endpoint responded with organization data.')
+  console.log('✅ organization list endpoint responded with data.')
 }
 
 async function fetchIntegrations(context: APIRequestContext, results: TestResult[]) {
@@ -343,7 +345,7 @@ async function testOrganizationCreation(): Promise<void> {
     await verifySession(context, results)
     const orgId = await createOrganization(context, results)
     await setActiveOrganization(context, orgId, results)
-    await fetchFullData(context, results)
+    await fetchOrganizationList(context, results)
     await fetchIntegrations(context, results)
 
     console.log(`\n${'='.repeat(60)}`)

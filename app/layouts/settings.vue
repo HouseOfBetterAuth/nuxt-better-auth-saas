@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { watchDebounced } from '@vueuse/core'
 import Logo from '~/components/Logo.vue'
 import OnboardingModal from '~/components/OnboardingModal.vue'
 import OrganizationSwitcher from '~/components/OrganizationSwitcher.vue'
@@ -8,7 +9,7 @@ import { getUserMenus } from '~/layouts/menu'
 const { t } = useI18n()
 const localePath = useLocalePath()
 const route = useRoute()
-const { user, useActiveOrganization, refreshActiveOrg } = useAuth()
+const { user, useActiveOrganization, activeOrgExtras, refreshActiveOrganizationExtras } = useAuth()
 const activeOrg = useActiveOrganization()
 
 // Get organization slug from route
@@ -17,27 +18,19 @@ const slug = computed(() => {
   return Array.isArray(param) ? param[0] : param || ''
 })
 
-// Ensure organization data is loaded when route changes or on mount (client-side only)
 if (import.meta.client) {
-  watch(() => slug.value, async (newSlug) => {
-    if (newSlug && user.value && (!activeOrg.value?.data || !activeOrg.value?.data?.members)) {
-      try {
-        await refreshActiveOrg()
-      } catch {
-        // Silently fail - data will load on next navigation
+  let isInitialLoad = true
+  watchDebounced(
+    () => activeOrg.value?.data?.id,
+    async (orgId) => {
+      if (!orgId || isInitialLoad) {
+        isInitialLoad = false
+        return
       }
-    }
-  }, { immediate: true })
-
-  onMounted(async () => {
-    if (slug.value && user.value && (!activeOrg.value?.data || !activeOrg.value?.data?.members)) {
-      try {
-        await refreshActiveOrg()
-      } catch {
-        // Silently fail - data will load on next navigation
-      }
-    }
-  })
+      await refreshActiveOrganizationExtras(orgId)
+    },
+    { immediate: true, debounce: 300 }
+  )
 }
 
 const i18nHead = useLocaleHead()
@@ -83,9 +76,7 @@ const currentUserRole = computed(() => {
 })
 
 // Check if upgrade is needed
-const needsUpgrade = computed(() => {
-  return (activeOrg.value?.data as any)?.needsUpgrade || false
-})
+const needsUpgrade = computed(() => activeOrgExtras.value?.needsUpgrade ?? false)
 
 // Get menu items for the drawer - reactive to org data changes
 const menus = computed(() => {

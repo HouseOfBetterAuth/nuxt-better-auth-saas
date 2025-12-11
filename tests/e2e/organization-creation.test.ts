@@ -204,26 +204,28 @@ describe('organization creation after sign out/in', async () => {
 
     expect(setActiveResult.ok).toBe(true)
 
-    // Step 7: Test full-data endpoint
-    console.log('Step 7: Testing full-data endpoint...')
-    const fullDataResult = await page.evaluate(async () => {
-      const response = await fetch('/api/organization/full-data', {
+    // Step 7: Test organization list endpoint
+    console.log('Step 7: Testing organization list endpoint...')
+    const orgListResult = await page.evaluate(async (expectedId) => {
+      const response = await fetch('/api/auth/organization/list', {
         credentials: 'include'
       })
       const data = await response.json()
+      const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+      const org = items.find((item: any) => item.id === expectedId)
       return {
         status: response.status,
         ok: response.ok,
-        hasOrg: !!data?.organization,
-        orgName: data?.organization?.name,
-        orgId: data?.organization?.id
+        items,
+        org
       }
-    })
+    }, orgId)
 
-    expect(fullDataResult.ok).toBe(true)
-    expect(fullDataResult.hasOrg).toBe(true)
-    expect(fullDataResult.orgName).toBe('Test Organization')
-    expect(fullDataResult.orgId).toBe(orgId)
+    expect(orgListResult.ok).toBe(true)
+    expect(Array.isArray(orgListResult.items)).toBe(true)
+    expect(orgListResult.items.length).toBeGreaterThan(0)
+    expect(orgListResult.org).toBeTruthy()
+    expect(orgListResult.org?.id).toBe(orgId)
 
     // Step 8: Test integrations endpoint
     console.log('Step 8: Testing integrations endpoint...')

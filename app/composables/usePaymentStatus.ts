@@ -3,14 +3,11 @@
  * Used across the app to detect failed payments and trial usage
  */
 export function usePaymentStatus() {
-  const { useActiveOrganization } = useAuth()
+  const { useActiveOrganization, activeOrgExtras } = useAuth()
   const activeOrg = useActiveOrganization()
 
   // Get all subscriptions for the active organization
-  const subscriptions = computed(() => {
-    const data = activeOrg.value?.data
-    return (data as any)?.subscriptions || []
-  })
+  const subscriptions = computed(() => activeOrgExtras.value?.subscriptions || [])
 
   // Find the active subscription (including past_due)
   // Note: 'incomplete' subscriptions are NOT valid - they occur when checkout is abandoned
@@ -30,11 +27,8 @@ export function usePaymentStatus() {
   // Check if user should NOT get a free trial
   // True if user owns multiple orgs (only first org gets trial)
   const hasUsedTrial = computed(() => {
-    const data = activeOrg.value?.data as any
-    // If user owns multiple orgs, no trial on additional orgs
-    if (data?.userOwnsMultipleOrgs) {
+    if (activeOrgExtras.value?.userOwnsMultipleOrgs)
       return true
-    }
     // Fallback to checking current org's subscriptions
     const subs = subscriptions.value as any[]
     if (!subs || subs.length === 0)

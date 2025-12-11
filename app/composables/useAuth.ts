@@ -1,12 +1,25 @@
+import type { Subscription } from '@better-auth/stripe'
 import type {
   ClientOptions,
   InferSessionFromClient
 } from 'better-auth/client'
 import type { RouteLocationRaw } from 'vue-router'
 import { stripeClient } from '@better-auth/stripe/client'
+import { watchDebounced } from '@vueuse/core'
 import { adminClient, anonymousClient, apiKeyClient, inferAdditionalFields, organizationClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
 import { ac, admin, member, owner } from '~~/shared/utils/permissions'
+
+interface OwnershipInfo {
+  ownedCount: number
+  firstOwnedOrgId: string | null
+}
+
+interface ActiveOrgExtras {
+  subscriptions: Subscription[]
+  needsUpgrade: boolean
+  userOwnsMultipleOrgs: boolean
+}
 
 export function useAuth() {
   const url = useRequestURL()
@@ -50,18 +63,18 @@ export function useAuth() {
     ]
   })
 
-  // Create global state for active organization (SSR friendly)
-  const useActiveOrgState = () => useState<any>('active-org-state', () => ({ data: null }))
-
   const session = useState<InferSessionFromClient<ClientOptions> | null>('auth:session', () => null)
   const user = useState<User | null>('auth:user', () => null)
   const sessionFetching = import.meta.server ? ref(false) : useState('auth:sessionFetching', () => false)
-
-  // Subscriptions are derived from the active org state
-  const subscriptions = computed(() => {
-    const activeOrgState = useActiveOrgState()
-    return (activeOrgState.value?.data as any)?.subscriptions || []
-  })
+  const ownershipInfoState = useState<OwnershipInfo | null>('organization:ownership-info', () => null)
+  const activeOrgExtras = useState<ActiveOrgExtras>('active-org-extras', () => ({
+    subscriptions: [],
+    needsUpgrade: false,
+    userOwnsMultipleOrgs: false
+  }))
+  const latestOrgFetchId = useState<string | null>('active-org-extras:latest-fetch', () => null)
+  const useActiveOrganization = client.organization.useActiveOrganization
+  const activeOrganization = useActiveOrganization()
 
   const fetchSession = async () => {
     if (sessionFetching.value) {
@@ -110,38 +123,95 @@ export function useAuth() {
     })
   }
 
-  const useActiveOrganization = () => {
-    const state = useActiveOrgState()
-    return state
+  const fetchOwnershipInfo = async (force = false) => {
+    if (ownershipInfoState.value && !force) {
+      return ownershipInfoState.value
+    }
+
+    try {
+      const data = await $fetch<OwnershipInfo>('/api/organization/ownership-info', {
+        credentials: 'include',
+        headers
+      })
+      ownershipInfoState.value = data
+      return data
+    } catch (error) {
+      console.error('Failed to fetch ownership info', error)
+      ownershipInfoState.value = null
+      throw error
+    }
   }
 
-  // Centralized function to refresh organization data
-  const refreshActiveOrg = async () => {
-    try {
-      // Add cache-busting timestamp to bypass any HTTP/CDN caching
-      const orgData: any = await $fetch(`/api/organization/full-data?_t=${Date.now()}`)
-
-      // Flatten the structure to match what components expect
-      // orgData comes as { organization: {...}, subscriptions: [...], userOwnsMultipleOrgs: bool, user: ... }
-      // We want activeOrg.value.data to be { ...organization, subscriptions: [...], userOwnsMultipleOrgs: bool }
-      const flattenedData = {
-        ...orgData.organization,
-        subscriptions: orgData.subscriptions,
-        userOwnsMultipleOrgs: orgData.userOwnsMultipleOrgs,
-        needsUpgrade: orgData.needsUpgrade
-      }
-
-      const state = useActiveOrgState()
-      if (state.value) {
-        state.value.data = flattenedData
-      } else {
-        state.value = { data: flattenedData }
-      }
-      return flattenedData
-    } catch (error) {
-      console.error('Failed to refresh active org:', error)
-      return null
+  const fetchSubscriptions = async (organizationId: string) => {
+    if (!organizationId)
+      return []
+    const { data, error } = await client.subscription.list({
+      query: { referenceId: organizationId }
+    })
+    if (error) {
+      throw error
     }
+    return Array.isArray(data) ? data : []
+  }
+
+  const computeUserOwnsMultipleOrgs = (info?: OwnershipInfo | null) => Boolean(info && info.ownedCount > 1)
+
+  const computeNeedsUpgrade = (organizationId: string | undefined, subs: any[], info?: OwnershipInfo | null) => {
+    const hasActiveSub = Array.isArray(subs) && subs.some(sub => sub?.status === 'active' || sub?.status === 'trialing')
+    if (!organizationId)
+      return false
+    if (!info)
+      return !hasActiveSub
+    return !hasActiveSub && info.firstOwnedOrgId !== organizationId
+  }
+
+  const refreshActiveOrganizationExtras = async (organizationId?: string | null) => {
+    if (!organizationId) {
+      activeOrgExtras.value = {
+        subscriptions: [],
+        needsUpgrade: false,
+        userOwnsMultipleOrgs: false
+      }
+      return activeOrgExtras.value
+    }
+    latestOrgFetchId.value = organizationId
+    try {
+      const [subs, ownershipInfo] = await Promise.all([
+        fetchSubscriptions(organizationId),
+        fetchOwnershipInfo()
+      ])
+      if (latestOrgFetchId.value !== organizationId) {
+        return activeOrgExtras.value
+      }
+      const needsUpgrade = computeNeedsUpgrade(organizationId, subs, ownershipInfo)
+      const userOwnsMultipleOrgs = computeUserOwnsMultipleOrgs(ownershipInfo)
+      activeOrgExtras.value = {
+        subscriptions: subs,
+        needsUpgrade,
+        userOwnsMultipleOrgs
+      }
+      return activeOrgExtras.value
+    } catch (error) {
+      console.error('Failed to refresh organization extras', error)
+      return activeOrgExtras.value
+    }
+  }
+
+  const extrasWatcherInitialized = useState<boolean>('active-org-extras:watcher-init', () => false)
+  if (import.meta.client && !extrasWatcherInitialized.value) {
+    extrasWatcherInitialized.value = true
+    let isInitialLoad = true
+    watchDebounced(
+      () => activeOrganization.value?.data?.id,
+      async (orgId) => {
+        if (!orgId || isInitialLoad) {
+          isInitialLoad = false
+          return
+        }
+        await refreshActiveOrganizationExtras(orgId)
+      },
+      { immediate: true, debounce: 300 }
+    )
   }
 
   return {
@@ -149,13 +219,12 @@ export function useAuth() {
     session,
     user,
     organization: client.organization,
-    useActiveOrganization, // Use our singleton wrapper
+    useActiveOrganization,
     subscription: client.subscription,
-    subscriptions,
+    activeOrgExtras,
     loggedIn: computed(() => Boolean(user.value && !user.value.isAnonymous)),
     activeStripeSubscription: computed(() => {
-      const activeOrgState = useActiveOrgState()
-      const subs = (activeOrgState.value?.data as any)?.subscriptions || []
+      const subs = activeOrgExtras.value?.subscriptions || []
       if (!Array.isArray(subs))
         return undefined
 
@@ -163,7 +232,11 @@ export function useAuth() {
         (sub: any) => sub.status === 'active' || sub.status === 'trialing'
       )
     }),
-    refreshActiveOrg,
+    refreshActiveOrganizationExtras,
+    fetchOwnershipInfo,
+    fetchSubscriptions,
+    computeNeedsUpgrade,
+    computeUserOwnsMultipleOrgs,
     signIn: client.signIn,
     signUp: client.signUp,
     forgetPassword: client.requestPasswordReset,

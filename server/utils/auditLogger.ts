@@ -23,7 +23,8 @@ export async function logAuditEvent(data: {
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
       status: data.status || 'success',
-      details: data.details
+      details: data.details,
+      createdAt: new Date()
     })
   } catch (error) {
     console.error('Failed to log audit event:', error)

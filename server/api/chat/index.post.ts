@@ -32,6 +32,93 @@ import { createSSEStream } from '~~/server/utils/streaming'
 import { validateEnum, validateNumber, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
 
+const ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS = 2000
+
+interface BasicUserShape {
+  isAnonymous?: boolean | null
+  email?: string | null
+  emailVerified?: boolean | null
+}
+
+const looksLikeAnonymousEmail = (email?: string | null) => {
+  if (!email) {
+    return false
+  }
+  const normalized = email.trim().toLowerCase()
+  if (!normalized) {
+    return false
+  }
+  return normalized.startsWith('temp-') && normalized.endsWith('@localhost')
+}
+
+const isAnonymousSessionUser = (user: BasicUserShape | null | undefined) => {
+  if (!user) {
+    return false
+  }
+  if (user.isAnonymous) {
+    return true
+  }
+
+  const normalizedEmail = typeof user.email === 'string'
+    ? user.email.trim().toLowerCase()
+    : null
+  const emailLooksAnonymous = looksLikeAnonymousEmail(normalizedEmail)
+
+  if (emailLooksAnonymous) {
+    return true
+  }
+
+  if (!emailLooksAnonymous && normalizedEmail && user.emailVerified === false) {
+    if (normalizedEmail.startsWith('temp-') && normalizedEmail.endsWith('@localhost')) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const isUnauthorizedError = (error: any) => {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const statusCode = (error as any).statusCode ?? (error as any).status
+  const statusMessage = (error as any).statusMessage ?? (error as any).message
+  return statusCode === 401 || statusMessage === 'Unauthorized'
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type ContentIdentifierField = 'id' | 'slug'
+
+interface ContentIdentifier {
+  field: ContentIdentifierField
+  value: string
+}
+
+function _resolveContentIdentifier(input: string): ContentIdentifier {
+  const normalized = validateRequiredString(input, 'contentId')
+  const looksLikeUuid = UUID_REGEX.test(normalized)
+
+  return {
+    field: looksLikeUuid ? 'id' : 'slug',
+    value: normalized
+  }
+}
+
+function _buildContentLookupWhere(
+  organizationId: string,
+  identifier: ContentIdentifier
+) {
+  const identifierClause = identifier.field === 'id'
+    ? eq(schema.content.id, identifier.value)
+    : eq(schema.content.slug, identifier.value)
+
+  return and(
+    eq(schema.content.organizationId, organizationId),
+    identifierClause
+  )
+}
+
 function toSummaryBullets(text: string | null | undefined) {
   if (!text) {
     return []
@@ -1301,11 +1388,51 @@ export default defineEventHandler(async (event) => {
     sseWriter.write(eventType, data)
   }
 
+  let pingSent = false
+  const flushPing = () => {
+    if (pingSent) {
+      return
+    }
+    pingSent = true
+    writeSSE('ping', { ts: Date.now() })
+  }
+
   // Start async processing (don't await - let it run in background)
   ;(async () => {
     try {
-      const user = await requireAuth(event, { allowAnonymous: true })
+      const body = await readBody<ChatRequestBody>(event)
+
+      validateRequestBody(body)
+
+      const VALID_MODES = ['chat', 'agent'] as const
+      const mode = validateEnum(body.mode, VALID_MODES, 'mode')
+
+      let user: Awaited<ReturnType<typeof requireAuth>>
+      try {
+        user = await requireAuth(event, { allowAnonymous: true })
+      } catch (error) {
+        if (mode === 'agent' && isUnauthorizedError(error)) {
+          throw createError({
+            statusCode: 403,
+            statusMessage: 'Agent mode requires authentication',
+            message: 'Please sign in to use agent mode and save content.'
+          })
+        }
+        throw error
+      }
+
+      const sessionUserIsAnonymous = isAnonymousSessionUser(user)
+      flushPing()
       const db = await useDB(event)
+
+      // Block agent mode for anonymous users
+      if (mode === 'agent' && sessionUserIsAnonymous) {
+        throw createError({
+          statusCode: 403,
+          statusMessage: 'Agent mode requires authentication',
+          message: 'Please sign in to use agent mode and save content.'
+        })
+      }
 
       // Try to get organizationId from session first (faster and more reliable)
       const authSession = await getAuthSession(event)
@@ -1326,35 +1453,30 @@ export default defineEventHandler(async (event) => {
       }
 
       if (!organizationId) {
+        const lookupStartedAt = Date.now()
         try {
-          const orgResult = await requireActiveOrganization(event, user.id, { isAnonymousUser: user.isAnonymous ?? false })
+          const orgResult = await requireActiveOrganization(event, user.id, {
+            isAnonymousUser: sessionUserIsAnonymous
+          })
           organizationId = orgResult.organizationId
         } catch (error: any) {
-          if (user.isAnonymous) {
+          if (sessionUserIsAnonymous) {
             throw createValidationError('Please create an account to use the chat feature. Anonymous users need an organization to continue.')
           }
           throw error
+        } finally {
+          const duration = Date.now() - lookupStartedAt
+          if (duration > ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS) {
+            console.warn('[Chat API] requireActiveOrganization took %dms (threshold=%dms)', duration, ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS, {
+              isAnonymous: sessionUserIsAnonymous,
+              userId: user.id
+            })
+          }
         }
       }
 
       if (!organizationId) {
         throw createValidationError('No active organization found. Please create an account or select an organization.')
-      }
-
-      const body = await readBody<ChatRequestBody>(event)
-
-      validateRequestBody(body)
-
-      const VALID_MODES = ['chat', 'agent'] as const
-      const mode = validateEnum(body.mode, VALID_MODES, 'mode')
-
-      // Block agent mode for anonymous users
-      if (mode === 'agent' && user.isAnonymous) {
-        throw createError({
-          statusCode: 403,
-          statusMessage: 'Agent mode requires authentication',
-          message: 'Please sign in to use agent mode and save content.'
-        })
       }
 
       const message = typeof body.message === 'string' ? body.message : ''
@@ -2228,6 +2350,7 @@ export default defineEventHandler(async (event) => {
       // Close the stream
       sseWriter.close()
     } catch (error: any) {
+      flushPing()
       console.error('[Chat API] Error during streaming:', error)
       // Try to send error event before closing
       try {

@@ -40,20 +40,41 @@ export interface SSEStreamResult {
 export function createSSEStream(): SSEStreamResult {
   const encoder = new TextEncoder()
   let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+  const pendingChunks: Uint8Array[] = []
+  let isClosed = false
+
+  const enqueueChunk = (chunk: Uint8Array) => {
+    if (isClosed) {
+      return
+    }
+
+    if (controller) {
+      controller.enqueue(chunk)
+    } else {
+      pendingChunks.push(chunk)
+    }
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     start(ctrl) {
       controller = ctrl
+      if (pendingChunks.length > 0) {
+        for (const chunk of pendingChunks.splice(0)) {
+          controller.enqueue(chunk)
+        }
+      }
     },
     cancel() {
       // Client disconnected
+      pendingChunks.length = 0
       controller = null
+      isClosed = true
     }
   })
 
   const writer: SSEWriter = {
     write(eventType: string, data: any) {
-      if (!controller) {
+      if (isClosed) {
         console.warn('[SSE] Attempted to write to closed stream')
         return
       }
@@ -62,13 +83,13 @@ export function createSSEStream(): SSEStreamResult {
         const eventData = JSON.stringify(data)
         const sseMessage = `event: ${eventType}\ndata: ${eventData}\n\n`
         const bytes = encoder.encode(sseMessage)
-        controller.enqueue(bytes)
+        enqueueChunk(bytes)
       } catch (error) {
         console.error('[SSE] Failed to write event:', error)
         // Try to send error event
         try {
           const errorMessage = `event: error\ndata: ${JSON.stringify({ message: 'Serialization failed' })}\n\n`
-          controller.enqueue(encoder.encode(errorMessage))
+          enqueueChunk(encoder.encode(errorMessage))
         } catch {
           // Silent fail if we can't even send error
         }
@@ -76,22 +97,30 @@ export function createSSEStream(): SSEStreamResult {
     },
 
     close() {
+      if (isClosed) {
+        return
+      }
       if (controller) {
         try {
           controller.close()
         } catch (error) {
           console.error('[SSE] Failed to close stream:', error)
         }
-        controller = null
       }
+      pendingChunks.length = 0
+      controller = null
+      isClosed = true
     },
 
     error(err: Error) {
+      if (isClosed) {
+        return
+      }
       if (controller) {
         try {
           // Send error event before closing
           const errorMessage = `event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`
-          controller.enqueue(encoder.encode(errorMessage))
+          enqueueChunk(encoder.encode(errorMessage))
           controller.close()
         } catch (error) {
           console.error('[SSE] Failed to send error:', error)
@@ -101,8 +130,10 @@ export function createSSEStream(): SSEStreamResult {
             // Silent fail
           }
         }
-        controller = null
       }
+      pendingChunks.length = 0
+      controller = null
+      isClosed = true
     }
   }
 
