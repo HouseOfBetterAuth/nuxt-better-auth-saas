@@ -4,9 +4,9 @@
  */
 
 import { and, eq } from 'drizzle-orm'
-import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '../../database/schema'
-import { getAuthSession } from '../../utils/auth'
-import { useDB } from '../../utils/db'
+import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
+import { getAuthSession } from '~~/server/utils/auth'
+import { useDB } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   try {

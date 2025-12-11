@@ -1,6 +1,6 @@
 import { desc, eq, inArray, sql } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { getConversationQuotaUsage, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'

@@ -1,7 +1,7 @@
 import type { CreateContentRequestBody } from '~~/server/types/content'
 import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import {
   CONTENT_STATUSES,

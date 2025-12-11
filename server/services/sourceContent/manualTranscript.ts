@@ -1,5 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import { upsertSourceContent } from '~~/server/services/sourceContent'

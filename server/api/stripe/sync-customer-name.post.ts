@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm'
-import { organization as organizationTable } from '../../database/schema'
-import { getAuthSession } from '../../utils/auth'
-import { useDB } from '../../utils/db'
-import { syncStripeCustomerName } from '../../utils/stripe'
+import { organization as organizationTable } from '~~/server/db/schema'
+import { getAuthSession } from '~~/server/utils/auth'
+import { useDB } from '~~/server/utils/db'
+import { syncStripeCustomerName } from '~~/server/utils/stripe'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)

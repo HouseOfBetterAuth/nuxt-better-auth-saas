@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { getRouterParams } from 'h3'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
 import { createNotFoundError } from '~~/server/utils/errors'

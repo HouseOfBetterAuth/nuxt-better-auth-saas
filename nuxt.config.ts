@@ -4,8 +4,30 @@ import { resolve } from 'node:path'
 import { generateRuntimeConfig } from './server/utils/runtimeConfig'
 import { getAppUrl } from './shared/utils/app-url'
 
+const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
+const hyperdriveBindings = hyperdriveId
+  ? [{
+      binding: 'HYPERDRIVE',
+      id: hyperdriveId
+    }]
+  : undefined
+
+if (process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
+  console.warn('[nuxt.config] NUXT_CF_HYPERDRIVE_ID is not set; Hyperdrive binding will be skipped.')
+}
+
+const resolveMdcHighlighterPlugin = {
+  name: 'resolve-mdc-highlighter',
+  resolveId(id: string) {
+    if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
+      return id.replace(/node_modules\/\.cache\/nuxt\/\.nuxt/, resolve('.nuxt'))
+    }
+    return null
+  }
+}
+
 export default defineNuxtConfig({
-  compatibilityDate: '2025-07-22',
+  compatibilityDate: '2025-12-11',
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
   modules: [
@@ -17,6 +39,28 @@ export default defineNuxtConfig({
     ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
     ...(process.env.NUXT_NITRO_PRESET !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
+  mdc: {
+    highlight: {
+      server: false
+    }
+  },
+  ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
+    ? {
+        hub: {
+          db: 'postgresql',
+          workers: true,
+          kv: true,
+          blob: true,
+          ...(hyperdriveBindings
+            ? {
+                bindings: {
+                  hyperdrive: hyperdriveBindings
+                }
+              }
+            : {})
+        }
+      }
+    : {}),
   i18n: {
     vueI18n: '~/i18n/i18n.config.ts',
     baseUrl: getAppUrl(),
@@ -85,20 +129,6 @@ export default defineNuxtConfig({
       })
     }
   },
-  ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
-    ? {
-        hub: {
-          workers: true,
-          kv: true,
-          blob: true,
-          bindings: {
-            hyperdrive: {
-              HYPERDRIVE: process.env.NUXT_CF_HYPERDRIVE_ID as string
-            }
-          }
-        }
-      }
-    : {}),
   runtimeConfig: generateRuntimeConfig(),
   app: {
     head: {
@@ -121,8 +151,19 @@ export default defineNuxtConfig({
     experimental: {
       openAPI: true
     },
+    ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+      ? {
+          cloudflare: {
+            deployConfig: true,
+            nodeCompat: true
+          }
+        }
+      : {}),
     rollupConfig: {
-      external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
+      external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined,
+      plugins: process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+        ? [resolveMdcHighlighterPlugin]
+        : undefined
     },
     esbuild: {
       options: {

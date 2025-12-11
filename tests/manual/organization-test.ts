@@ -30,7 +30,7 @@ const testEmail = process.env.NUXT_TEST_EMAIL
 const testPassword = process.env.NUXT_TEST_PASSWORD
 const betterAuthSecret = process.env.NUXT_BETTER_AUTH_SECRET
 const normalizedEmail = testEmail?.toLowerCase()
-const databaseUrl = process.env.NUXT_TEST_DATABASE_URL || process.env.NUXT_DATABASE_URL
+const databaseUrl = process.env.NUXT_TEST_DATABASE_URL || process.env.DATABASE_URL
 const dbPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null
 
 if (!testEmail || !testPassword) {

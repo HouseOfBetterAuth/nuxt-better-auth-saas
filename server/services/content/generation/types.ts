@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 // Runtime values needed for typeof expressions in type definitions
 
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'

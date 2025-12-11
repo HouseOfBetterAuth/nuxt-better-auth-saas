@@ -2,7 +2,7 @@ import type { ChatMessage } from '#shared/utils/types'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 
 type ConversationStatus = typeof schema.conversation.$inferSelect['status']
 

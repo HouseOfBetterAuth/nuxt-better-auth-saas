@@ -24,10 +24,11 @@ logs
 !.env.example
 
 
-server/database/migrations
+server/db/migrations
 tests/coverage
 .wrangler/
 wrangler.toml
+wrangler.jsonc
 uploads/
 
 # Cookie files and credentials

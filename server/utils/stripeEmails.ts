@@ -5,8 +5,8 @@
 
 import type Stripe from 'stripe'
 import { eq } from 'drizzle-orm'
-import { findPlanById, findPlanByPriceId, PLANS } from '~~/shared/utils/plans'
-import { organization as organizationTable, user as userTable } from '../database/schema'
+import { organization as organizationTable, user as userTable } from '~~/server/db/schema'
+import { findPlanById, findPlanByPriceId, getPlanPricing } from '~~/shared/utils/plans'
 import { useDB } from './db'
 import { resendInstance } from './drivers'
 import {
@@ -30,6 +30,7 @@ interface OrgOwnerInfo {
     id: string
     name: string
     slug: string
+    stripeCustomerId?: string | null
   }
   owner: {
     name: string
@@ -79,7 +80,8 @@ async function getOrgOwnerInfo(organizationId: string): Promise<OrgOwnerInfo | n
     org: {
       id: org.id,
       name: org.name,
-      slug: org.slug
+      slug: org.slug,
+      stripeCustomerId: (org as any).stripeCustomerId || null
     },
     owner: {
       name: ownerUser.name || ownerUser.email.split('@')[0],
@@ -103,9 +105,11 @@ function getSubscriptionInfo(subscription: any): SubscriptionInfo {
     || subscription.items?.data?.[0]?.price?.id
     || subscription.plan?.id
 
-  const plan = findPlanById(planId) || findPlanByPriceId(priceId)
+  // Use helper functions that handle -no-trial suffix automatically
+  const planResult = findPlanById(planId) || findPlanByPriceId(priceId)
 
-  const interval = plan?.interval
+  // Determine billing cycle from plan config or Stripe interval
+  const interval = planResult?.interval
     || subscription.plan?.interval
     || subscription.items?.data?.[0]?.plan?.interval
   const billingCycle = interval === 'year' ? 'yearly' : 'monthly'
@@ -114,15 +118,15 @@ function getSubscriptionInfo(subscription: any): SubscriptionInfo {
   const seats = subscription.seats || subscription.quantity || subscription.items?.data?.[0]?.quantity || 1
 
   return {
-    planName: plan?.key === 'pro' ? 'Pro' : (plan?.label || 'Pro'),
+    planName: planResult?.tier.name || 'Pro',
     billingCycle,
     seats,
-    amount: plan?.priceNumber ? `$${plan.priceNumber}` : 'See invoice',
+    amount: planResult?.variant.price ? `$${planResult.variant.price}` : 'See invoice',
     periodEnd: subscription.periodEnd
       ? new Date(subscription.periodEnd)
-      : subscription.current_period_end
-        ? new Date(subscription.current_period_end * 1000)
-        : null
+      : (subscription as any).current_period_end
+          ? new Date((subscription as any).current_period_end * 1000)
+          : null
   }
 }
 
@@ -261,16 +265,15 @@ async function buildSubscriptionEmailData(organizationId: string, subscription: 
   const planId = typeof subscription.plan === 'string' ? subscription.plan : null
 
   // Use helper functions that handle -no-trial suffix automatically
-  const plan = findPlanById(planId) || findPlanByPriceId(priceId)
+  const planResult = findPlanById(planId) || findPlanByPriceId(priceId)
 
   // Pricing: base price (includes 1 seat) + additional seats × seat price
-  const basePrice = plan?.priceNumber || 0
-  const seatPrice = plan?.seatPriceNumber || 0
+  const basePrice = planResult?.variant.price || 0
+  const seatPrice = planResult?.variant.seatPrice || 0
   const additionalSeats = Math.max(0, seats - 1)
   const totalAmount = basePrice + (additionalSeats * seatPrice)
-  const amount = totalAmount > 0
-    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'usd' }).format(totalAmount)
-    : subInfo.amount
+
+  const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'usd' }).format(totalAmount)
 
   return {
     info,
@@ -407,8 +410,8 @@ export async function sendTrialStartedEmail(organizationId: string, subscription
 
   // Get trial days from plan config
   const planId = subscription.plan?.id || subscription.plan?.name
-  const plan = Object.values(PLANS).find(p => p.id === planId || p.priceId === subscription.priceId)
-  const trialDays = plan?.trialDays || 14
+  const planInfo = findPlanById(planId)
+  const trialDays = planInfo?.tier.trialDays || 14
 
   const html = await renderTrialStarted({
     name: info.owner.name,
@@ -433,9 +436,9 @@ export async function sendSubscriptionResumedEmail(organizationId: string, subsc
   const subInfo = getSubscriptionInfo(subscription)
 
   // Calculate amount based on seats and plan pricing
-  const plan = Object.values(PLANS).find(p => p.priceId === subscription.items?.data?.[0]?.price?.id)
-  const basePrice = plan?.priceNumber || 0
-  const seatPrice = plan?.seatPriceNumber || 0
+  const planPricing = getPlanPricing(subscription.plan)
+  const basePrice = planPricing?.price || 0
+  const seatPrice = planPricing?.seatPrice || 0
   const additionalSeats = Math.max(0, subInfo.seats - 1)
   const totalAmount = basePrice + (additionalSeats * seatPrice)
   const amount = totalAmount > 0

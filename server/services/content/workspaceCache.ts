@@ -1,5 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 import { getContentWorkspacePayload } from './workspace'
 
 export type WorkspacePayload = Awaited<ReturnType<typeof getContentWorkspacePayload>>

@@ -1,7 +1,7 @@
 import { and, eq, like } from 'drizzle-orm'
-import { apiKey, member } from '../../database/schema'
-import { getAuthSession } from '../../utils/auth'
-import { useDB } from '../../utils/db'
+import { apiKey, member } from '~~/server/db/schema'
+import { getAuthSession } from '~~/server/utils/auth'
+import { useDB } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)

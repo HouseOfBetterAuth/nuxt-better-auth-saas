@@ -5,6 +5,7 @@ import { account, organization, user } from './auth'
 import { conversation } from './chat'
 import { sourceContent } from './sourceContent'
 
+export const publicationStatusEnum = pgEnum('publication_status', ['pending', 'published', 'failed'])
 export const contentStatusEnum = pgEnum('content_status', ['draft', 'in_review', 'ready_for_publish', 'published', 'archived'])
 export const contentTypeEnum = pgEnum('content_type', ['blog_post', 'recipe', 'faq_page', 'course', 'how_to'])
 
@@ -39,7 +40,8 @@ export const content = pgTable('content', {
   conversationIdx: index('content_conversation_idx').on(table.conversationId),
   statusIdx: index('content_status_idx').on(table.status),
   slugOrgUnique: uniqueIndex('content_org_slug_idx').on(table.organizationId, table.slug),
-  orgStatusIdx: index('content_org_status_idx').on(table.organizationId, table.status)
+  orgStatusIdx: index('content_org_status_idx').on(table.organizationId, table.status),
+  currentVersionIdx: index('content_current_version_idx').on(table.currentVersionId)
 }))
 
 export const contentVersion = pgTable('content_version', {
@@ -75,7 +77,7 @@ export const publication = pgTable('publication', {
     .references(() => contentVersion.id, { onDelete: 'cascade' }),
   integrationId: text('integration_id').references(() => account.id, { onDelete: 'set null' }),
   externalId: text('external_id'),
-  status: text('status').default('pending').notNull(),
+  status: publicationStatusEnum('status').default('pending').notNull(),
   publishedAt: timestamp('published_at'),
   payloadSnapshot: jsonb('payload_snapshot').$type<Record<string, any> | null>().default(null),
   responseSnapshot: jsonb('response_snapshot').$type<Record<string, any> | null>().default(null),

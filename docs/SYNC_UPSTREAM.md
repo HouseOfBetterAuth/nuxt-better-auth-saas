@@ -69,6 +69,8 @@ Upstream changes here
 >>>>>>> template/main
 ```
 
+**Note:** The conflict markers above are just an example. When you see them in actual files, you'll need to resolve them.
+
 ### 3. Resolve conflicts
 - Keep your changes
 - Keep upstream changes

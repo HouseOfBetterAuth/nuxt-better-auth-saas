@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { validateEnum } from '~~/server/utils/validation'
 
 export const INGEST_STATUSES = ['pending', 'processing', 'ingested', 'failed'] as const

@@ -1,7 +1,7 @@
 import { and, count, eq } from 'drizzle-orm'
-import { member } from '../../database/schema'
-import { requireAuth } from '../../utils/auth'
-import { getDB } from '../../utils/db'
+import { member } from '~~/server/db/schema'
+import { requireAuth } from '~~/server/utils/auth'
+import { getDB } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)

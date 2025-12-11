@@ -1,23 +1,23 @@
 <p align="center">
-  <img src="/public/quillio-logo.png" alt="Quillio" height="80" />
+  <img src="/public/HouseOfBetterAuth.png" alt="HouseOfBetterAuth" height="80" />
   &nbsp;&nbsp;&nbsp;
-  <strong style="font-size: 2em;">Quillio</strong>
+  <strong style="font-size: 2em;">HouseOfBetterAuth</strong>
 </p>
 
 <p align="center">
-  <em>Create SEO-ready blogs from YouTube</em>
+  <em>Open-source SaaS starters powered by Better Auth</em>
 </p>
 
 <p align="center">
-  Transform YouTube videos into SEO-optimized blog posts automatically.<br/>
-  Powered by AI and built with modern web technologies.
+  We build production-ready, open-source SaaS templates using <a href="https://better-auth.com">Better Auth</a>.<br/>
+  Skip the boilerplate. Ship faster.
 </p>
 
 ---
 
-## Quillio
+## House of Better Auth Nuxt SaaS Starter
 
-Create SEO-ready blogs from YouTube videos. Transform video content into well-structured, search-engine optimized articles automatically.
+A production-ready Nuxt SaaS starter with authentication, billing, teams, and more.
 
 > **Note:** This template is opinionated and built for my own apps. It's designed specifically for:
 > - **Stripe-only billing** — Polar and other payment providers will not be supported
@@ -28,22 +28,27 @@ Create SEO-ready blogs from YouTube videos. Transform video content into well-st
 
 ### What's Included
 
-- [x] **YouTube Video Ingestion** — Automatically extract transcripts and metadata from YouTube videos
-- [x] **AI-Powered Blog Generation** — Transform video content into well-structured, SEO-optimized blog posts
-- [x] **SEO Optimization** — Automatic title, description, keywords, and schema markup generation
-- [x] **Content Chat Interface** — Interactive chat to refine and customize generated content
-- [x] **Content Management** — Draft, edit, and publish blog posts with version control
-- [x] **Section-by-Section Editing** — Edit individual sections of generated content
-- [x] **Vector Search** — Semantic search across ingested video content for better context
-- [x] **Multi-tenant Workspaces** — Organize content by organization with team collaboration
 - [x] **Authentication** — Better Auth with email/password, OAuth (Google, GitHub), email verification
-- [x] **Stripe Billing** — Subscriptions with seat-based pricing for team plans
-- [x] **Team Collaboration** — Invite team members, manage roles and permissions
-- [x] **API Access** — RESTful API for programmatic content generation
-- [x] **Content Export** — Export generated content in markdown format
-- [ ] **More Video Sources** — Support for additional video platforms
-- [ ] **Bulk Processing** — Process multiple videos in batch
-- [ ] **Custom Templates** — Customizable blog post templates
+- [x] **Multi-tenant orgs** — create/switch orgs, one free trial per account
+- [x] **Roles & permissions** — Owner, Admin, Member with granular access control
+- [x] **Stripe billing** — subscriptions, seat-based pricing, legacy price support
+- [x] **Billing previews** — see prorated charges before seat/plan changes
+- [x] **Invoice history** — view and download past invoices
+- [x] **Failed payment handling** — grace periods, recovery flows, warning banners
+- [x] **Team invites** — invite by email, works for new and existing users
+- [x] **User profiles** — avatar upload, email change, password management
+- [x] **Session management** — view/revoke active sessions
+- [x] **API keys** — per-org keys with expiration options
+- [x] **Admin tools** — user impersonation, soft-ban
+- [x] **Transactional emails** — React Email + Resend for all auth/billing events
+- [x] **Timezone support** — per-org timezone settings
+- [x] **Referral tracking** — track user and org referrals for attribution
+- [x] **Connected accounts** — link/unlink multiple OAuth providers
+- [x] **Account deletion** — secure deletion with email verification
+- [ ] **More Testing** — I'm sure there are some bugs, will actively test and make updates.
+- [x] **NuxtHub self-hosted** — self-hosted deployment guide (see below)
+- [ ] **Abandoned cart emails** — email users with incomplete subscription status
+- [ ] **Usage-based billing** — metered billing support
 
 <p align="center">
   <img src="/public/screenshots/home.png" alt="Homepage" width="80%" />
@@ -68,56 +73,18 @@ Create SEO-ready blogs from YouTube videos. Transform video content into well-st
 ## Quick Start
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/paulchrisluke/quill-nuxsaas.git
-cd quill-nuxsaas
-
-# 2. Use Node.js v22 LTS
-nvm use
-
-# 3. Setup environment variables
 cp .env.example .env   # Fill in env vars (database, Stripe, auth, etc.)
-
-# 4. Install dependencies
 pnpm install
-
-# 5. Generate and apply database migrations
 pnpm run db:generate
 pnpm run db:migrate
-
-# 6. Start development server
 pnpm run dev -o
 ```
 
-## 🚀 Deployment
-
-### Database Migrations
-Before deploying to production, ensure database migrations are applied:
+**Deploy to production:**
 
 ```bash
-# Generate migration files (if schema changed)
-pnpm run db:generate
-
-# Apply migrations to database
-pnpm run db:migrate
-```
-
-**Important**: Run migrations before deploying your application to ensure the database schema is up-to-date. This is especially important for the `isAnonymous` column added to the user table for anonymous session support.
-
-**Deploy to NuxtHub:**
-
-```bash
-# Build the project
-pnpm build
-
-# Deploy to NuxtHub
 npx nuxthub deploy
 ```
-
-**Note:** 
-- NuxtHub automatically manages Workers, KV, and other Cloudflare resources
-- Make sure you have a NuxtHub project linked (run `npx nuxthub link` if needed)
-- Environment variables should be set in your NuxtHub project dashboard
 
 ### Environment Variables
 
@@ -151,33 +118,101 @@ export const createBetterAuth = () => betterAuth({
 
 Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfig.public.baseURL`.
 
-### NuxtHub Setup
+### Recommended Hosting
 
-**Required Resources:**
-
-1. **Create a NuxtHub Project:**
-   - Go to [NuxtHub Dashboard](https://hub.nuxt.com) and create a new project
-   - Link your project: `npx nuxthub link`
-   - NuxtHub will automatically manage Workers, KV, and other Cloudflare resources
-
-2. **Configure Bindings:**
-   - **KV Namespace:** Automatically managed by NuxtHub
-   - **R2 Bucket (optional):** Configure in NuxtHub dashboard if using R2 storage
-   - **Hyperdrive:** Set `NUXT_CF_HYPERDRIVE_ID` environment variable in NuxtHub dashboard
-     - Points to your PostgreSQL database for connection pooling
-
-3. **Set Environment Variables:**
-   - Add all required environment variables in NuxtHub project dashboard
-   - Key variables: `NUXT_APP_URL`, `NUXT_DATABASE_URL`, `NUXT_BETTER_AUTH_SECRET`, `NUXT_STRIPE_SECRET_KEY`, `NUXT_CF_HYPERDRIVE_ID`, etc.
-
-**Recommended Stack:**
-- **NuxtHub** — managed Cloudflare Workers deployment
+**Recommended stack:**
+- **Cloudflare Workers** — serverless hosting via [NuxHub](https://hub.nuxt.com)
 - **Neon Postgres** — serverless PostgreSQL database
-- **Cloudflare Hyperdrive** — connection pooling for Postgres (configured via `NUXT_CF_HYPERDRIVE_ID`)
-- **Cloudflare KV** — session caching and rate limiting (automatically managed by NuxtHub)
-- **Cloudflare R2** — file storage for uploads (optional, configured in NuxtHub)
+- **Cloudflare Hyperdrive** — connection pooling for Postgres
 
-The app automatically uses Cloudflare KV and other bindings when deployed via NuxtHub.
+**Caching:**
+- **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching, rate limiting)
+- **Redis** — use Redis if you're not on Cloudflare (Upstash, Railway, Vercel etc.)
+
+The app automatically uses Cloudflare KV when deployed to Cloudflare Workers. No additional configuration needed.
+
+---
+
+<details>
+<summary><h2>🚀 NuxtHub Self-Hosted Deployment</h2></summary>
+
+This project supports **self-hosted Cloudflare Workers** deployment instead of using NuxtHub Admin. This gives you full control over your infrastructure.
+
+### Prerequisites
+
+- Cloudflare account with Workers enabled
+- PostgreSQL database (e.g., Neon, Supabase)
+- Cloudflare resources:
+  - **KV Namespace** — for caching
+  - **R2 Bucket** — for file storage
+  - **Hyperdrive** — for PostgreSQL connection pooling
+
+### Quick Setup
+
+#### 1. Create Wrangler Config
+
+```bash
+cp wrangler.example.jsonc wrangler.jsonc
+```
+
+Edit `wrangler.jsonc` with your resource IDs:
+
+```jsonc
+{
+    "name": "your-worker-name",  // ⚠️ Must match your Cloudflare Worker name
+    "kv_namespaces": [{ "binding": "KV", "id": "<your-kv-id>" }],
+    "r2_buckets": [{ "binding": "BLOB", "bucket_name": "<your-bucket>" }],
+    "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<your-hyperdrive-id>" }]
+}
+```
+
+#### 2. Get Resource IDs
+
+```bash
+npx wrangler kv namespace list
+npx wrangler r2 bucket list
+npx wrangler hyperdrive list
+```
+
+#### 3. Environment Variables
+
+> **Important:** `DATABASE_URL` replaces the old `NUXT_DATABASE_URL`
+
+```bash
+# .env
+DATABASE_URL=postgres://user:password@host:5432/database
+NUXT_NITRO_PRESET=cloudflare-module
+```
+
+#### 4. Mark Existing Migrations
+
+If your database already has tables, mark migrations as applied:
+
+```bash
+npx nuxt db mark-as-migrated 0000_your_migration_name
+```
+
+#### 5. Build & Deploy
+
+```bash
+pnpm build
+npx wrangler deploy
+```
+
+### How It Works
+
+| Environment | Database | Cache |
+|-------------|----------|-------|
+| Cloudflare Workers | Hyperdrive | KV |
+| Node.js hosting | `DATABASE_URL` | Redis |
+
+### Full Documentation
+
+See [docs/NUXTHUB_SELF_HOSTED.md](docs/NUXTHUB_SELF_HOSTED.md) for complete setup guide.
+
+See [docs/MIGRATION_CHECKLIST.md](docs/MIGRATION_CHECKLIST.md) for migration checklist when syncing with your own app.
+
+</details>
 
 ---
 
@@ -419,5 +454,5 @@ MIT. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <em>Built by <a href="https://getquillio.com">Quillio</a></em>
+  <em>Built by <a href="https://github.com/HouseOfBetterAuth">HouseOfBetterAuth</a></em>
 </p>

@@ -1,8 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { apiKey, member } from '../../../database/schema'
-import { logAuditEvent } from '../../../utils/auditLogger'
-import { getAuthSession } from '../../../utils/auth'
-import { useDB } from '../../../utils/db'
+import { apiKey, member } from '~~/server/db/schema'
+import { logAuditEvent } from '~~/server/utils/auditLogger'
+import { getAuthSession } from '~~/server/utils/auth'
+import { useDB } from '~~/server/utils/db'
 
 interface ApiKeyMetadata {
   organizationId?: string

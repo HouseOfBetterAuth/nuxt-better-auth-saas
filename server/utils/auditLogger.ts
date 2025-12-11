@@ -1,4 +1,4 @@
-import { auditLog } from '../database/schema/auditLog'
+import { auditLog } from '~~/server/db/schema/auditLog'
 import { getDB } from './db'
 
 export async function logAuditEvent(data: {

@@ -1,4 +1,4 @@
-import type { file, publication } from '~~/server/database/schema'
+import type { file, publication } from '~~/server/db/schema'
 import type { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
 
 /**

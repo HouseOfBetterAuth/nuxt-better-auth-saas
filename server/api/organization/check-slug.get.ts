@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
-import { organization } from '../../database/schema'
-import { requireAuth } from '../../utils/auth'
-import { getDB } from '../../utils/db'
+import { organization } from '~~/server/db/schema'
+import { requireAuth } from '~~/server/utils/auth'
+import { getDB } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   await requireAuth(event)

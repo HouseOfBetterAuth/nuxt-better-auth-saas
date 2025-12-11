@@ -1,6 +1,6 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import * as chunkSourceContentModule from '~~/server/services/sourceContent/chunkSourceContent'
 import { createSourceContentFromContext } from '~~/server/services/sourceContent/manualTranscript'
 

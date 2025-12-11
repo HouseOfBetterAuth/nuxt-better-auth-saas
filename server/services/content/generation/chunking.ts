@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { ContentChunk, ContentOutlineSection } from './types'
 import { and, asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { createChunksFromSourceContentText } from '~~/server/services/sourceContent/chunkSourceContent'
 import {
   buildVectorId,

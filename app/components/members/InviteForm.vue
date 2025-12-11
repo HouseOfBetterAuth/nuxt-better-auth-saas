@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { PlanInterval } from '~~/shared/utils/plans'
 /**
  * Member Invite Form Component
  * Handles inviting members with seat limit checking, trial conversion, and upgrade flows
  *
  * Usage: <MembersInviteForm :can-manage="canManageMembers" :is-pro="isPro" />
  */
-import { PLANS } from '~~/shared/utils/plans'
+import { getPlanPricing, getTierForInterval } from '~~/shared/utils/plans'
 
 const { canManage, isPro } = defineProps<{
   canManage?: boolean
@@ -52,8 +53,7 @@ const roles = [
 const currentSubPlanConfig = computed(() => {
   if (!activeStripeSubscription.value)
     return null
-  const match = Object.values(PLANS).find(p => p.id === activeStripeSubscription.value?.plan)
-  return match
+  return getPlanPricing(activeStripeSubscription.value.plan)
 })
 
 const { formatDateShort } = useDate()
@@ -66,11 +66,11 @@ const nextChargeDate = computed(() => {
 })
 
 // Helper to get the correct plan config for calculations
-function getPlanConfigForInterval(interval: 'month' | 'year') {
+function getPlanConfigForInterval(interval: PlanInterval) {
   if (currentSubPlanConfig.value && currentSubPlanConfig.value.interval === interval) {
     return currentSubPlanConfig.value
   }
-  return interval === 'year' ? PLANS.PRO_YEARLY : PLANS.PRO_MONTHLY
+  return getTierForInterval('pro', interval)
 }
 
 async function inviteMember() {
@@ -151,7 +151,7 @@ async function openAddSeatModal() {
     return
 
   isEndingTrial.value = activeStripeSubscription.value.status === 'trialing'
-  seatInterval.value = (activeStripeSubscription.value.plan === PLANS.PRO_YEARLY.id || activeStripeSubscription.value.plan?.includes('year')) ? 'year' : 'month'
+  seatInterval.value = activeStripeSubscription.value.plan?.includes('year') ? 'year' : 'month'
   paymentError.value = false // Reset payment error when opening modal
 
   showAddSeatModal.value = true
@@ -278,7 +278,8 @@ async function handleUpgrade() {
     const quantity = currentMembers + pendingInvites + inviteCount
 
     // Use no-trial plan if user owns multiple orgs
-    let planId = seatInterval.value === 'month' ? PLANS.PRO_MONTHLY.id : PLANS.PRO_YEARLY.id
+    const selectedPlan = getTierForInterval('pro', seatInterval.value)
+    let planId = selectedPlan.id
     if (hasUsedTrial.value) {
       planId = `${planId}-no-trial`
     }

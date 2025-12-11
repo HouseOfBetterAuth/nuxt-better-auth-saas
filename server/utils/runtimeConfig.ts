@@ -1,5 +1,5 @@
 import type { NitroRuntimeConfig } from 'nitropack/types'
-import type { FileManagerConfig, StorageProviderType } from '../services/file/types'
+import type { FileManagerConfig, StorageProviderType } from '~~/server/services/file/types'
 import { config } from 'dotenv'
 import { getAppUrl } from '../../shared/utils/app-url'
 
@@ -59,7 +59,7 @@ export const generateRuntimeConfig = () => ({
   workerApiUrl: process.env.WORKER_API_URL || 'https://api-service.getquillio.com',
   // DB
   redisUrl: process.env.NUXT_REDIS_URL,
-  databaseUrl: process.env.NUXT_DATABASE_URL,
+  databaseUrl: process.env.DATABASE_URL,
   // File
   fileManager: {
     storage: {

@@ -1,4 +1,4 @@
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 import { slugifyTitle } from '~~/server/utils/content'
 import { enrichMdxWithMetadata } from './generation'
 

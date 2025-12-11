@@ -1,7 +1,7 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
-import * as schema from '../../database/schema'
+import * as schema from '../../db/schema'
 import { getDB } from '../../utils/db'
 
 type DbInstance = NodePgDatabase<typeof schema>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { PLANS } from '~~/shared/utils/plans'
+import type { PlanInterval, PlanKey } from '~~/shared/utils/plans'
+import { getTierForInterval, PLAN_TIERS } from '~~/shared/utils/plans'
 
 const props = defineProps<{
   open: boolean
@@ -14,12 +15,25 @@ const emit = defineEmits<{
   'upgraded': []
 }>()
 
+const selectedTier = ref<Exclude<PlanKey, 'free'>>('pro')
 const selectedInterval = ref<'month' | 'year'>('month')
 const loading = ref(false)
 const toast = useToast()
 
 // Use shared payment status composable
 const { isPaymentFailed: hasPastDueSubscription, hasUsedTrial, organizationId } = usePaymentStatus()
+
+// Get all available tiers sorted by order
+const availableTiers = computed(() => {
+  return Object.values(PLAN_TIERS)
+    .filter(tier => tier.key !== 'free')
+    .sort((a, b) => a.order - b.order)
+})
+
+// Get the selected plan config
+const selectedPlanConfig = computed(() => {
+  return getTierForInterval(selectedTier.value, selectedInterval.value)
+})
 
 // Open billing portal to fix payment
 async function openBillingPortal() {
@@ -44,7 +58,7 @@ async function openBillingPortal() {
 }
 
 const title = computed(() => {
-  return 'Upgrade to Pro'
+  return 'Choose Your Plan'
 })
 
 const description = computed(() => {
@@ -76,9 +90,8 @@ async function handleUpgrade() {
     const activeOrg = useActiveOrganization()
     const orgSlug = activeOrg.value?.data?.slug || props.teamSlug || 't'
 
-    // Use Better Auth subscription.upgrade
-    // Use no-trial plan if user owns multiple orgs (no trial for 2nd+ org)
-    let planId = selectedInterval.value === 'month' ? PLANS.PRO_MONTHLY.id : PLANS.PRO_YEARLY.id
+    // Use Better Auth subscription.upgrade with selected tier
+    let planId = selectedPlanConfig.value.id
     if (hasUsedTrial.value) {
       planId = `${planId}-no-trial`
     }
@@ -177,58 +190,108 @@ async function handleUpgrade() {
           </div>
         </div>
 
-        <div class="space-y-2">
-          <label class="text-sm font-medium">Select billing cycle:</label>
-          <div class="grid grid-cols-1 gap-4">
-            <div
-              v-for="plan in [PLANS.PRO_MONTHLY, PLANS.PRO_YEARLY]"
-              :key="plan.interval"
-              class="border rounded-lg p-4 cursor-pointer transition-all"
-              :class="selectedInterval === plan.interval ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
-              @click="selectedInterval = plan.interval as 'month' | 'year'"
+        <!-- Billing Interval Toggle -->
+        <div class="flex justify-center mb-4">
+          <div class="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            <button
+              v-for="interval in (['month', 'year'] as PlanInterval[])"
+              :key="interval"
+              class="relative px-4 py-2 text-sm font-medium rounded-md transition-all"
+              :class="selectedInterval === interval
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
+              @click="selectedInterval = interval"
             >
-              <div class="flex justify-between items-start mb-2">
-                <h3 class="font-semibold">
-                  {{ plan.label }}
+              {{ interval === 'month' ? 'Monthly' : 'Yearly' }}
+              <span
+                v-if="interval === 'year'"
+                class="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full"
+              >
+                Save
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Plan Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div
+            v-for="tier in availableTiers"
+            :key="tier.key"
+            class="relative border rounded-xl p-5 cursor-pointer transition-all"
+            :class="[
+              selectedTier === tier.key
+                ? 'border-primary ring-2 ring-primary bg-primary/5'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+              tier.order === 2 ? 'md:scale-[1.02]' : ''
+            ]"
+            @click="selectedTier = tier.key as Exclude<PlanKey, 'free'>"
+          >
+            <!-- Popular Badge -->
+            <div
+              v-if="tier.order === 2"
+              class="absolute -top-3 left-1/2 -translate-x-1/2"
+            >
+              <span class="px-3 py-1 text-xs font-bold bg-primary text-white rounded-full">
+                Most Popular
+              </span>
+            </div>
+
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="font-bold text-lg">
+                  {{ tier.name }}
                 </h3>
-                <UIcon
-                  v-if="selectedInterval === plan.interval"
-                  name="i-lucide-check-circle"
-                  class="w-5 h-5 text-primary"
-                />
-                <div
-                  v-else
-                  class="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600"
-                />
+                <p class="text-xs text-muted-foreground">
+                  {{ tier.key === 'pro' ? 'For small teams' : 'For growing businesses' }}
+                </p>
               </div>
-              <div class="text-2xl font-bold mb-1">
-                ${{ plan.priceNumber.toFixed(2) }}
-                <span class="text-sm font-normal text-muted-foreground">/ {{ plan.interval }}</span>
+              <UIcon
+                v-if="selectedTier === tier.key"
+                name="i-lucide-check-circle"
+                class="w-6 h-6 text-primary"
+              />
+              <div
+                v-else
+                class="w-6 h-6 rounded-full border-2 border-gray-300 dark:border-gray-600"
+              />
+            </div>
+
+            <!-- Price -->
+            <div class="mb-4">
+              <div class="flex items-baseline gap-1">
+                <span class="text-3xl font-bold">
+                  ${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).price.toFixed(2) }}
+                </span>
+                <span class="text-sm text-muted-foreground">
+                  / {{ selectedInterval === 'year' ? 'year' : 'month' }}
+                </span>
               </div>
-              <p class="text-xs text-muted-foreground mb-3">
+              <p class="text-xs text-muted-foreground mt-1">
                 <span
                   v-if="!hasUsedTrial"
                   class="font-semibold text-amber-600 dark:text-amber-400"
-                >{{ plan.trialDays }}-day free trial<br></span>
-                Base Plan (${{ plan.priceNumber.toFixed(2) }}).<br>
-                Each additional member adds ${{ (plan.seatPriceNumber || 0).toFixed(2) }}/{{ plan.interval === 'year' ? 'yr' : 'mo' }}.
+                >{{ tier.trialDays }}-day free trial<br></span>
+                Base Plan (${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).price.toFixed(2) }}).<br>
+                Each additional member adds ${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).seatPrice.toFixed(2) }}/{{ selectedInterval === 'year' ? 'yr' : 'mo' }}.
               </p>
-
-              <div class="space-y-2">
-                <ul class="text-xs space-y-1.5 text-muted-foreground">
-                  <li
-                    v-for="(feature, i) in plan.features"
-                    :key="i"
-                    class="flex items-center gap-2"
-                  >
-                    <UIcon
-                      name="i-lucide-check"
-                      class="w-3 h-3 text-amber-500"
-                    /> {{ feature }}
-                  </li>
-                </ul>
-              </div>
             </div>
+
+            <!-- Features -->
+            <ul class="space-y-2">
+              <li
+                v-for="(feature, i) in tier.features"
+                :key="i"
+                class="flex items-start gap-2 text-sm"
+              >
+                <UIcon
+                  name="i-lucide-check"
+                  class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                />
+                <span class="text-muted-foreground">{{ feature }}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
@@ -253,7 +316,7 @@ async function handleUpgrade() {
       <!-- Normal upgrade button -->
       <UButton
         v-else
-        :label="hasUsedTrial ? 'Upgrade to Pro' : 'Start Free Trial'"
+        :label="hasUsedTrial ? `Upgrade to ${PLAN_TIERS[selectedTier].name}` : `Start ${PLAN_TIERS[selectedTier].name} Trial`"
         color="primary"
         :loading="loading"
         @click="handleUpgrade"

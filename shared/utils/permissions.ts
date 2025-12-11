@@ -79,19 +79,21 @@ export function hasProSubscription(
 
 /**
  * Get plan limits based on subscription status
+ * @deprecated Use getPlanLimits from plans.ts for plan ID-based limits
  */
-export function getPlanLimits(
+export function getLimitsByStatus(
   status: SubscriptionStatus
 ): PlanLimits {
   return hasProSubscription(status) ? PLAN_LIMITS.PRO : PLAN_LIMITS.FREE
 }
 
 /**
- * Check if feature is available based on subscription
+ * Check if feature is available based on subscription status
  * Note: Each organization requires its own Pro subscription.
  * This checks features within a single organization.
+ * @deprecated Use canAccessFeature from plans.ts for plan ID-based checks
  */
-export function canAccessFeature(
+export function canAccessFeatureByStatus(
   status: SubscriptionStatus,
   feature: 'multipleMembers' | 'unlimitedProjects'
 ): boolean {

@@ -1,4 +1,4 @@
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 import type { ConversationQuotaUsageResult } from '~~/server/utils/auth'
 
 /**

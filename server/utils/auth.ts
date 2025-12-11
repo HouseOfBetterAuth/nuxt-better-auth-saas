@@ -9,9 +9,9 @@ import { admin as adminPlugin, anonymous, apiKey, openAPI, organization } from '
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
 import { appendResponseHeader, createError, getRequestHeaders } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
-import { ac, admin, member, owner } from '../../shared/utils/permissions'
-import * as schema from '../database/schema'
-import { ensureDefaultOrganizationForUser, setUserActiveOrganization } from '../services/organization/provision'
+import * as schema from '~~/server/db/schema'
+import { ensureDefaultOrganizationForUser, setUserActiveOrganization } from '~~/server/services/organization/provision'
+import { ac, admin, member, owner } from '~~/shared/utils/permissions'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
 import { cacheClient, resendInstance } from './drivers'
@@ -734,7 +734,7 @@ export const createBetterAuth = () => betterAuth({
 let _auth: ReturnType<typeof betterAuth>
 
 // Used by npm run auth:schema only.
-const isAuthSchemaCommand = process.argv.some(arg => arg.includes('server/database/schema/auth.ts'))
+const isAuthSchemaCommand = process.argv.some(arg => arg.includes('server/db/schema/auth.ts'))
 if (isAuthSchemaCommand) {
   _auth = createBetterAuth()
 }

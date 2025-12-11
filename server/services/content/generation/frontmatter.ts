@@ -1,4 +1,4 @@
-import type * as schema from '~~/server/database/schema'
+import type * as schema from '~~/server/db/schema'
 import type { ContentFrontmatter, ContentGenerationOverrides, ContentOutline } from './types'
 import { createError } from 'h3'
 import { CONTENT_STATUSES, CONTENT_TYPES, slugifyTitle } from '~~/server/utils/content'

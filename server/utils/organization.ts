@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { and, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '../database/schema'
+import * as schema from '../db/schema'
 import { setUserActiveOrganization } from '../services/organization/provision'
 import { getAuthSession } from './auth'
 import { getDB } from './db'

@@ -2,7 +2,7 @@ import type { PgColumn } from 'drizzle-orm/pg-core'
 import { getTableColumns, sql } from 'drizzle-orm'
 import { PgTable } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { isValidTable } from '~~/server/utils/db'
 import { filterSchema, processFilters, withFilters } from '~~/server/utils/query'
 

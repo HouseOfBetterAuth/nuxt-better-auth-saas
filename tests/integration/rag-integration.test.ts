@@ -1,6 +1,6 @@
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import * as chunking from '~~/server/services/content/generation/chunking'
 import { buildConversationContext } from '~~/server/services/content/generation/context'
 import * as contentGeneration from '~~/server/services/content/generation/index'

@@ -162,7 +162,9 @@ export function SubscriptionConfirmed({
                 {' '}
                 {billingCycle === 'monthly' ? 'month' : 'year'}
               </td>
-              <td style={{ ...valueCell, fontWeight: '600', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>{amount}</td>
+              <td style={{ ...valueCell, fontWeight: '600', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+                {amount}
+              </td>
             </tr>
           </tbody>
         </table>

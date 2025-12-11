@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { FetchError } from 'ofetch'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '../../database/schema'
+import * as schema from '../../db/schema'
 import { createChunksFromSourceContentText } from './chunkSourceContent'
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000

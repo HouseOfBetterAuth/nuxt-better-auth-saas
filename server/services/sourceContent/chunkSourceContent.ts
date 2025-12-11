@@ -10,7 +10,7 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 import { estimateTokenCount, tokensToChars } from '~~/server/services/content/generation/utils'
 
 interface ChunkSourceContentOptions {

@@ -2,7 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { CONTENT_TYPES } from '~~/shared/constants/contentTypes'
-import * as schema from '../database/schema'
+import * as schema from '../db/schema'
 
 export const CONTENT_STATUSES = ['draft', 'in_review', 'ready_for_publish', 'published', 'archived'] as const
 export { CONTENT_TYPES }

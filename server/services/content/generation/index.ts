@@ -9,7 +9,7 @@ import type {
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
-import * as schema from '~~/server/database/schema'
+import * as schema from '~~/server/db/schema'
 
 import { callChatCompletions } from '~~/server/utils/aiGateway'
 // Conversation quota is checked at chat session creation, not here

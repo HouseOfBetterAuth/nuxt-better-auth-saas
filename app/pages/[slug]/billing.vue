@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { PLANS } from '~~/shared/utils/plans'
+import type { PlanInterval, PlanKey } from '~~/shared/utils/plans'
+import { getPlanKeyFromId, getPlanPricing, getTierForInterval, PLAN_TIERS } from '~~/shared/utils/plans'
 
 const { formatDateShort } = useDate()
 
@@ -25,6 +26,11 @@ const route = useRoute()
 const showDowngradeModal = ref(false)
 const downgradeData = ref<{ membersToRemove: any[], nextChargeDate: string, legacyWarning?: string | null }>({ membersToRemove: [], nextChargeDate: '' })
 const showUpgradeModal = ref(false)
+const showTierChangeModal = ref(false)
+const tierChangeLoading = ref(false)
+const tierChangePreview = ref<any>(null)
+const showTierChangePreview = ref(false)
+const pendingTierChange = ref<{ tierKey: Exclude<PlanKey, 'free'>, interval: PlanInterval } | null>(null)
 
 // Show upgrade modal if showUpgrade query param is present or if upgrade is needed
 watchEffect(() => {
@@ -130,25 +136,153 @@ watch(activeSub, (sub) => {
 }, { immediate: true })
 
 const activePlan = computed(() => {
-  return billingInterval.value === 'month' ? PLANS.PRO_MONTHLY : PLANS.PRO_YEARLY
+  return getTierForInterval('pro', billingInterval.value)
 })
 
-// Find the config for the user's actual current plan
+// Get the current tier key from subscription plan ID
+const currentTierKey = computed<PlanKey>(() => {
+  if (!activeSub.value?.plan)
+    return 'free'
+  return getPlanKeyFromId(activeSub.value.plan)
+})
+
+// Get current interval from subscription
+const currentBillingInterval = computed<PlanInterval>(() => {
+  if (!activeSub.value?.plan)
+    return 'month'
+  return activeSub.value.plan.includes('year') ? 'year' : 'month'
+})
+
+// Find the config for the user's actual current plan (handles legacy pricing)
 const currentSubPlanConfig = computed(() => {
-  if (!activeSub.value)
+  if (!activeSub.value?.plan)
     return null
-  // Try to find exact match in PLANS by ID
-  const match = Object.values(PLANS).find(p => p.id === activeSub.value?.plan)
-  // Fallback to activePlan (current public plan) if legacy plan not found in config
-  return match || activePlan.value
+  const pricing = getPlanPricing(activeSub.value.plan)
+  if (pricing) {
+    return {
+      price: pricing.price,
+      seatPrice: pricing.seatPrice,
+      interval: pricing.interval
+    }
+  }
+  // Fallback to derived current tier pricing
+  const fallbackTierKey = (currentTierKey.value === 'free' ? 'pro' : currentTierKey.value) as Exclude<PlanKey, 'free'>
+  const fallbackInterval = currentBillingInterval.value
+  const fallbackPlan = getTierForInterval(fallbackTierKey, fallbackInterval)
+  return {
+    price: fallbackPlan.price,
+    seatPrice: fallbackPlan.seatPrice,
+    interval: fallbackInterval
+  }
 })
 
 const currentPlan = computed(() => {
   if (activeSub.value) {
-    return 'pro'
+    return currentTierKey.value === 'free' ? 'pro' : currentTierKey.value
   }
   return 'free'
 })
+
+// Get current plan features from PLAN_TIERS
+const currentPlanFeatures = computed<string[]>(() => {
+  if (currentTierKey.value === 'free') {
+    return ['Up to 5 leads', 'Basic features']
+  }
+  const tier = PLAN_TIERS[currentTierKey.value as Exclude<PlanKey, 'free'>]
+  return tier?.features || []
+})
+
+// Handle tier selection - fetch preview first
+async function handleTierSelect(newTierKey: Exclude<PlanKey, 'free'>, newInterval: PlanInterval) {
+  if (!activeOrg.value?.data?.id)
+    return
+
+  tierChangeLoading.value = true
+  pendingTierChange.value = { tierKey: newTierKey, interval: newInterval }
+
+  try {
+    const preview = await $fetch('/api/stripe/preview-tier-change', {
+      method: 'POST',
+      body: {
+        organizationId: activeOrg.value.data.id,
+        newTierKey,
+        newInterval
+      }
+    })
+
+    tierChangePreview.value = preview
+    showTierChangeModal.value = false
+    showTierChangePreview.value = true
+  } catch (e: any) {
+    console.error('Preview error:', e)
+    toast.add({
+      title: 'Error',
+      description: e.data?.statusMessage || 'Failed to preview plan change',
+      color: 'error'
+    })
+  } finally {
+    tierChangeLoading.value = false
+  }
+}
+
+// Confirm tier change after preview
+async function confirmTierChange() {
+  if (!activeOrg.value?.data?.id || !pendingTierChange.value)
+    return
+
+  const { tierKey, interval } = pendingTierChange.value
+  const tierName = PLAN_TIERS[tierKey]?.name || tierKey
+
+  tierChangeLoading.value = true
+  try {
+    const result = await $fetch('/api/stripe/change-plan', {
+      method: 'POST',
+      body: {
+        organizationId: activeOrg.value.data.id,
+        newInterval: interval,
+        newTierKey: tierKey
+      }
+    }) as any
+
+    showTierChangePreview.value = false
+    tierChangePreview.value = null
+    pendingTierChange.value = null
+
+    if (result.scheduledAt) {
+      toast.add({
+        title: 'Plan Change Scheduled',
+        description: `Your plan will change to ${tierName} on ${new Date(result.scheduledAt).toLocaleDateString()}`,
+        color: 'success'
+      })
+    } else {
+      toast.add({
+        title: result.isUpgrade ? 'Plan Upgraded!' : 'Plan Changed',
+        description: result.isUpgrade
+          ? `You've been upgraded to ${tierName}`
+          : `Your plan has been changed to ${tierName}`,
+        color: 'success'
+      })
+    }
+
+    // Refresh to get updated subscription
+    await refreshActiveOrg()
+  } catch (e: any) {
+    console.error('Tier change error:', e)
+    toast.add({
+      title: 'Error',
+      description: e.data?.statusMessage || 'Failed to change plan',
+      color: 'error'
+    })
+  } finally {
+    tierChangeLoading.value = false
+  }
+}
+
+function cancelTierChange() {
+  showTierChangePreview.value = false
+  tierChangePreview.value = null
+  pendingTierChange.value = null
+}
 
 // hasUsedTrial comes from usePaymentStatus composable (aliased as _hasUsedTrial above)
 const hasUsedTrial = _hasUsedTrial
@@ -179,23 +313,28 @@ const nextChargeDate = computed(() => {
 
 // Cost breakdown
 const costBreakdown = computed(() => {
-  if (!activeSub.value)
+  if (!activeSub.value) {
+    console.log('[billing] costBreakdown: no activeSub')
     return null
+  }
 
   const plan = currentSubPlanConfig.value
-  if (!plan)
+  if (!plan) {
+    console.log('[billing] costBreakdown: no plan config')
     return null // Added safety check
+  }
 
   const seats = activeSub.value.seats || 1
   const additionalSeats = Math.max(0, seats - 1)
 
-  const baseCost = plan.priceNumber
-  const seatCost = additionalSeats * plan.seatPriceNumber
+  const baseCost = plan.price
+  const seatCost = additionalSeats * plan.seatPrice
   const totalCost = baseCost + seatCost
 
   return {
     baseCost,
     seatCost,
+    seatPrice: plan.seatPrice,
     additionalSeats,
     totalSeats: seats,
     totalCost,
@@ -231,14 +370,19 @@ function openModal(title: string, message: string, confirmLabel: string, confirm
   modal.isOpen = true
 }
 
-async function handleUpgrade() {
+// Track which tier is being upgraded to (for loading state)
+const selectedUpgradeTier = ref<Exclude<PlanKey, 'free'> | null>(null)
+
+async function handleUpgradeWithTier(tierKey: Exclude<PlanKey, 'free'>) {
   if (!activeOrg.value?.data?.id)
     return
 
   loading.value = true
+  selectedUpgradeTier.value = tierKey
   try {
     // Use no-trial plan if user owns multiple orgs
-    let planName = billingInterval.value === 'month' ? PLANS.PRO_MONTHLY.id : PLANS.PRO_YEARLY.id
+    const selectedPlan = getTierForInterval(tierKey, billingInterval.value)
+    let planName = selectedPlan.id
     if (hasUsedTrial.value) {
       planName = `${planName}-no-trial`
     }
@@ -265,6 +409,7 @@ async function handleUpgrade() {
     // eslint-disable-next-line no-alert
     alert(`Failed to start checkout: ${e.message || 'Unknown error'}`)
     loading.value = false
+    selectedUpgradeTier.value = null
   }
 }
 
@@ -338,9 +483,9 @@ async function cancelSubscription() {
     const currentPlanConfig = currentSubPlanConfig.value
     const latestPlanConfig = activePlan.value // This is the V2/current plan
 
-    if (currentPlanConfig && latestPlanConfig && currentPlanConfig.priceNumber < latestPlanConfig.priceNumber) {
-      const currentPrice = `$${currentPlanConfig.priceNumber.toFixed(2)}`
-      const latestPrice = `$${latestPlanConfig.priceNumber.toFixed(2)}`
+    if (currentPlanConfig && latestPlanConfig && currentPlanConfig.price < latestPlanConfig.price) {
+      const currentPrice = `$${currentPlanConfig.price.toFixed(2)}`
+      const latestPrice = `$${latestPlanConfig.price.toFixed(2)}`
       downgradeData.value.legacyWarning = `Warning: You are currently on a legacy plan (${currentPrice}). If you downgrade, re-subscribing later will cost the new rate of ${latestPrice}.`
     } else {
       downgradeData.value.legacyWarning = null
@@ -701,10 +846,10 @@ async function confirmPlanChange() {
         <div>
           <div class="flex items-center gap-3 mb-2">
             <h2 class="text-xl font-bold">
-              {{ currentPlan === 'pro' ? 'Pro Plan' : 'Free Plan' }}
+              {{ currentPlan === 'free' ? 'Free Plan' : (currentPlan === 'business' ? 'Pro+ Plan' : 'Pro Plan') }}
             </h2>
             <UBadge
-              :color="currentPlan === 'pro' ? 'primary' : 'gray'"
+              :color="currentPlan !== 'free' ? 'primary' : 'gray'"
               variant="solid"
             >
               Current plan
@@ -737,19 +882,19 @@ async function confirmPlanChange() {
             v-if="costBreakdown"
             class="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg"
           >
-            <h3 class="text-sm font-semibold mb-3">
+            <h3 class="text-sm font-semibold mb-2">
               Current Cost Breakdown
             </h3>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between">
-                <span class="text-muted-foreground">Base Pro Plan (includes 1 seat)</span>
+                <span class="text-muted-foreground">Base {{ currentPlan === 'business' ? 'Pro+' : 'Pro' }} Plan (includes 1 seat)</span>
                 <span class="font-medium">${{ costBreakdown.baseCost.toFixed(2) }}</span>
               </div>
               <div
                 v-if="costBreakdown.additionalSeats > 0"
                 class="flex justify-between"
               >
-                <span class="text-muted-foreground">Additional Seats ({{ costBreakdown.additionalSeats }} × ${{ activePlan.seatPriceNumber.toFixed(2) }})</span>
+                <span class="text-muted-foreground">Additional Seats ({{ costBreakdown.additionalSeats }} × ${{ costBreakdown.seatPrice.toFixed(2) }})</span>
                 <span class="font-medium">${{ costBreakdown.seatCost.toFixed(2) }}</span>
               </div>
               <div class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -761,6 +906,7 @@ async function confirmPlanChange() {
               </div>
             </div>
           </div>
+
           <div
             v-if="currentPlan === 'free'"
             class="text-4xl font-bold mb-1"
@@ -775,7 +921,7 @@ async function confirmPlanChange() {
             Free trial ends on {{ trialInfo.endDate }}. You will be charged ${{ costBreakdown.totalCost.toFixed(2) }} on that date.
           </div>
           <div
-            v-else-if="currentPlan === 'pro' && nextChargeDate && !isCanceled"
+            v-else-if="currentPlan !== 'free' && nextChargeDate && !isCanceled"
             class="text-sm text-muted-foreground mt-1"
           >
             Next charge on {{ nextChargeDate }}
@@ -789,12 +935,14 @@ async function confirmPlanChange() {
 
           <!-- Normal plan management (hide when payment failed) -->
           <template v-if="!isPaymentFailed">
-            <!-- Plan Switch Button (Only show for monthly -> yearly upgrade) -->
+            <!-- Plan Management Buttons -->
             <div
-              v-if="currentPlan === 'pro' && !isCanceled && activeSub?.status !== 'trialing' && !activeSub?.plan?.includes('year')"
-              class="mt-4"
+              v-if="currentPlan !== 'free' && !isCanceled"
+              class="mt-4 flex flex-wrap gap-2"
             >
+              <!-- Switch to Yearly (only for monthly subscribers) -->
               <UButton
+                v-if="activeSub?.status !== 'trialing' && !activeSub?.plan?.includes('year')"
                 variant="outline"
                 size="sm"
                 :loading="loading"
@@ -802,11 +950,21 @@ async function confirmPlanChange() {
               >
                 Switch to Yearly
               </UButton>
+
+              <!-- Change Plan (upgrade/downgrade tiers) -->
+              <UButton
+                variant="outline"
+                size="sm"
+                icon="i-lucide-arrow-up-down"
+                @click="showTierChangeModal = true"
+              >
+                Change Plan
+              </UButton>
             </div>
 
             <!-- Seat Management -->
             <div
-              v-if="currentPlan === 'pro' && !isCanceled"
+              v-if="currentPlan !== 'free' && !isCanceled"
               class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800"
             >
               <h3 class="text-sm font-semibold mb-2">
@@ -877,33 +1035,16 @@ async function confirmPlanChange() {
             What's included:
           </h3>
           <div class="grid grid-cols-1 gap-y-2">
-            <div class="flex items-start gap-2 text-sm text-muted-foreground">
+            <div
+              v-for="feature in currentPlanFeatures"
+              :key="feature"
+              class="flex items-start gap-2 text-sm text-muted-foreground"
+            >
               <UIcon
                 name="i-lucide-check"
                 class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
               />
-              <span>WordPress Plugin Access</span>
-            </div>
-            <div class="flex items-start gap-2 text-sm text-muted-foreground">
-              <UIcon
-                name="i-lucide-check"
-                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
-              />
-              <span>Basic Analytics (Total Searches)</span>
-            </div>
-            <div class="flex items-start gap-2 text-sm text-muted-foreground">
-              <UIcon
-                name="i-lucide-check"
-                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
-              />
-              <span>Email Lead Notifications</span>
-            </div>
-            <div class="flex items-start gap-2 text-sm text-muted-foreground">
-              <UIcon
-                name="i-lucide-check"
-                class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"
-              />
-              <span>Up to 3 Team Members</span>
+              <span>{{ feature }}</span>
             </div>
           </div>
         </div>
@@ -911,7 +1052,7 @@ async function confirmPlanChange() {
     </UCard>
 
     <!-- Invoice History (Only show for Pro users) -->
-    <UCard v-if="currentPlan === 'pro'">
+    <UCard v-if="currentPlan !== 'free'">
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon
@@ -932,6 +1073,7 @@ async function confirmPlanChange() {
     </UCard>
 
     <!-- Upgrade Section (Only show if free) -->
+    <!-- Upgrade Section - Show all plans -->
     <div
       v-if="currentPlan === 'free'"
       class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 border border-primary/20 p-6"
@@ -948,7 +1090,7 @@ async function confirmPlanChange() {
                 name="i-lucide-zap"
                 class="w-5 h-5 text-primary"
               />
-              <span class="text-xs font-semibold text-primary uppercase tracking-wider">Upgrade to Pro</span>
+              <span class="text-xs font-semibold text-primary uppercase tracking-wider">Choose Your Plan</span>
             </div>
             <h2 class="text-2xl font-bold">
               Unlock Your Full Potential
@@ -980,67 +1122,91 @@ async function confirmPlanChange() {
           </div>
         </div>
 
-        <!-- Pricing Card -->
-        <div class="bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div class="p-6">
-            <div class="flex flex-col gap-6">
-              <!-- Price Section -->
-              <div class="flex-shrink-0">
+        <!-- Plan Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div
+            v-for="tier in Object.values(PLAN_TIERS).sort((a, b) => a.order - b.order)"
+            :key="tier.key"
+            class="relative bg-white dark:bg-gray-900 rounded-xl shadow-lg border overflow-hidden transition-all hover:shadow-xl"
+            :class="tier.order === 2 ? 'border-primary ring-2 ring-primary' : 'border-gray-200 dark:border-gray-700'"
+          >
+            <!-- Popular Badge -->
+            <div
+              v-if="tier.order === 2"
+              class="absolute top-0 right-0"
+            >
+              <div class="bg-primary text-white text-xs font-bold px-3 py-1 rounded-bl-lg">
+                Most Popular
+              </div>
+            </div>
+
+            <div class="p-6">
+              <!-- Plan Header -->
+              <div class="mb-4">
+                <h3 class="text-xl font-bold">
+                  {{ tier.name }}
+                </h3>
+                <p class="text-sm text-muted-foreground">
+                  {{ tier.key === 'pro' ? 'For small teams' : 'For growing businesses' }}
+                </p>
+              </div>
+
+              <!-- Price -->
+              <div class="mb-4">
                 <div class="flex items-baseline gap-1">
-                  <span class="text-4xl font-bold">${{ activePlan.priceNumber.toFixed(2) }}</span>
-                  <span class="text-muted-foreground">/ {{ activePlan.interval }}</span>
+                  <span class="text-4xl font-bold">${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, billingInterval).price.toFixed(2) }}</span>
+                  <span class="text-muted-foreground">/ {{ billingInterval === 'year' ? 'year' : 'month' }}</span>
                 </div>
                 <p class="text-sm text-muted-foreground mt-1">
-                  + ${{ activePlan.seatPriceNumber.toFixed(2) }}/{{ activePlan.interval }} per additional team member
+                  + ${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, billingInterval).seatPrice.toFixed(2) }}/seat
                 </p>
                 <div
                   v-if="!hasUsedTrial"
-                  class="flex items-center gap-2 mt-3"
+                  class="flex items-center gap-2 mt-2"
                 >
                   <UIcon
                     name="i-lucide-shield-check"
                     class="w-4 h-4 text-amber-500"
                   />
-                  <span class="text-xs text-muted-foreground">{{ activePlan.trialDays }}-day free trial included</span>
+                  <span class="text-xs text-green-600 dark:text-green-400 font-medium">{{ tier.trialDays }}-day free trial</span>
                 </div>
               </div>
 
               <!-- CTA Button -->
-              <div class="flex-shrink-0">
-                <UButton
-                  size="lg"
-                  :label="hasUsedTrial ? 'Upgrade to Pro' : 'Start Free Trial'"
-                  color="primary"
-                  :loading="loading"
-                  class="cursor-pointer w-full px-8"
-                  @click="handleUpgrade"
-                >
-                  <template #trailing>
-                    <UIcon name="i-lucide-arrow-right" />
-                  </template>
-                </UButton>
-              </div>
-            </div>
-          </div>
-
-          <!-- Features Grid -->
-          <div class="border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-6">
-            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-              Everything you need to grow
-            </p>
-            <div class="grid grid-cols-1 gap-3">
-              <div
-                v-for="(feature, i) in activePlan.features"
-                :key="i"
-                class="flex items-center gap-2 text-sm"
+              <UButton
+                size="lg"
+                :label="hasUsedTrial ? `Upgrade to ${tier.name}` : `Start ${tier.name} Trial`"
+                :color="tier.order === 2 ? 'primary' : 'neutral'"
+                :variant="tier.order === 2 ? 'solid' : 'outline'"
+                :loading="loading && selectedUpgradeTier === tier.key"
+                class="w-full mb-4"
+                @click="handleUpgradeWithTier(tier.key as Exclude<PlanKey, 'free'>)"
               >
-                <div class="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
-                  <UIcon
-                    name="i-lucide-check"
-                    class="w-3 h-3 text-primary"
-                  />
-                </div>
-                <span>{{ feature }}</span>
+                <template #trailing>
+                  <UIcon name="i-lucide-arrow-right" />
+                </template>
+              </UButton>
+
+              <!-- Features -->
+              <div class="space-y-2">
+                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  What's included:
+                </p>
+                <ul class="space-y-2">
+                  <li
+                    v-for="(feature, i) in tier.features"
+                    :key="i"
+                    class="flex items-start gap-2 text-sm"
+                  >
+                    <div class="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-primary"
+                      />
+                    </div>
+                    <span>{{ feature }}</span>
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
@@ -1085,7 +1251,7 @@ async function confirmPlanChange() {
           v-if="planPreview"
           :seats="activeSub?.seats || 1"
           :current-plan-config="currentSubPlanConfig"
-          :new-plan-config="newIntervalSelection === 'year' ? PLANS.PRO_YEARLY : PLANS.PRO_MONTHLY"
+          :new-plan-config="getTierForInterval((currentTierKey === 'free' ? 'pro' : currentTierKey) as Exclude<PlanKey, 'free'>, newIntervalSelection)"
           :new-interval="newIntervalSelection"
           :preview="planPreview"
           :is-trialing="activeSub?.status === 'trialing'"
@@ -1167,9 +1333,7 @@ async function confirmPlanChange() {
               @click="showSeatChangeModal = false; paymentError = false"
             />
             <UButton
-              :label="targetSeats > (activeSub?.seats || 1)
-                ? (seatChangePreview?.amountDue === 0 ? 'Confirm (No Charge)' : 'Confirm & Pay')
-                : 'Confirm Reduction'"
+              :label="targetSeats > (activeSub?.seats || 1) ? 'Confirm & Pay' : 'Confirm Reduction'"
               color="primary"
               :loading="loading"
               @click="confirmSeatChange"
@@ -1289,5 +1453,60 @@ async function confirmPlanChange() {
       :team-name="activeOrg?.data?.name"
       :team-slug="activeOrg?.data?.slug"
     />
+
+    <!-- Tier Change Modal (Pro <-> Pro+) -->
+    <UModal
+      v-model:open="showTierChangeModal"
+      title="Change Your Plan"
+      :ui="{ content: 'max-w-3xl' }"
+    >
+      <template #body>
+        <div class="relative">
+          <BillingTierSelector
+            :current-tier-key="currentTierKey"
+            :current-interval="currentBillingInterval"
+            :is-trialing="activeSub?.status === 'trialing'"
+            @select="handleTierSelect"
+          />
+
+          <div
+            v-if="tierChangeLoading"
+            class="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
+          >
+            <div class="flex items-center gap-2">
+              <UIcon
+                name="i-lucide-loader-2"
+                class="w-5 h-5 animate-spin"
+              />
+              <span>Loading preview...</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <UButton
+          label="Cancel"
+          color="neutral"
+          variant="outline"
+          @click="showTierChangeModal = false"
+        />
+      </template>
+    </UModal>
+
+    <!-- Tier Change Preview Modal -->
+    <UModal
+      v-model:open="showTierChangePreview"
+      title="Confirm Plan Change"
+    >
+      <template #body>
+        <BillingTierChangePreview
+          :preview="tierChangePreview"
+          :loading="tierChangeLoading"
+          @confirm="confirmTierChange"
+          @cancel="cancelTierChange"
+        />
+      </template>
+    </UModal>
   </div>
 </template>
