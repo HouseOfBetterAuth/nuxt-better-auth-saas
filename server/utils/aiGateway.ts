@@ -1,4 +1,5 @@
 import { createError } from 'h3'
+import { $fetch } from 'ofetch'
 import { runtimeConfig } from './runtimeConfig'
 
 export interface ChatCompletionToolFunction {

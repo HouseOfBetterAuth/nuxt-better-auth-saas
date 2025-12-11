@@ -4,6 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import * as schema from '~~/server/database/schema'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
+import { requireActiveOrganization } from '~~/server/utils/organization'
 import { GITHUB_INTEGRATION_MATCH_SCOPES } from '~~/shared/constants/githubScopes'
 import { GOOGLE_INTEGRATION_MATCH_SCOPES } from '~~/shared/constants/googleScopes'
 
@@ -26,40 +27,12 @@ function hasGithubIntegrationScopes(scope: string | null | undefined, provider: 
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
 
-  // Get organizationId from the session (active organization)
+  // Get organizationId from Better Auth session
+  const { organizationId } = await requireActiveOrganization(event, user.id, {
+    requireRoles: ['owner', 'admin']
+  })
+
   const db = getDB()
-  const fullUser = await db.select().from(schema.user).where(eq(schema.user.id, user.id)).limit(1)
-
-  const organizationId = fullUser[0]?.lastActiveOrganizationId
-
-  if (!organizationId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'No active organization found in session'
-    })
-  }
-
-  // Check if user is member of this org
-  const membership = await db.select().from(schema.member).where(and(
-    eq(schema.member.userId, user.id),
-    eq(schema.member.organizationId, organizationId)
-  )).limit(1)
-
-  const membershipRecord = membership[0]
-
-  if (!membershipRecord) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'You do not have permission to view integrations for this organization'
-    })
-  }
-
-  if (membershipRecord.role !== 'owner' && membershipRecord.role !== 'admin') {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'You do not have permission to view integrations for this organization'
-    })
-  }
 
   // Get all members of this organization
   const orgMembers = await db.select().from(schema.member).where(eq(schema.member.organizationId, organizationId))

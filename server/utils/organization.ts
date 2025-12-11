@@ -41,28 +41,13 @@ export const requireActiveOrganization = async (
 ) => {
   const db = getDB()
 
-  // Get active organization from Better Auth session (set by session.create.before hook)
+  // Get active organization from Better Auth session
   const session = await getAuthSession(event) as BetterAuthSession | null
 
-  // Try multiple paths to get activeOrganizationId from session
-  let organizationId = session?.session?.activeOrganizationId
+  // Better Auth's organization plugin sets activeOrganizationId in the session
+  const organizationId = session?.session?.activeOrganizationId
     ?? session?.data?.session?.activeOrganizationId
     ?? session?.activeOrganizationId
-
-  // Fallback: If session doesn't have it yet (e.g., just created anonymous session),
-  // read from database. This happens when session was just created and cookies aren't
-  // available in the same request yet.
-  if (!organizationId) {
-    const [dbUser] = await db
-      .select({
-        lastActiveOrganizationId: schema.user.lastActiveOrganizationId
-      })
-      .from(schema.user)
-      .where(eq(schema.user.id, userId))
-      .limit(1)
-
-    organizationId = dbUser?.lastActiveOrganizationId || undefined
-  }
 
   if (!organizationId) {
     // For anonymous users, provide a more helpful error message
@@ -73,6 +58,21 @@ export const requireActiveOrganization = async (
       })
     }
 
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'No active organization found in session'
+    })
+  }
+
+  // Verify organization exists first (handles stale organizationId from deleted orgs)
+  const [orgExists] = await db
+    .select({ id: schema.organization.id })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1)
+
+  if (!orgExists) {
+    // Organization doesn't exist (was deleted), treat as no organization
     throw createError({
       statusCode: 400,
       statusMessage: 'No active organization found in session'

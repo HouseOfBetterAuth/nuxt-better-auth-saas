@@ -5,7 +5,6 @@ import OrganizationSwitcher from '~/components/OrganizationSwitcher.vue'
 import UserNavigation from '~/components/UserNavigation.vue'
 import { getUserMenus } from '~/layouts/menu'
 
-const { needsOnboarding, showOnboarding } = useOnboarding()
 const { t } = useI18n()
 const localePath = useLocalePath()
 const route = useRoute()
@@ -40,11 +39,6 @@ if (import.meta.client) {
     }
   })
 }
-
-watch(() => needsOnboarding.value, (needs) => {
-  if (needs)
-    showOnboarding()
-}, { immediate: true })
 
 const i18nHead = useLocaleHead()
 
@@ -102,7 +96,7 @@ const menus = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col">
+  <div class="min-h-screen flex flex-col relative">
     <header class="border-b border-neutral-200/70 dark:border-neutral-800/60 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm">
       <div class="px-4 py-3 flex items-center gap-3 max-w-3xl mx-auto w-full">
         <!-- Hamburger Menu (Left) -->

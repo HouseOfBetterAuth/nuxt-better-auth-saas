@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useLocalStorage } from '@vueuse/core'
+import { computed } from 'vue'
+
 const route = useRoute()
 const localePath = useLocalePath()
 const { organization, loggedIn, fetchSession, session } = useAuth()
@@ -6,7 +9,14 @@ const toast = useToast()
 const loading = ref(true)
 const error = ref('')
 
-const invitationId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id || ''
+const invitationIdFromUrl = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id || ''
+
+// Persist pending invite using useLocalStorage (SSR-safe, Cloudflare-compatible)
+// This serves as a fallback if the redirect query param is lost
+const pendingInvite = useLocalStorage<string | null>('pending_invite', null)
+
+// Use invitation ID from URL if available, otherwise fall back to pending invite from localStorage
+const invitationId = computed(() => invitationIdFromUrl || pendingInvite.value || '')
 
 onMounted(async () => {
   // Ensure session is up to date before checking login status
@@ -15,13 +25,30 @@ onMounted(async () => {
   }
 
   if (!loggedIn.value) {
-    if (import.meta.client && invitationId) {
-      localStorage.setItem('pending_invite', invitationId)
+    // Store invitation ID for fallback (redirect query param is primary method)
+    if (invitationIdFromUrl) {
+      pendingInvite.value = invitationIdFromUrl
     }
-    return navigateTo(localePath(`/signup?redirect=${route.fullPath}`))
+    // If we have a pending invite but no URL param, redirect to signup with the pending invite
+    if (!invitationIdFromUrl && pendingInvite.value) {
+      return navigateTo(localePath(`/signup?redirect=/accept-invite/${pendingInvite.value}`))
+    }
+    // If we have URL param, use it
+    if (invitationIdFromUrl) {
+      return navigateTo(localePath(`/signup?redirect=${route.fullPath}`))
+    }
+    // No invite ID at all
+    error.value = 'Invalid invitation link'
+    loading.value = false
+    return
   }
 
-  if (!invitationId) {
+  // Clear pending invite if we're logged in and processing an invite
+  if (pendingInvite.value && invitationId.value === pendingInvite.value) {
+    pendingInvite.value = null
+  }
+
+  if (!invitationId.value) {
     error.value = 'Invalid invitation link'
     loading.value = false
     return
@@ -29,7 +56,7 @@ onMounted(async () => {
 
   try {
     const { data: result, error: apiError } = await organization.acceptInvitation({
-      invitationId
+      invitationId: invitationId.value
     })
     if (apiError)
       throw apiError

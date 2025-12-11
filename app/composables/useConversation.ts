@@ -1,9 +1,7 @@
-import type {
-  ChatMessage,
-  MessagePart,
-  NonEmptyArray
-} from '#shared/utils/types'
+import type { ConversationIntentSnapshot, IntentGap, IntentOrchestratorAction } from '#shared/utils/intent'
+import type { ChatMessage, MessagePart, NonEmptyArray } from '#shared/utils/types'
 import { useState } from '#app'
+import { useLocalStorage } from '@vueuse/core'
 import { computed } from 'vue'
 
 type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
@@ -34,6 +32,9 @@ function createId() {
   }
   return Math.random().toString(36).slice(2)
 }
+
+const isIntentAction = (value: any): value is IntentOrchestratorAction =>
+  value === 'clarify' || value === 'plan' || value === 'generate'
 
 function toDate(value: string | Date) {
   if (value instanceof Date) {
@@ -75,7 +76,11 @@ export function useConversation() {
   const requestStartedAt = useState<Date | null>('chat/request-started-at', () => null)
   const activeController = useState<AbortController | null>('chat/active-controller', () => null)
   const prompt = useState<string>('chat/prompt', () => '')
-  const mode = useState<'chat' | 'agent'>('chat/mode', () => 'chat')
+
+  // Persist mode selection using useLocalStorage (SSR-safe, Cloudflare-compatible)
+  // useLocalStorage automatically handles persistence and is reactive
+  const mode = useLocalStorage<'chat' | 'agent'>('chat/mode', 'chat')
+
   const currentActivity = useState<'thinking' | 'streaming' | null>('chat/current-activity', () => null)
   const currentToolName = useState<string | null>('chat/current-tool-name', () => null)
 
@@ -90,6 +95,10 @@ export function useConversation() {
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
 
+  const intentSnapshot = useState<ConversationIntentSnapshot | null>('chat/intent-snapshot', () => null)
+  const intentAction = useState<IntentOrchestratorAction | null>('chat/intent-action', () => null)
+  const intentClarifyingQuestions = useState<IntentGap[]>('chat/intent-clarifying-questions', () => [])
+
   const resetConversation = () => {
     messages.value = []
     conversationId.value = null
@@ -99,6 +108,9 @@ export function useConversation() {
     currentActivity.value = null
     currentToolName.value = null
     activeToolCalls.value.clear()
+    intentSnapshot.value = null
+    intentAction.value = null
+    intentClarifyingQuestions.value = []
   }
 
   const hydrateConversation = ({ conversationId: id, messages: msgs }: { conversationId: string, messages: ChatMessage[] }, options?: { skipCache?: boolean }) => {
@@ -110,6 +122,9 @@ export function useConversation() {
     currentActivity.value = null
     currentToolName.value = null
     activeToolCalls.value.clear()
+    intentSnapshot.value = null
+    intentAction.value = null
+    intentClarifyingQuestions.value = []
 
     // Cache messages for instant future navigation (unless explicitly skipped)
     if (!options?.skipCache) {
@@ -483,6 +498,16 @@ export function useConversation() {
                   }
 
                   case 'agentContext:update': {
+                    if (eventData.intentSnapshot) {
+                      intentSnapshot.value = eventData.intentSnapshot as ConversationIntentSnapshot
+                    }
+                    break
+                  }
+
+                  case 'intent:update': {
+                    intentSnapshot.value = eventData.snapshot ?? null
+                    intentAction.value = isIntentAction(eventData.action) ? eventData.action : null
+                    intentClarifyingQuestions.value = Array.isArray(eventData.clarifyingQuestions) ? eventData.clarifyingQuestions : []
                     break
                   }
 
@@ -589,6 +614,9 @@ export function useConversation() {
     prompt,
     mode,
     currentActivity,
-    currentToolName
+    currentToolName,
+    intentSnapshot,
+    intentAction,
+    intentClarifyingQuestions
   }
 }

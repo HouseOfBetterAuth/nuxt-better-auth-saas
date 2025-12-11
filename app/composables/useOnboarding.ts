@@ -20,9 +20,7 @@ export function useOnboarding() {
       return false
     if (pendingOrganizations.value)
       return false
-    if (!organizations.value)
-      return false
-    return organizations.value.length === 0
+    return Array.isArray(organizations.value) && organizations.value.length === 0
   })
 
   const isOpen = computed({

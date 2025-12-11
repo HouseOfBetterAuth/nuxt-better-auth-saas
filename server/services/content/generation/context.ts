@@ -1,6 +1,5 @@
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import type { ContentGenerationInput } from './types'
-import { callChatCompletions } from '~~/server/utils/aiGateway'
 
 export type GenerationMode = 'conversation' | 'context' | 'hybrid'
 
@@ -23,61 +22,27 @@ export function determineGenerationMode(input: ContentGenerationInput): Generati
   return 'conversation'
 }
 
-/**
- * Generates synthetic context from conversation history
- *
- * Extracts user intent, requirements, tone preferences, and target audience
- * from the conversation to create a context string for content generation.
- *
- * @param conversationHistory - Array of conversation messages
- * @returns Synthesized context string
- */
-export async function generateSyntheticContext(
+export function buildConversationContext(
   conversationHistory: ChatCompletionMessage[]
-): Promise<string> {
-  // Extract user messages from conversation
-  const userMessages = conversationHistory
-    .filter(msg => msg.role === 'user')
-    .map(msg => msg.content ?? '')
-    .filter(Boolean)
+): string | null {
+  if (!Array.isArray(conversationHistory) || conversationHistory.length === 0) {
+    return null
+  }
+
+  const transcript = conversationHistory
+    .map((message) => {
+      const content = typeof message.content === 'string' ? message.content : ''
+      const normalizedContent = content.trim()
+      if (!normalizedContent) {
+        return null
+      }
+      const normalizedRole = message.role
+        ? `${message.role.charAt(0).toUpperCase()}${message.role.slice(1)}`
+        : 'Message'
+      return `${normalizedRole}: ${normalizedContent}`
+    })
+    .filter((entry): entry is string => Boolean(entry))
     .join('\n\n')
 
-  if (!userMessages.trim()) {
-    return 'No user intent available from conversation.'
-  }
-
-  const systemPrompt = `You are analyzing a conversation to extract key information for content generation.
-
-Extract and synthesize:
-- Main topic or subject
-- Key requirements and specifications
-- Tone and style preferences (if mentioned)
-- Target audience (if mentioned)
-- Specific points or ideas to include
-- Any constraints or guidelines
-
-Format the output as a clear, structured context that can be used to generate content.`
-
-  const userPrompt = `Analyze this conversation and extract the key information for content generation:
-
-${userMessages}
-
-Provide a synthesized context that captures the user's intent and requirements:`
-
-  try {
-    const synthesis = await callChatCompletions({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.7,
-      maxTokens: 800
-    })
-
-    return synthesis.trim() || 'User intent extracted from conversation.'
-  } catch (error) {
-    console.error('[generateSyntheticContext] Failed to generate synthetic context:', error)
-    // Fallback: return a simple summary of user messages
-    return `User intent: ${userMessages.slice(0, 1000)}${userMessages.length > 1000 ? '...' : ''}`
-  }
+  return transcript.trim() || null
 }

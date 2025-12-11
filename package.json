@@ -8,6 +8,7 @@
     "test:chat": "vitest run tests/integration/chat.test.ts tests/e2e/chat-codex.test.ts",
     "test:chat-manual": "pnpm dlx tsx tests/manual/chat-runner.ts",
     "test:chat-custom": "pnpm dlx tsx tests/manual/chat-runner.ts custom",
+    "test:org": "pnpm dlx tsx tests/manual/organization-test.ts",
     "coverage": "vitest run --coverage",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

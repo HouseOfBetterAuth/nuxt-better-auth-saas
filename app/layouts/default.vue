@@ -6,14 +6,8 @@ import OnboardingModal from '~/components/OnboardingModal.vue'
 import SidebarNavigation from '~/components/SidebarNavigation.vue'
 import UserNavigation from '~/components/UserNavigation.vue'
 
-const { needsOnboarding, showOnboarding } = useOnboarding()
 const { t } = useI18n()
 const localePath = useLocalePath()
-
-watch(() => needsOnboarding.value, (needs) => {
-  if (needs)
-    showOnboarding()
-}, { immediate: true })
 
 const i18nHead = useLocaleHead()
 const route = useRoute()
@@ -80,7 +74,7 @@ const primaryActionColor = computed(() => {
 </script>
 
 <template>
-  <div>
+  <div class="relative">
     <UDashboardGroup
       storage-key="dashboard-sidebar"
       storage="localStorage"

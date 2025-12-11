@@ -55,38 +55,44 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     return
   loading.value = true
   loadingAction.value = 'submit'
-  const { error, data } = await auth.signIn.email({
-    email: event.data.email,
-    password: event.data.password,
-    rememberMe: event.data.rememberMe,
-    callbackURL: redirectTo.value
-  })
-  if (error) {
-    if (error.code === auth.errorCodes.EMAIL_NOT_VERIFIED) {
-      unverifiedEmail = event.data.email
-      isEmailVerifyModalOpen.value = true
-      loading.value = false
+
+  try {
+    const { error, data } = await auth.signIn.email({
+      email: event.data.email,
+      password: event.data.password,
+      rememberMe: event.data.rememberMe,
+      callbackURL: redirectTo.value
+    })
+
+    if (error) {
+      if (error.code === auth.errorCodes.EMAIL_NOT_VERIFIED) {
+        unverifiedEmail = event.data.email
+        isEmailVerifyModalOpen.value = true
+        return
+      }
+      toast.add({
+        title: error.message,
+        color: 'error'
+      })
       return
     }
-    toast.add({
-      title: error.message,
-      color: 'error'
-    })
-    loading.value = false
-    return
-  }
-  // On success, Better Auth should redirect via callbackURL, but if it doesn't,
-  // we need to handle it client-side. The middleware will also redirect if we're on a guest-only page.
-  if (data && !error) {
-    // Refresh session and let middleware handle redirect
-    await auth.fetchSession()
-    // If still on signin page after a moment, navigate manually
-    await nextTick()
-    if (import.meta.client && window.location.pathname.includes('/signin')) {
+
+    if (data && !error) {
+      await auth.fetchSession()
+      await nextTick()
+      // Always navigate after a successful sign-in to avoid getting stuck on the guest page
       await navigateTo(redirectTo.value)
     }
+  } catch (err: any) {
+    console.error('[signin] Failed to sign in:', err)
+    toast.add({
+      title: err?.message || t('signIn.errors.invalidEmail'),
+      color: 'error'
+    })
+  } finally {
+    loading.value = false
+    loadingAction.value = ''
   }
-  loading.value = false
 }
 
 async function handleResendEmail() {

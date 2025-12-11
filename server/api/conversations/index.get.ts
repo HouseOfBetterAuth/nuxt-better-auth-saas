@@ -1,7 +1,6 @@
 import { desc, eq, inArray, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/database/schema'
-import { getConversationTitle } from '~~/server/services/conversation/title'
 import { getConversationQuotaUsage, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -96,11 +95,11 @@ export default defineEventHandler(async (event) => {
     title: string
     row_num: number
   }>(sql`
-    SELECT 
+    SELECT
       conversation_id,
       title,
       ROW_NUMBER() OVER (
-        PARTITION BY conversation_id 
+        PARTITION BY conversation_id
         ORDER BY updated_at DESC
       ) as row_num
     FROM ${schema.content}
@@ -119,11 +118,11 @@ export default defineEventHandler(async (event) => {
     content: string
     row_num: number
   }>(sql`
-    SELECT 
+    SELECT
       conversation_id,
       content,
       ROW_NUMBER() OVER (
-        PARTITION BY conversation_id 
+        PARTITION BY conversation_id
         ORDER BY created_at DESC
       ) as row_num
     FROM ${schema.conversationMessage}
@@ -143,7 +142,7 @@ export default defineEventHandler(async (event) => {
       const artifactCount = artifactCounts.get(conv.id) || 0
       const recentArtifactTitle = recentArtifacts.get(conv.id) || null
       const lastMessage = lastMessages.get(conv.id) || null
-      const title = getConversationTitle(conv, recentArtifactTitle)
+      const title = conv.metadata?.title || 'Untitled conversation'
 
       return {
         id: conv.id,

@@ -1,6 +1,8 @@
+import type { ChatCompletionMessage } from '../server/utils/aiGateway'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as schema from '../server/database/schema'
 import * as chunking from '../server/services/content/generation/chunking'
+import { buildConversationContext } from '../server/services/content/generation/context'
 import * as contentGeneration from '../server/services/content/generation/index'
 
 // Mocks
@@ -25,15 +27,6 @@ const mockDb = {
   set: vi.fn().mockReturnThis(),
   transaction: vi.fn().mockImplementation(async cb => cb(mockDb))
 } as any
-
-// Mock content generation context helper
-vi.mock('../server/services/content/generation/context', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../server/services/content/generation/context')>()
-  return {
-    ...actual,
-    generateSyntheticContext: vi.fn().mockResolvedValue('Synthesized user intent from conversation.')
-  }
-})
 
 // Mock content utils to avoid complex validation/logic
 vi.mock('../server/utils/content', async (importOriginal) => {
@@ -98,7 +91,8 @@ describe('rag integration & chat context', () => {
   })
 
   it('should persist chat context as SourceContent when generating draft', async () => {
-    const conversationContext = 'Synthesized user intent from conversation.'
+    const conversationHistory: ChatCompletionMessage[] = [{ role: 'user', content: 'I want cookies' }]
+    const conversationContext = buildConversationContext(conversationHistory) ?? ''
 
     // Mock successful insert of source content
     mockDb.returning.mockResolvedValueOnce([{
@@ -126,7 +120,7 @@ describe('rag integration & chat context', () => {
       userId,
       sourceText: '', // Empty source text
       // Provide history to trigger conversation mode
-      conversationHistory: [{ role: 'user', content: 'I want cookies' }],
+      conversationHistory,
       mode: 'agent',
       overrides: { contentType: 'blog_post' }
     })

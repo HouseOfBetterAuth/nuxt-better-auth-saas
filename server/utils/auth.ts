@@ -11,6 +11,7 @@ import { appendResponseHeader, createError, getRequestHeaders } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import { ac, admin, member, owner } from '../../shared/utils/permissions'
 import * as schema from '../database/schema'
+import { ensureDefaultOrganizationForUser, setUserActiveOrganization } from '../services/organization/provision'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
 import { cacheClient, resendInstance } from './drivers'
@@ -142,11 +143,6 @@ export const createBetterAuth = () => betterAuth({
       }
     },
     additionalFields: {
-      lastActiveOrganizationId: {
-        type: 'string',
-        required: false,
-        defaultValue: null
-      },
       referralCode: {
         type: 'string',
         required: false
@@ -178,6 +174,7 @@ export const createBetterAuth = () => betterAuth({
           // This ensures they always have a valid organization context
           if (user.isAnonymous) {
             const db = getDB()
+            let anonymousOrgId: string | null = null
             try {
               await db.transaction(async (tx) => {
                 const [newOrg] = await tx
@@ -196,6 +193,7 @@ export const createBetterAuth = () => betterAuth({
                 if (!newOrg)
                   return
 
+                anonymousOrgId = newOrg.id
                 await tx.insert(schema.member).values({
                   id: uuidv7(),
                   userId: user.id,
@@ -204,16 +202,19 @@ export const createBetterAuth = () => betterAuth({
                   createdAt: new Date()
                 })
 
-                await tx
-                  .update(schema.user)
-                  .set({ lastActiveOrganizationId: newOrg.id })
-                  .where(eq(schema.user.id, user.id))
+                // Organization is now managed by Better Auth's organization plugin
               })
             } catch (error) {
               console.error('[Auth] Failed to create anonymous organization - aborting user creation:', error)
               // Rethrow to prevent user from being created without a valid organization
               throw new Error('Failed to provision anonymous workspace', { cause: error })
             }
+
+            if (anonymousOrgId) {
+              await setUserActiveOrganization(user.id, anonymousOrgId)
+            }
+          } else {
+            await ensureDefaultOrganizationForUser(user)
           }
         }
       },
@@ -304,146 +305,62 @@ export const createBetterAuth = () => betterAuth({
         }
       }
     },
-    session: {
+    member: {
       create: {
-        before: async (session) => {
-          const db = getDB()
-
-          // 1. Try to get user's last active org
-          // With the refactor, anonymous users will already have this set by user.create.after
-          const users = await db
-            .select()
-            .from(schema.user)
-            .where(eq(schema.user.id, session.userId))
-            .limit(1)
-
-          if (users.length === 0)
-            return
-
-          let activeOrgId = users[0]?.lastActiveOrganizationId
-
-          // 2. Verify user is still a member of that org
-          if (activeOrgId) {
-            const member = await db
-              .select()
-              .from(schema.member)
-              .where(and(
-                eq(schema.member.userId, session.userId),
-                eq(schema.member.organizationId, activeOrgId)
-              ))
-              .limit(1)
-
-            if (member.length === 0)
-              activeOrgId = null
-          }
-
-          // 3. Fallback to first organization
-          if (!activeOrgId) {
-            const members = await db
-              .select()
-              .from(schema.member)
-              .where(eq(schema.member.userId, session.userId))
-              .limit(1)
-
-            const firstMember = members[0]
-            if (firstMember)
-              activeOrgId = firstMember.organizationId
-          }
-
-          if (activeOrgId) {
-            return {
-              data: {
-                ...session,
-                activeOrganizationId: activeOrgId
-              }
+        before: async (member: Record<string, any>) => {
+          // Validate user exists before creating member
+          // This prevents foreign key violations if user was deleted but session still exists
+          if (member.userId) {
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Auth] member.create.before hook called for userId:', member.userId)
             }
-          }
-        },
-        after: async (session) => {
-          // Ensure activeOrganizationId is persisted to the database
-          const activeOrgId = (session as any).activeOrganizationId
-          if (activeOrgId) {
             const db = getDB()
-            try {
-              await db
-                .update(schema.session)
-                .set({ activeOrganizationId: activeOrgId })
-                .where(eq(schema.session.id, session.id))
+            const user = await db.query.user.findFirst({
+              where: eq(schema.user.id, member.userId)
+            })
 
-              // Keep user preference in sync
-              await db
-                .update(schema.user)
-                .set({ lastActiveOrganizationId: activeOrgId })
-                .where(eq(schema.user.id, session.userId))
-            } catch (error) {
-              // Non-critical, just logging
-              console.error('[Auth] Failed to sync activeOrganizationId:', error)
+            if (!user) {
+              console.error('[Auth] Cannot create member: user does not exist:', member.userId)
+              // Throw error - database hooks can throw to prevent the operation
+              throw new APIError('INVALID_SESSION', {
+                message: 'Invalid session: user not found. Please sign in again.'
+              })
+            }
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Auth] User validated, allowing member creation')
             }
           }
-        }
-      },
-      update: {
-        after: async (session) => {
-          const activeOrgId = (session as any).activeOrganizationId
-          if (activeOrgId) {
-            await getDB()
-              .update(schema.user)
-              .set({ lastActiveOrganizationId: activeOrgId })
-              .where(eq(schema.user.id, session.userId))
-          }
+          // Return undefined to continue with default behavior
+          return undefined
         }
       }
     },
     organization: {
       create: {
         before: async (org: Record<string, any>, ctx: any) => {
-          const session = ctx.session || ctx.context?.session
-          if (session?.user?.id) {
-            const db = getDB()
-            const user = await db.query.user.findFirst({
-              where: eq(schema.user.id, session.user.id)
-            })
-            if (user?.referralCode) {
-              return {
-                data: {
-                  ...org,
-                  referralCode: user.referralCode
+          try {
+            const session = ctx.session || ctx.context?.session
+            if (session?.user?.id) {
+              const db = getDB()
+              const user = await db.query.user.findFirst({
+                where: eq(schema.user.id, session.user.id)
+              })
+
+              if (user?.referralCode) {
+                return {
+                  data: {
+                    ...org,
+                    referralCode: user.referralCode
+                  }
                 }
               }
             }
+          } catch (error) {
+            console.error('[Auth] Error in organization.create.before hook:', error)
+            // Don't block organization creation if referral code lookup fails
           }
-        }
-      },
-      update: {
-        before: async (org: any) => {
-          // Only log in development
-          if (runtimeConfig.public.appEnv === 'development') {
-            console.log('[Auth Hook] Organization Update Payload:', JSON.stringify(org, null, 2))
-          }
-        }
-      }
-    },
-    member: {
-      create: {
-        after: async (_member: any) => {
-          // await syncSubscriptionQuantity(member.organizationId)
-        }
-      },
-      delete: {
-        after: async (_member: any) => {
-          // await syncSubscriptionQuantity(member.organizationId)
-        }
-      }
-    },
-    invitation: {
-      create: {
-        after: async (_invitation: any) => {
-          // await syncSubscriptionQuantity(invitation.organizationId)
-        }
-      },
-      delete: {
-        after: async (_invitation: any) => {
-          // await syncSubscriptionQuantity(invitation.organizationId)
+          // Return undefined to continue with default behavior
+          return undefined
         }
       }
     },
@@ -701,6 +618,17 @@ export const createBetterAuth = () => betterAuth({
             status: 'success'
           })
         }
+      }
+
+      const sessionUser = ctx.context.newSession?.user || ctx.context.session?.user
+      const shouldEnsureOrganization = Boolean(sessionUser) && !sessionUser.isAnonymous && (
+        Boolean(ctx.context.newSession)
+        || ctx.path.startsWith('/organization/delete')
+        || ctx.path.startsWith('/organization/leave')
+      )
+
+      if (shouldEnsureOrganization) {
+        await ensureDefaultOrganizationForUser(sessionUser)
       }
     })
   },

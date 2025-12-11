@@ -1,4 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { ConversationIntentSnapshot } from '~~/shared/utils/intent'
 import type {
   ContentGenerationInput,
   ContentGenerationResult,
@@ -29,8 +30,8 @@ import {
   findGlobalRelevantChunks
 } from './chunking'
 import {
-  determineGenerationMode,
-  generateSyntheticContext
+  buildConversationContext,
+  determineGenerationMode
 } from './context'
 import {
   createFrontmatterFromOutline,
@@ -49,6 +50,40 @@ import {
   isValidContentFrontmatter,
   parseAIResponseAsJSON
 } from './utils'
+
+function formatIntentSummary(snapshot?: ConversationIntentSnapshot | null): string | null {
+  if (!snapshot) {
+    return null
+  }
+
+  const { fields, notes } = snapshot
+  const lines: string[] = []
+
+  const append = (label: string, value: string | null | undefined) => {
+    const normalized = typeof value === 'string' ? value.trim() : ''
+    if (normalized) {
+      lines.push(`${label}: ${normalized}`)
+    }
+  }
+
+  append('Topic', fields.topic.value)
+  append('Goal', fields.goal.value)
+  append('Audience', fields.audience.value)
+  append('Format', fields.format.value)
+  append('Tone', fields.tone.value)
+
+  if (Array.isArray(fields.mustInclude.value) && fields.mustInclude.value.length > 0) {
+    append('Must include', fields.mustInclude.value.join('; '))
+  }
+
+  if (Array.isArray(fields.constraints.value) && fields.constraints.value.length > 0) {
+    append('Constraints', fields.constraints.value.join('; '))
+  }
+
+  append('Notes', notes ?? null)
+
+  return lines.length ? lines.join('\n') : null
+}
 
 /**
  * Gets Cloudflare Workers waitUntil if available
@@ -139,7 +174,8 @@ export const generateContentDraftFromSource = async (
     systemPrompt,
     temperature,
     mode,
-    event: _event
+    event: _event,
+    intentSnapshot
   } = input
 
   // Enforce agent mode for writes
@@ -222,9 +258,11 @@ export const generateContentDraftFromSource = async (
 
   if (generationMode === 'conversation' || generationMode === 'hybrid') {
     if (conversationHistory && conversationHistory.length > 0) {
-      conversationContext = await generateSyntheticContext(conversationHistory)
+      conversationContext = buildConversationContext(conversationHistory)
     }
   }
+
+  const intentSummary = formatIntentSummary(intentSnapshot)
 
   // If no sourceText but we have conversation context, use it
   if (!resolvedSourceText && conversationContext) {
@@ -378,7 +416,8 @@ export const generateContentDraftFromSource = async (
     chunks: chunks || [], // Ensure chunks is always an array
     sourceText: resolvedSourceText, // Pass inline sourceText if available
     sourceTitle: sourceContent?.title ?? existingContent?.title ?? null,
-    conversationContext
+    conversationContext,
+    intentSummary
   })
   pipelineStages.push('plan')
 
@@ -408,7 +447,8 @@ export const generateContentDraftFromSource = async (
     organizationId,
     sourceContentId: frontmatter.sourceContentId ?? sourceContent?.id ?? null,
     generationMode,
-    conversationContext
+    conversationContext,
+    intentSummary
   })
   pipelineStages.push('sections')
 

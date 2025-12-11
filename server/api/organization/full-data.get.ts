@@ -55,11 +55,19 @@ export default defineEventHandler(async (event) => {
       }
     })
 
+    // If organization doesn't exist (e.g., was deleted), return null org
+    // Better Auth will handle clearing the stale activeOrganizationId
     if (!org) {
-      throw createError({
-        statusCode: 404,
-        message: 'Organization not found'
-      })
+      return {
+        organization: null,
+        subscriptions: [],
+        needsUpgrade: false,
+        user: {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name
+        }
+      }
     }
 
     // Verify that the current user is a member of this organization

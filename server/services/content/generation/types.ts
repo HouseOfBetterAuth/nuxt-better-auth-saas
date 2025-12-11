@@ -4,6 +4,7 @@ import type * as schema from '~~/server/database/schema'
 
 import type { ChatCompletionMessage } from '~~/server/utils/aiGateway'
 import type { CONTENT_STATUSES, CONTENT_TYPES } from '~~/server/utils/content'
+import type { ConversationIntentSnapshot } from '~~/shared/utils/intent'
 
 export interface ContentGenerationOverrides {
   title?: string | null
@@ -26,6 +27,7 @@ export interface ContentGenerationInput {
   systemPrompt?: string
   temperature?: number
   mode?: 'chat' | 'agent'
+  intentSnapshot?: ConversationIntentSnapshot | null
   onPlanReady?: (details: ContentPlanDetails) => Promise<void> | void
   event?: H3Event | null
 }
