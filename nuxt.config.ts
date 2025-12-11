@@ -20,7 +20,11 @@ const resolveMdcHighlighterPlugin = {
   name: 'resolve-mdc-highlighter',
   resolveId(id: string) {
     if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
-      return id.replace(/node_modules\/\.cache\/nuxt\/\.nuxt/, resolve('.nuxt'))
+      // Replace the .cache path with the actual .nuxt directory
+      // Handle both absolute and relative paths
+      const workspaceRoot = process.cwd()
+      const relativePath = id.replace(/.*node_modules\/\.cache\/nuxt\/\.nuxt/, '.nuxt')
+      return resolve(workspaceRoot, relativePath)
     }
     return null
   }
