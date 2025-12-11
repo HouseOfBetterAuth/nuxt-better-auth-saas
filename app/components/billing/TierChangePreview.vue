@@ -96,6 +96,20 @@ const currentTotal = computed(() => {
 function handleConfirm() {
   emit('confirm')
 }
+
+function formatDate(dateString?: string | null, format: 'long' | 'short' | 'default' = 'default') {
+  if (!dateString)
+    return ''
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime()))
+    return ''
+  const formats: Record<typeof format, Intl.DateTimeFormatOptions> = {
+    long: { month: 'long', day: 'numeric', year: 'numeric' },
+    short: { month: 'short', day: 'numeric', year: 'numeric' },
+    default: { year: 'numeric', month: 'numeric', day: 'numeric' }
+  }
+  return date.toLocaleDateString('en-US', formats[format])
+}
 </script>
 
 <template>
@@ -108,13 +122,14 @@ function handleConfirm() {
       <UIcon
         name="i-lucide-check-circle"
         class="w-12 h-12 text-green-500 mx-auto mb-3"
+        aria-label="Current plan"
       />
       <p class="text-lg font-medium">
         You're already on this plan
       </p>
     </div>
 
-    <template v-else-if="preview">
+    <template v-else-if="preview && preview.newPlan">
       <!-- Plan Comparison -->
       <div class="grid grid-cols-2 gap-4">
         <!-- Current Plan -->
@@ -155,6 +170,7 @@ function handleConfirm() {
         <UIcon
           name="i-lucide-arrow-up-circle"
           class="w-5 h-5"
+          aria-label="Upgrade indicator"
         />
         <span class="font-medium">Upgrade</span>
       </div>
@@ -167,6 +183,7 @@ function handleConfirm() {
         <UIcon
           name="i-lucide-arrow-down-circle"
           class="w-5 h-5"
+          aria-label="Downgrade indicator"
         />
         <span class="font-medium">{{ preview.isScheduledDowngrade ? 'Scheduled Downgrade' : 'Downgrade' }}</span>
       </div>
@@ -181,6 +198,7 @@ function handleConfirm() {
           <UIcon
             name="i-lucide-check-circle"
             class="w-5 h-5 text-green-600 dark:text-green-400"
+            aria-hidden="true"
           />
           <span class="font-medium text-green-700 dark:text-green-300">No payment required</span>
         </div>
@@ -191,14 +209,15 @@ function handleConfirm() {
             <UIcon
               name="i-lucide-calendar"
               class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5"
+              aria-hidden="true"
             />
             <div class="flex-1">
               <p class="font-medium text-blue-900 dark:text-blue-100 text-sm">
-                Plan changes on {{ preview.periodEnd ? new Date(preview.periodEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'your next billing date' }}
+                Plan changes on {{ formatDate(preview.periodEnd, 'long') || 'your next billing date' }}
               </p>
               <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">
                 You'll keep {{ preview.currentPlan?.tierName }} features until then.
-                <span v-if="preview.periodEnd">On <strong>{{ new Date(preview.periodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</strong>, you'll</span>
+                <span v-if="preview.periodEnd">On <strong>{{ formatDate(preview.periodEnd, 'short') }}</strong>, you'll</span>
                 <span v-else>You'll</span>
                 be charged <strong>${{ newTotal.toFixed(2) }}/{{ intervalLabel(preview.newPlan.interval) }}</strong> for {{ preview.newPlan.tierName }}.
               </p>
@@ -216,6 +235,7 @@ function handleConfirm() {
           <UIcon
             name="i-lucide-info"
             class="w-5 h-5 text-blue-500 mt-0.5"
+            aria-hidden="true"
           />
           <div>
             <p class="font-medium text-blue-900 dark:text-blue-100">
@@ -263,13 +283,14 @@ function handleConfirm() {
 
         <!-- All plan downgrades are now scheduled at end of billing cycle -->
         <div
-          v-if="preview.isDowngrade && preview.proration.amountDue && preview.proration.amountDue > 0"
+          v-if="preview.isUpgrade && preview.proration.amountDue && preview.proration.amountDue > 0"
           class="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
         >
           <div class="flex items-start gap-3">
             <UIcon
               name="i-lucide-credit-card"
               class="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5"
+              aria-hidden="true"
             />
             <div class="flex-1">
               <p class="text-sm text-amber-700 dark:text-amber-300">
@@ -325,6 +346,7 @@ function handleConfirm() {
         <UIcon
           :name="cardIcon"
           class="w-5 h-5"
+          aria-hidden="true"
         />
         <span>{{ cardBrandDisplay }} ending in {{ preview.paymentMethod.last4 }} will be charged</span>
       </div>
@@ -336,7 +358,7 @@ function handleConfirm() {
       >
         <div class="flex justify-between">
           <span>Next billing date:</span>
-          <strong>{{ new Date(preview.periodEnd).toLocaleDateString() }}</strong>
+          <strong>{{ formatDate(preview.periodEnd, 'default') }}</strong>
         </div>
       </div>
     </template>

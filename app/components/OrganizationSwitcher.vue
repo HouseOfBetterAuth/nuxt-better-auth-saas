@@ -76,10 +76,10 @@ const _canManageTeam = computed(() => {
 // Get the tier display name from the subscription plan
 const tierBadgeLabel = computed(() => {
   if (!activeStripeSubscription.value?.plan)
-    return 'Pro'
+    return 'Free'
   const tierKey = getPlanKeyFromId(activeStripeSubscription.value.plan)
   if (tierKey === 'free')
-    return 'Pro' // Fallback
+    return 'Free'
   return PLAN_TIERS[tierKey]?.name || 'Pro'
 })
 

@@ -1,2 +1,0 @@
-ALTER TABLE "file" ADD COLUMN "content_id" uuid;--> statement-breakpoint
-ALTER TABLE "file" ADD CONSTRAINT "file_content_id_content_id_fk" FOREIGN KEY ("content_id") REFERENCES "public"."content"("id") ON DELETE set null ON UPDATE no action;

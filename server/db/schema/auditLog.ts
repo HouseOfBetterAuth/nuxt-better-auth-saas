@@ -12,5 +12,5 @@ export const auditLog = pgTable('audit_log', {
   userAgent: text('user_agent'),
   status: text('status').notNull().default('success'), // e.g., 'success', 'failure', 'pending'
   details: text('details'), // Additional details or error messages
-  createdAt: timestamp('created_at').notNull().$default(() => new Date())
+  createdAt: timestamp('created_at').notNull().defaultNow()
 })

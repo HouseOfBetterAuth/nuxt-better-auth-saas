@@ -17,19 +17,18 @@ export default defineNuxtConfig({
     ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
     ...(process.env.NUXT_NITRO_PRESET !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
+  mdc: {
+    highlight: {
+      server: false
+    }
+  },
   ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
     ? {
         hub: {
           db: 'postgresql',
-          workers: true,
           kv: true,
-          blob: true,
-          bindings: {
-            hyperdrive: {
-              HYPERDRIVE: process.env.NUXT_CF_HYPERDRIVE_ID as string
-            }
-          }
-        } as any
+          blob: true
+        }
       }
     : {}),
   i18n: {
@@ -131,7 +130,26 @@ export default defineNuxtConfig({
         }
       : {}),
     rollupConfig: {
-      external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined
+      external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined,
+      ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+        ? {
+            plugins: (existingPlugins: any[]) => {
+              return [
+                ...existingPlugins,
+                {
+                  name: 'resolve-mdc-highlighter',
+                  resolveId(id: string) {
+                    if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
+                      // Resolve to the actual .nuxt directory instead of cache
+                      return id.replace(/node_modules\/\.cache\/nuxt\/\.nuxt/, resolve('.nuxt'))
+                    }
+                    return null
+                  }
+                }
+              ]
+            }
+          }
+        : {})
     },
     esbuild: {
       options: {

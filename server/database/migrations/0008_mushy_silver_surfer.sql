@@ -1,3 +1,0 @@
--- Migration 0008: Empty migration to maintain sequence
--- This migration was missing and causing migration failures
--- No changes needed for this migration

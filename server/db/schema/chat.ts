@@ -5,6 +5,8 @@ import { organization, user } from './auth'
 import { sourceContent } from './sourceContent'
 
 export const conversationStatusEnum = pgEnum('conversation_status', ['active', 'archived', 'completed'])
+export const conversationRoleEnum = pgEnum('conversation_role', ['user', 'assistant', 'system', 'function'])
+export const conversationLogTypeEnum = pgEnum('conversation_log_type', ['info', 'warning', 'error', 'debug'])
 
 export const conversation = pgTable('conversation', {
   id: uuid('id').primaryKey().$default(() => uuidv7()),
@@ -35,7 +37,7 @@ export const conversationMessage = pgTable('conversation_message', {
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  role: text('role').notNull(),
+  role: conversationRoleEnum('role').notNull(),
   content: text('content').notNull(),
   payload: jsonb('payload').$type<Record<string, any> | null>().default(null),
   createdAt: timestamp('created_at').defaultNow().notNull()
@@ -53,7 +55,7 @@ export const conversationLog = pgTable('conversation_log', {
   organizationId: text('organization_id')
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
-  type: text('type').default('info').notNull(),
+  type: conversationLogTypeEnum('type').default('info').notNull(),
   message: text('message').notNull(),
   payload: jsonb('payload').$type<Record<string, any> | null>().default(null),
   createdAt: timestamp('created_at').defaultNow().notNull()

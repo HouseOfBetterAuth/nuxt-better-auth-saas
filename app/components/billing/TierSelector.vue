@@ -108,7 +108,7 @@ function getYearlySavings(tierKey: Exclude<PlanKey, 'free'>) {
       >
         <!-- Popular Badge -->
         <div
-          v-if="tier.order === 2"
+          v-if="tier.order === 2 && !isCurrentTier(tier.key)"
           class="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-3 py-1 rounded-full"
         >
           Most Popular

@@ -76,6 +76,12 @@ export default defineEventHandler(async (event) => {
   const localSub = await db.query.subscription.findFirst({
     where: eq(subscriptionTable.stripeSubscriptionId, subscription.id)
   })
+  if (!localSub) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Local subscription record not found'
+    })
+  }
 
   const currentPriceId = subscription.items.data[0].price.id
 
@@ -83,10 +89,17 @@ export default defineEventHandler(async (event) => {
   const currentTierKey = getPlanKeyFromId(localSub?.plan)
   const currentInterval = localSub?.plan?.includes('year') ? 'year' : 'month'
 
+  if (currentTierKey === 'free' && !newTierKey) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Free tier does not support interval changes. Please select a paid plan.'
+    })
+  }
+
   // Determine target tier: use newTierKey if provided, otherwise keep current tier
   const targetTierKey = (newTierKey && PLAN_TIERS[newTierKey as keyof typeof PLAN_TIERS])
     ? newTierKey
-    : (currentTierKey === 'free' ? 'pro' : currentTierKey)
+    : currentTierKey
 
   const newPlan = getTierForInterval(targetTierKey as Exclude<typeof targetTierKey, 'free'>, newInterval)
   const newPriceId = newPlan.priceId
@@ -99,12 +112,19 @@ export default defineEventHandler(async (event) => {
   const currentTier = PLAN_TIERS[currentTierKey as keyof typeof PLAN_TIERS]
   const targetTier = PLAN_TIERS[targetTierKey as keyof typeof PLAN_TIERS]
 
-  const isUpgrade = !currentTier ||
-    (targetTier && targetTier.order > currentTier.order) ||
+  if (!currentTier || !targetTier) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Unable to determine plan tiers'
+    })
+  }
+
+  const isUpgrade =
+    targetTier.order > currentTier.order ||
     (targetTier?.order === currentTier?.order && newInterval === 'year' && currentInterval === 'month')
 
   // For downgrades, schedule at period end instead of immediate
-  const isDowngrade = currentTier && targetTier && (
+  const isDowngrade = (
     targetTier.order < currentTier.order ||
     (targetTier.order === currentTier.order && newInterval === 'month' && currentInterval === 'year')
   )
@@ -139,7 +159,14 @@ export default defineEventHandler(async (event) => {
         end_behavior: 'release' // Release back to regular subscription after schedule completes
       })
 
-      const periodEnd = (subscription as any).current_period_end
+      const periodEnd = subscription.current_period_end
+
+      await db.update(subscriptionTable)
+        .set({
+          plan: newPlan.id
+        })
+        .where(eq(subscriptionTable.stripeSubscriptionId, subscription.id))
+
       return {
         success: true,
         message: 'Plan change scheduled',
@@ -226,12 +253,11 @@ export default defineEventHandler(async (event) => {
     await sendSubscriptionUpdatedEmail(organizationId, updatedSub, undefined, undefined, previousInterval, newIntervalLabel)
   }
 
-  const actionMessage = isDowngrade ? 'Plan downgraded' : 'Plan upgraded'
   return {
     success: true,
-    message: actionMessage,
+    message: 'Plan upgraded',
     newPlan: newPlan.id,
-    isUpgrade,
-    isDowngrade
+    isUpgrade: true,
+    isDowngrade: false
   }
 })

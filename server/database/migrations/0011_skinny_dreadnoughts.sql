@@ -1,1 +1,0 @@
-ALTER TABLE "conversation" ADD COLUMN "title" text DEFAULT 'Untitled conversation';

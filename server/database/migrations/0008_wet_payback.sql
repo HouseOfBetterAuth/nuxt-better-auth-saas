@@ -1,1 +1,0 @@
-ALTER TABLE "content" ADD COLUMN "archived_at" timestamp;

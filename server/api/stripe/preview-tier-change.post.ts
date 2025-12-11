@@ -50,13 +50,21 @@ export default defineEventHandler(async (event) => {
   // Get current subscription
   const subscriptions = await stripe.subscriptions.list({
     customer: org.stripeCustomerId,
-    limit: 1,
-    status: 'all'
+    limit: 10,
+    status: 'active'
   })
 
-  const subscription = subscriptions.data.find(sub =>
-    sub.status === 'active' || sub.status === 'trialing'
-  )
+  let subscription = subscriptions.data[0]
+
+  // If no active subscriptions, check for trialing ones
+  if (!subscription) {
+    const trialingSubs = await stripe.subscriptions.list({
+      customer: org.stripeCustomerId,
+      limit: 1,
+      status: 'trialing'
+    })
+    subscription = trialingSubs.data[0]
+  }
 
   if (!subscription) {
     throw createError({ statusCode: 400, statusMessage: 'No active subscription found' })
@@ -69,6 +77,9 @@ export default defineEventHandler(async (event) => {
 
   // Find which plan this price belongs to using Stripe price ID
   const stripePlanInfo = getPlanByStripePriceId(stripePriceId)
+  if (!stripePlanInfo) {
+    console.warn('[preview-tier-change] Unknown Stripe price ID:', stripePriceId)
+  }
   const stripeTierKey = stripePlanInfo?.tierKey || 'pro'
 
   // Also get local sub for reference
@@ -340,7 +351,8 @@ export default defineEventHandler(async (event) => {
       proration: {
         credit: creditAmount,
         charge: chargeAmount,
-        netAmount: immediateCharge,
+        netAmount,
+        immediateCharge,
         amountDue: isUpgrade ? immediateCharge : 0,
         effectiveDate: new Date().toISOString()
       },

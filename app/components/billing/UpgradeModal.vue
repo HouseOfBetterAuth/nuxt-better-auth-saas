@@ -25,7 +25,9 @@ const { isPaymentFailed: hasPastDueSubscription, hasUsedTrial, organizationId } 
 
 // Get all available tiers sorted by order
 const availableTiers = computed(() => {
-  return Object.values(PLAN_TIERS).sort((a, b) => a.order - b.order)
+  return Object.values(PLAN_TIERS)
+    .filter(tier => tier.key !== 'free')
+    .sort((a, b) => a.order - b.order)
 })
 
 // Get the selected plan config

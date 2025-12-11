@@ -31,7 +31,9 @@ export default defineEventHandler(async (event) => {
         price: tier.yearly.price,
         seatPrice: tier.yearly.seatPrice,
         // Calculate savings percentage
-        savingsPercent: Math.round((1 - (tier.yearly.price / (tier.monthly.price * 12))) * 100)
+        savingsPercent: tier.monthly.price > 0
+          ? Math.max(0, Math.round((1 - (tier.yearly.price / (tier.monthly.price * 12))) * 100))
+          : 0
       }
     }
   }))

@@ -78,18 +78,10 @@ export default defineEventHandler(async (event) => {
     // Find the correct plan config to support Legacy Pricing
     // We must check the LOCAL database to see which Plan Version (V1, V2, V3) the user is on,
     // because they might share the same Stripe Price ID.
-    const localSub = await db.query.subscription.findFirst({
-      where: eq(subscriptionTable.stripeSubscriptionId, subscription.id)
-    })
-
-    console.log('[preview-seat-change] Trial - localSub.plan:', localSub?.plan)
-
-    // Get user's current tier and find pricing
-    const tierKey = getPlanKeyFromId(localSub?.plan)
-    const effectiveTierKey = (tierKey === 'free' ? 'pro' : tierKey) as Exclude<typeof tierKey, 'free'>
-    const planConfig = getTierForInterval(effectiveTierKey, interval as 'month' | 'year')
-
-    console.log('[preview-seat-change] Trial - tierKey:', tierKey, 'planConfig:', planConfig)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[preview-seat-change] Trial - processing tier resolution')
+    }
+    const planConfig = await resolveTierConfig(db, subscription.id, interval as 'month' | 'year')
 
     // Calculate total: Base Price + (Additional Seats * Seat Price)
     // Base Plan covers 1st seat. Additional seats = seats - 1.
@@ -98,23 +90,12 @@ export default defineEventHandler(async (event) => {
     const totalCents = Math.round((planConfig.price + (additionalSeats * planConfig.seatPrice)) * 100)
 
     // Get payment method info for trial subscriptions too
-    let paymentMethod = null
-    if (subscription.default_payment_method) {
-      try {
-        const pm = await stripe.paymentMethods.retrieve(subscription.default_payment_method as string)
-        if (pm.card) {
-          paymentMethod = {
-            type: 'card',
-            brand: pm.card.brand,
-            last4: pm.card.last4,
-            expMonth: pm.card.exp_month,
-            expYear: pm.card.exp_year
-          }
-        }
-      } catch (e) {
-        console.warn('[preview-seat-change] Could not fetch payment method:', e)
-      }
-    }
+    const paymentMethod = await getPaymentMethodInfo(
+      stripe,
+      typeof subscription.default_payment_method === 'string'
+        ? subscription.default_payment_method
+        : subscription.default_payment_method?.id || null
+    )
 
     return {
       amountDue: totalCents,
@@ -130,19 +111,10 @@ export default defineEventHandler(async (event) => {
   let newPriceId
   if (newInterval) {
     // Get user's current tier
-    const localSub = await db.query.subscription.findFirst({
-      where: eq(subscriptionTable.stripeSubscriptionId, subscription.id)
-    })
-    console.log('[preview-seat-change] Local sub:', { plan: localSub?.plan, stripeSubId: subscription.id })
-
-    const tierKey = getPlanKeyFromId(localSub?.plan)
-    console.log('[preview-seat-change] Tier key:', tierKey, 'from plan:', localSub?.plan)
-
-    const effectiveTierKey = (tierKey === 'free' ? 'pro' : tierKey) as Exclude<typeof tierKey, 'free'>
-    console.log('[preview-seat-change] Effective tier:', effectiveTierKey, 'interval:', newInterval)
-
-    const planConfig = getTierForInterval(effectiveTierKey, newInterval as 'month' | 'year')
-    console.log('[preview-seat-change] Plan config:', planConfig)
+    const planConfig = await resolveTierConfig(db, subscription.id, newInterval as 'month' | 'year')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[preview-seat-change] Plan config resolved for interval update')
+    }
 
     newPriceId = planConfig.priceId
   }
@@ -213,31 +185,19 @@ export default defineEventHandler(async (event) => {
   }
 
   // Get payment method info
-  let paymentMethod = null
-  if (subscription.default_payment_method) {
-    try {
-      const pm = await stripe.paymentMethods.retrieve(subscription.default_payment_method as string)
-      if (pm.card) {
-        paymentMethod = {
-          type: 'card',
-          brand: pm.card.brand,
-          last4: pm.card.last4,
-          expMonth: pm.card.exp_month,
-          expYear: pm.card.exp_year
-        }
-      }
-    } catch (e) {
-      console.warn('[preview-seat-change] Could not fetch payment method:', e)
-    }
+  const paymentMethod = await getPaymentMethodInfo(
+    stripe,
+    typeof subscription.default_payment_method === 'string'
+      ? subscription.default_payment_method
+      : subscription.default_payment_method?.id || null
+  )
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[preview-seat-change] Preview calculation complete')
   }
 
-  console.log('[preview-seat-change] Final preview:', {
-    isDowngrade,
-    amountDue: upcomingInvoice.amount_due,
-    periodEnd
-  })
-
   return {
+    // For downgrades, show $0 due now since credits are applied to future invoices
     amountDue: isDowngrade ? 0 : upcomingInvoice.amount_due,
     total: upcomingInvoice.total,
     subtotal: upcomingInvoice.subtotal,
@@ -248,3 +208,49 @@ export default defineEventHandler(async (event) => {
     isDowngrade
   }
 })
+
+async function getPaymentMethodInfo(stripe: ReturnType<typeof createStripeClient>, paymentMethodId: string | null) {
+  if (!paymentMethodId) {
+    return null
+  }
+
+  try {
+    const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+    if (pm.card) {
+      return {
+        type: 'card' as const,
+        brand: pm.card.brand,
+        last4: pm.card.last4,
+        expMonth: pm.card.exp_month,
+        expYear: pm.card.exp_year
+      }
+    }
+  } catch (e: any) {
+    console.warn('[preview-seat-change] Could not fetch payment method:', e?.message || 'Unknown error')
+  }
+
+  return null
+}
+
+async function resolveTierConfig(db: Awaited<ReturnType<typeof useDB>>, stripeSubscriptionId: string, interval: 'month' | 'year') {
+  const localSub = await db.query.subscription.findFirst({
+    where: eq(subscriptionTable.stripeSubscriptionId, stripeSubscriptionId)
+  })
+
+  if (!localSub?.plan) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Subscription plan information not found'
+    })
+  }
+
+  const tierKey = getPlanKeyFromId(localSub.plan)
+  if (!tierKey || tierKey === 'free') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Subscription must have a valid paid tier'
+    })
+  }
+
+  return getTierForInterval(tierKey as Exclude<typeof tierKey, 'free'>, interval)
+}

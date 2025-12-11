@@ -45,7 +45,7 @@ A production-ready Nuxt SaaS starter with authentication, billing, teams, and mo
 - [x] **Referral tracking** — track user and org referrals for attribution
 - [x] **Connected accounts** — link/unlink multiple OAuth providers
 - [x] **Account deletion** — secure deletion with email verification
-- [ ] **More Testing** — I'm sure there are some bugs, will activtly test and make updates.
+- [ ] **More Testing** — I'm sure there are some bugs, will actively test and make updates.
 - [x] **NuxtHub self-hosted** — self-hosted deployment guide (see below)
 - [ ] **Abandoned cart emails** — email users with incomplete subscription status
 - [ ] **Usage-based billing** — metered billing support

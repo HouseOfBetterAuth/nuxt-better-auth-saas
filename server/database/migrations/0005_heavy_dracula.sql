@@ -1,1 +1,0 @@
-ALTER TYPE "public"."ingest_status" ADD VALUE 'processing' BEFORE 'ingested';

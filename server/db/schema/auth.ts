@@ -6,7 +6,8 @@ import {
   integer,
   pgTable,
   text,
-  timestamp
+  timestamp,
+  uniqueIndex
 } from 'drizzle-orm/pg-core'
 
 export const user = pgTable('user', {
@@ -24,8 +25,9 @@ export const user = pgTable('user', {
   banned: boolean('banned').default(false),
   banReason: text('ban_reason'),
   banExpires: timestamp('ban_expires'),
-  lastActiveOrganizationId: text('last_active_organization_id'),
-  referralCode: text('referral_code'),
+  lastActiveOrganizationId: text('last_active_organization_id')
+    .references(() => organization.id, { onDelete: 'set null' }),
+  referralCode: text('referral_code').unique(),
   isAnonymous: boolean('is_anonymous').default(false)
 })
 
@@ -47,10 +49,14 @@ export const account = pgTable(
     password: text('password'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
+      .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull()
   },
-  table => [index('account_userId_idx').on(table.userId)]
+  table => [
+    index('account_userId_idx').on(table.userId),
+    uniqueIndex('account_provider_unique_idx').on(table.providerId, table.accountId)
+  ]
 )
 
 export const verification = pgTable(
@@ -74,7 +80,7 @@ export const organization = pgTable('organization', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   logo: text('logo'),
-  createdAt: timestamp('created_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
   metadata: text('metadata'),
   stripeCustomerId: text('stripe_customer_id'),
   referralCode: text('referral_code')
@@ -91,11 +97,12 @@ export const member = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     role: text('role').default('member').notNull(),
-    createdAt: timestamp('created_at').notNull()
+    createdAt: timestamp('created_at').defaultNow().notNull()
   },
   table => [
     index('member_organizationId_idx').on(table.organizationId),
-    index('member_userId_idx').on(table.userId)
+    index('member_userId_idx').on(table.userId),
+    uniqueIndex('member_unique_idx').on(table.organizationId, table.userId)
   ]
 )
 
@@ -117,7 +124,8 @@ export const invitation = pgTable(
   },
   table => [
     index('invitation_organizationId_idx').on(table.organizationId),
-    index('invitation_email_idx').on(table.email)
+    index('invitation_email_idx').on(table.email),
+    uniqueIndex('invitation_unique_idx').on(table.organizationId, table.email)
   ]
 )
 
@@ -126,7 +134,9 @@ export const subscription = pgTable(
   {
     id: text('id').primaryKey(),
     plan: text('plan').notNull(),
-    referenceId: text('reference_id').notNull(),
+    referenceId: text('reference_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
     status: text('status').default('incomplete'),
@@ -150,14 +160,18 @@ export const session = pgTable(
     id: text('id').primaryKey(),
     expiresAt: timestamp('expires_at').notNull(),
     token: text('token').notNull().unique(),
-    createdAt: timestamp('created_at').notNull(),
-    updatedAt: timestamp('updated_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    activeOrganizationId: text('active_organization_id'),
+    activeOrganizationId: text('active_organization_id')
+      .references(() => organization.id, { onDelete: 'set null' }),
     impersonatedBy: text('impersonated_by')
   },
   table => [index('session_user_id_idx').on(table.userId)]
@@ -183,8 +197,11 @@ export const apiKey = pgTable('apiKey', {
   remaining: integer('remaining'),
   lastRequest: timestamp('last_request'),
   expiresAt: timestamp('expires_at'),
-  createdAt: timestamp('created_at').notNull(),
-  updatedAt: timestamp('updated_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at')
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
   permissions: text('permissions'),
   metadata: text('metadata')
 })
@@ -195,6 +212,13 @@ export const userRelations = relations(user, ({ many }) => ({
   invitations: many(invitation),
   sessions: many(session),
   apiKeys: many(apiKey)
+}))
+
+export const apiKeyRelations = relations(apiKey, ({ one }) => ({
+  user: one(user, {
+    fields: [apiKey.userId],
+    references: [user.id]
+  })
 }))
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -213,7 +237,8 @@ export const accountRelations = relations(account, ({ one }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
-  invitations: many(invitation)
+  invitations: many(invitation),
+  subscriptions: many(subscription)
 }))
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -235,5 +260,12 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
   user: one(user, {
     fields: [invitation.inviterId],
     references: [user.id]
+  })
+}))
+
+export const subscriptionRelations = relations(subscription, ({ one }) => ({
+  organization: one(organization, {
+    fields: [subscription.referenceId],
+    references: [organization.id]
   })
 }))
