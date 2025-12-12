@@ -1068,7 +1068,8 @@ const ensureDeviceFingerprintInOrg = async (
       .select({
         id: schema.organization.id,
         slug: schema.organization.slug,
-        metadata: schema.organization.metadata
+        metadata: schema.organization.metadata,
+        deviceFingerprint: schema.organization.deviceFingerprint
       })
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
@@ -1091,16 +1092,23 @@ const ensureDeviceFingerprintInOrg = async (
       }
     }
 
-    if (metadata.deviceFingerprint)
-      return
+    const updates: Record<string, any> = {}
 
-    metadata.deviceFingerprint = deviceFingerprint
+    if (!metadata.deviceFingerprint) {
+      metadata.deviceFingerprint = deviceFingerprint
+      updates.metadata = JSON.stringify(metadata)
+    }
+
+    if (!org.deviceFingerprint) {
+      updates.deviceFingerprint = deviceFingerprint
+    }
+
+    if (Object.keys(updates).length === 0)
+      return
 
     await db
       .update(schema.organization)
-      .set({
-        metadata: JSON.stringify(metadata)
-      })
+      .set(updates)
       .where(eq(schema.organization.id, organizationId))
   } catch (error) {
     // Silently fail - device fingerprint is optional
@@ -1122,6 +1130,51 @@ const buildDeviceFingerprintSearchCondition = (fingerprint: string) => {
       )
     )
   `
+}
+
+const findAnonymousOrganizationIdsForFingerprint = async (
+  db: NodePgDatabase<typeof schema>,
+  fingerprint: string
+) => {
+  if (!fingerprint)
+    return [] as string[]
+
+  const baseConditions = sql`${schema.organization.slug} LIKE 'anonymous-%'`
+
+  const directMatches = await db
+    .select({ id: schema.organization.id })
+    .from(schema.organization)
+    .where(and(
+      eq(schema.organization.deviceFingerprint, fingerprint),
+      baseConditions
+    ))
+
+  if (directMatches.length > 0)
+    return directMatches.map(org => org.id)
+
+  const legacyMatches = await db
+    .select({ id: schema.organization.id })
+    .from(schema.organization)
+    .where(and(
+      buildDeviceFingerprintSearchCondition(fingerprint),
+      baseConditions
+    ))
+
+  if (legacyMatches.length === 0)
+    return []
+
+  const legacyIds = legacyMatches.map(org => org.id)
+
+  try {
+    await db
+      .update(schema.organization)
+      .set({ deviceFingerprint: fingerprint })
+      .where(inArray(schema.organization.id, legacyIds))
+  } catch (error) {
+    console.error('Failed to backfill device fingerprint column:', error)
+  }
+
+  return legacyIds
 }
 
 export const getConversationQuotaUsage = async (
@@ -1148,16 +1201,7 @@ export const getConversationQuotaUsage = async (
   if (profile === 'anonymous' && event) {
     const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
     if (deviceFingerprint) {
-      // Find all anonymous organizations with matching device fingerprint in metadata
-      const anonymousOrgs = await db
-        .select({ id: schema.organization.id })
-        .from(schema.organization)
-        .where(and(
-          buildDeviceFingerprintSearchCondition(deviceFingerprint),
-          sql`${schema.organization.slug} LIKE 'anonymous-%'`
-        ))
-
-      const orgIds = anonymousOrgs.map(org => org.id)
+      const orgIds = await findAnonymousOrganizationIdsForFingerprint(db, deviceFingerprint)
 
       if (orgIds.length > 0) {
         // Count conversations across all anonymous orgs from this device

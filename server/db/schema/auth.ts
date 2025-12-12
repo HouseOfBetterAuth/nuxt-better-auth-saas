@@ -18,8 +18,11 @@ export const organization = pgTable('organization', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   metadata: text('metadata'),
   stripeCustomerId: text('stripe_customer_id'),
-  referralCode: text('referral_code')
-})
+  referralCode: text('referral_code'),
+  deviceFingerprint: text('device_fingerprint')
+}, table => [
+  index('organization_device_fingerprint_idx').on(table.deviceFingerprint)
+])
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
