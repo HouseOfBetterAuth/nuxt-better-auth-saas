@@ -60,7 +60,6 @@ const tierBadgeLabel = computed(() => {
   <template v-else>
     <UButton
       :to="localePath('/signin')"
-      variant="outline"
     >
       {{ t('global.auth.signIn') }}
     </UButton>

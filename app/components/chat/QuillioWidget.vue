@@ -780,8 +780,8 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col py-4 px-4 sm:px-6">
-    <div class="w-full">
+  <div class="w-full h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4">
+    <div class="w-full flex-1 flex flex-col justify-center lg:justify-center">
       <div class="space-y-8">
         <!-- Loading skeleton (shown when loading conversation without cache) -->
         <div
@@ -796,9 +796,9 @@ if (import.meta.client) {
         <!-- Welcome message -->
         <div
           v-if="!messages.length && !conversationId && !isBusy && !promptSubmitting"
-          class="space-y-6 mb-8"
+          class="flex items-center justify-center min-h-[50vh] lg:min-h-0"
         >
-          <h1 class="text-2xl font-semibold text-center">
+          <h1 class="text-2xl sm:text-3xl font-semibold text-center px-4">
             What would you like to write today?
           </h1>
         </div>
@@ -883,48 +883,25 @@ if (import.meta.client) {
         </div>
 
         <!-- Main chat input - always visible -->
-        <div class="w-full space-y-6 mt-8">
-          <div class="w-full flex justify-center">
-            <div class="w-full">
-              <PromptComposer
-                v-model="prompt"
-                placeholder="Paste a transcript or describe what you need..."
-                :disabled="isBusy || promptSubmitting"
-                :status="promptSubmitting ? 'submitted' : uiStatus"
-                @submit="handlePromptSubmit"
-              >
-                <template #footer>
-                  <UTooltip
-                    v-if="!loggedIn"
-                    text="Sign in to unlock agent mode"
-                  >
-                    <USelectMenu
-                      v-model="mode"
-                      :items="[
-                        { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' },
-                        { value: 'agent', label: 'Agent', icon: 'i-lucide-bot', disabled: !loggedIn }
-                      ]"
-                      value-key="value"
-                      option-attribute="label"
-                      variant="ghost"
-                      size="sm"
-                      :searchable="false"
-                    >
-                      <template #leading>
-                        <UIcon
-                          :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
-                          class="w-4 h-4"
-                          :class="{ 'opacity-50': mode === 'agent' && !loggedIn }"
-                        />
-                      </template>
-                    </USelectMenu>
-                  </UTooltip>
+        <div class="w-full flex flex-col justify-center mt-8 lg:mt-4 fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 pb-safe lg:static lg:bg-transparent lg:dark:bg-transparent lg:backdrop-blur-none lg:pb-0">
+          <div class="w-full max-w-3xl mx-auto px-4 py-4 lg:py-0">
+            <PromptComposer
+              v-model="prompt"
+              placeholder="Paste a transcript or describe what you need..."
+              :disabled="isBusy || promptSubmitting"
+              :status="promptSubmitting ? 'submitted' : uiStatus"
+              @submit="handlePromptSubmit"
+            >
+              <template #footer>
+                <UTooltip
+                  v-if="!loggedIn"
+                  text="Sign in to unlock agent mode"
+                >
                   <USelectMenu
-                    v-else
                     v-model="mode"
                     :items="[
                       { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' },
-                      { value: 'agent', label: 'Agent', icon: 'i-lucide-bot' }
+                      { value: 'agent', label: 'Agent', icon: 'i-lucide-bot', disabled: !loggedIn }
                     ]"
                     value-key="value"
                     option-attribute="label"
@@ -936,70 +913,55 @@ if (import.meta.client) {
                       <UIcon
                         :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
                         class="w-4 h-4"
+                        :class="{ 'opacity-50': mode === 'agent' && !loggedIn }"
                       />
                     </template>
                   </USelectMenu>
-                </template>
-              </PromptComposer>
-            </div>
-          </div>
+                </UTooltip>
+                <USelectMenu
+                  v-else
+                  v-model="mode"
+                  :items="[
+                    { value: 'chat', label: 'Chat', icon: 'i-lucide-message-circle' },
+                    { value: 'agent', label: 'Agent', icon: 'i-lucide-bot' }
+                  ]"
+                  value-key="value"
+                  option-attribute="label"
+                  variant="ghost"
+                  size="sm"
+                  :searchable="false"
+                >
+                  <template #leading>
+                    <UIcon
+                      :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
+                      class="w-4 h-4"
+                    />
+                  </template>
+                </USelectMenu>
+              </template>
+            </PromptComposer>
 
-          <!-- What's New Section - Below Input -->
-          <div
-            v-if="!messages.length && !conversationId && !isBusy && !promptSubmitting"
-            class="space-y-4 pt-4"
-          >
-            <div class="flex items-center gap-2 justify-center text-xs font-semibold text-muted-500 uppercase tracking-wider">
-              <UIcon
-                name="i-lucide-sparkles"
-                class="w-3 h-3"
-              />
-              <span>What's new in Quillio</span>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
-              <button
-                type="button"
-                class="text-left p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
+            <!-- Legal Disclaimer - Only for anonymous/guest users, below composer on mobile -->
+            <p
+              v-if="!loggedIn"
+              class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2 lg:hidden"
+            >
+              By messaging Quillio, an AI chatbot, you agree to our
+              <NuxtLink
+                to="/terms"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
               >
-                <div class="flex items-start gap-3">
-                  <div class="p-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary group-hover:bg-primary-100 dark:group-hover:bg-primary-900/30 transition-colors">
-                    <UIcon
-                      name="i-lucide-brain-circuit"
-                      class="w-5 h-5"
-                    />
-                  </div>
-                  <div>
-                    <h3 class="font-medium text-sm">
-                      Deep Reasoning
-                    </h3>
-                    <p class="text-xs text-muted-500 mt-1">
-                      Ask complex questions requiring multi-step analysis.
-                    </p>
-                  </div>
-                </div>
-              </button>
-              <button
-                type="button"
-                class="text-left p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
+                Terms
+              </NuxtLink>
+              and have read our
+              <NuxtLink
+                to="/privacy"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
               >
-                <div class="flex items-start gap-3">
-                  <div class="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors">
-                    <UIcon
-                      name="i-lucide-file-code"
-                      class="w-5 h-5"
-                    />
-                  </div>
-                  <div>
-                    <h3 class="font-medium text-sm">
-                      Artifacts
-                    </h3>
-                    <p class="text-xs text-muted-500 mt-1">
-                      Generate and edit code, documents, and diagrams visually.
-                    </p>
-                  </div>
-                </div>
-              </button>
-            </div>
+                Privacy Policy
+              </NuxtLink>
+              .
+            </p>
           </div>
         </div>
       </div>
