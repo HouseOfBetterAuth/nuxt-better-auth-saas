@@ -44,10 +44,10 @@ interface Props {
   conversationId: string
 }
 
+const props = defineProps<Props>()
+
 const DEFAULT_LIMIT = 20
 const CACHE_TTL_MS = 2 * 60 * 1000
-
-const props = defineProps<Props>()
 const { $fetch } = useNuxtApp()
 
 const createEmptyPagination = (): ArtifactPagination => ({

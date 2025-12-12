@@ -1,16 +1,15 @@
 import type { H3Event } from 'h3'
+import type { ActiveOrgExtras, OwnershipInfo } from '~~/shared/utils/organizationExtras'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
+import {
+  computeNeedsUpgrade,
+  computeUserOwnsMultipleOrgs
+} from '~~/shared/utils/organizationExtras'
 import * as schema from '../db/schema'
 import { setUserActiveOrganization } from '../services/organization/provision'
 import { getAuthSession } from './auth'
 import { getDB } from './db'
-import {
-  computeNeedsUpgrade,
-  computeUserOwnsMultipleOrgs,
-  type ActiveOrgExtras,
-  type OwnershipInfo
-} from '~~/shared/utils/organizationExtras'
 
 interface BetterAuthSession {
   session?: {

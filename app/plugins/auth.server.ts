@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
-import { AUTH_USER_DEFAULTS } from '~/composables/useAuth'
-import { createEmptyActiveOrgExtras } from '~~/shared/utils/organizationExtras'
 import * as schema from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { fetchActiveOrgExtrasForUser, fetchFullOrganizationForSSR } from '~~/server/utils/organization'
+import { createEmptyActiveOrgExtras } from '~~/shared/utils/organizationExtras'
+import { AUTH_USER_DEFAULTS } from '~/composables/useAuth'
 
 export default defineNuxtPlugin({
   name: 'better-auth-ssr-hydration',

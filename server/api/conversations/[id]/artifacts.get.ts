@@ -94,7 +94,7 @@ export default defineEventHandler(async (event) => {
 
   const total = artifactsRaw.length > 0 ? Number(artifactsRaw[0].totalCount ?? 0) : 0
 
-  const artifacts = artifactsRaw.map((row) => ({
+  const artifacts = artifactsRaw.map(row => ({
     id: row.contentId,
     type: 'content_item' as const,
     conversationId: row.conversationId,

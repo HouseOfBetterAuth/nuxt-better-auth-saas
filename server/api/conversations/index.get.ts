@@ -75,11 +75,11 @@ export default defineEventHandler(async (event) => {
 
   const conversationIds = conversations.map(c => c.id)
 
-  type RecentArtifactRow = {
+  interface RecentArtifactRow {
     conversation_id: string
     title: string
   }
-  type LastMessageRow = {
+  interface LastMessageRow {
     conversation_id: string
     content: string
   }
@@ -92,13 +92,13 @@ export default defineEventHandler(async (event) => {
   ] = await Promise.all([
     conversationIds.length
       ? db
-        .select({
-          conversationId: schema.content.conversationId,
-          count: sql<number>`COUNT(*)`.as('count')
-        })
-        .from(schema.content)
-        .where(inArray(schema.content.conversationId, conversationIds))
-        .groupBy(schema.content.conversationId)
+          .select({
+            conversationId: schema.content.conversationId,
+            count: sql<number>`COUNT(*)`.as('count')
+          })
+          .from(schema.content)
+          .where(inArray(schema.content.conversationId, conversationIds))
+          .groupBy(schema.content.conversationId)
       : Promise.resolve([]),
     conversationIds.length
       ? db.execute<RecentArtifactRow>(sql`

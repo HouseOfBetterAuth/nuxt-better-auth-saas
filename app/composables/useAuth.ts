@@ -4,19 +4,18 @@ import type {
   InferSessionFromClient
 } from 'better-auth/client'
 import type { RouteLocationRaw } from 'vue-router'
+import type { ActiveOrgExtras, OwnershipInfo } from '~~/shared/utils/organizationExtras'
+import type { User } from '~~/shared/utils/types'
 import { stripeClient } from '@better-auth/stripe/client'
 import { watchDebounced } from '@vueuse/core'
 import { adminClient, anonymousClient, apiKeyClient, inferAdditionalFields, organizationClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
-import { ac, admin, member, owner } from '~~/shared/utils/permissions'
-import type { User } from '~~/shared/utils/types'
 import {
   computeNeedsUpgrade,
   computeUserOwnsMultipleOrgs,
-  createEmptyActiveOrgExtras,
-  type ActiveOrgExtras,
-  type OwnershipInfo
+  createEmptyActiveOrgExtras
 } from '~~/shared/utils/organizationExtras'
+import { ac, admin, member, owner } from '~~/shared/utils/permissions'
 
 export const AUTH_USER_DEFAULTS: Partial<User> = {
   image: null,

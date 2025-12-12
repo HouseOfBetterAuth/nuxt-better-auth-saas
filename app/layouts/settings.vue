@@ -8,7 +8,7 @@ import { getUserMenus } from '~/layouts/menu'
 const { t } = useI18n()
 const localePath = useLocalePath()
 const route = useRoute()
-const { user, useActiveOrganization, activeOrgExtras, refreshActiveOrganizationExtras } = useAuth()
+const { user, useActiveOrganization, activeOrgExtras } = useAuth()
 const activeOrg = useActiveOrganization()
 
 // Get organization slug from route
