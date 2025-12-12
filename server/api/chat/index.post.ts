@@ -1403,6 +1403,9 @@ export default defineEventHandler(async (event) => {
     try {
       const body = await readBody<ChatRequestBody>(event)
 
+      // Send ping after reading body to show progress
+      writeSSE('ping', { ts: Date.now(), stage: 'body-read' })
+
       validateRequestBody(body)
 
       const VALID_MODES = ['chat', 'agent'] as const
@@ -1424,7 +1427,13 @@ export default defineEventHandler(async (event) => {
 
       const sessionUserIsAnonymous = isAnonymousSessionUser(user)
       flushPing()
+
+      // Send ping before database operations
+      writeSSE('ping', { ts: Date.now(), stage: 'db-connect' })
       const db = await useDB(event)
+
+      // Send ping after database connection
+      writeSSE('ping', { ts: Date.now(), stage: 'db-connected' })
 
       // Block agent mode for anonymous users
       if (mode === 'agent' && sessionUserIsAnonymous) {
