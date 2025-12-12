@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { WorkspaceHeaderState } from '~/components/chat/workspaceHeader'
+import type { ConversationQuotaUsagePayload } from '~/types/conversation'
 import QuillioWidget from '~/components/chat/QuillioWidget.vue'
 import Logo from '~/components/Logo.vue'
 import OnboardingModal from '~/components/OnboardingModal.vue'
@@ -75,14 +76,6 @@ const primaryActionColor = computed(() => {
 })
 
 // Access conversation quota state for mobile header display
-interface ConversationQuotaUsagePayload {
-  limit: number | null
-  used: number | null
-  remaining: number | null
-  label?: string | null
-  unlimited?: boolean
-  profile?: 'anonymous' | 'verified' | 'paid'
-}
 const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 
 // Format quota display for mobile header

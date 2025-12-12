@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
+import type { ConversationQuotaUsagePayload } from '~/types/conversation'
 import { useClipboard, useDebounceFn } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, watch } from 'vue'
 
@@ -110,15 +111,6 @@ const verifiedConversationLimit = computed(() => parseConversationLimitValue((ru
 
 const archivingConversationId = ref<string | null>(null)
 const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
-
-interface ConversationQuotaUsagePayload {
-  limit: number | null
-  used: number | null
-  remaining: number | null
-  label?: string | null
-  unlimited?: boolean
-  profile?: 'anonymous' | 'verified' | 'paid'
-}
 
 interface ConversationListResponse {
   conversations: Array<{
