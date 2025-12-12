@@ -32,6 +32,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
+const localePath = useLocalePath()
 const auth = useAuth()
 const { loggedIn, useActiveOrganization, refreshActiveOrganizationExtras, signIn } = auth
 const activeOrgState = useActiveOrganization()
@@ -942,26 +944,29 @@ if (import.meta.client) {
             </PromptComposer>
 
             <!-- Legal Disclaimer - Only for anonymous/guest users, below composer on mobile -->
-            <p
+            <i18n-t
               v-if="!loggedIn"
+              keypath="legal.chatDisclaimer"
+              tag="p"
               class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2 lg:hidden"
             >
-              By messaging Quillio, an AI chatbot, you agree to our
-              <NuxtLink
-                to="/terms"
-                class="underline hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                Terms
-              </NuxtLink>
-              and have read our
-              <NuxtLink
-                to="/privacy"
-                class="underline hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                Privacy Policy
-              </NuxtLink>
-              .
-            </p>
+              <template #terms>
+                <NuxtLink
+                  :to="localePath('/terms')"
+                  class="underline hover:text-primary-600 dark:hover:text-primary-400"
+                >
+                  {{ t('legal.terms') }}
+                </NuxtLink>
+              </template>
+              <template #privacy>
+                <NuxtLink
+                  :to="localePath('/privacy')"
+                  class="underline hover:text-primary-600 dark:hover:text-primary-400"
+                >
+                  {{ t('legal.privacyPolicy') }}
+                </NuxtLink>
+              </template>
+            </i18n-t>
           </div>
         </div>
       </div>

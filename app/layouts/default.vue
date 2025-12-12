@@ -100,7 +100,7 @@ const quotaDisplay = computed(() => {
   }
 
   if (quota.remaining !== null) {
-    return `${quota.remaining} left`
+    return t('global.quota.left', { remaining: quota.remaining })
   }
 
   return null
@@ -363,23 +363,28 @@ const quotaDisplay = computed(() => {
           v-if="!loggedIn && shouldShowChat"
           class="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm px-4 py-2 hidden lg:block"
         >
-          <p class="text-xs text-muted-600 dark:text-muted-400 text-center">
-            By messaging Quillio, an AI chatbot, you agree to our
-            <NuxtLink
-              to="/terms"
-              class="underline hover:text-primary-600 dark:hover:text-primary-400"
-            >
-              Terms
-            </NuxtLink>
-            and have read our
-            <NuxtLink
-              to="/privacy"
-              class="underline hover:text-primary-600 dark:hover:text-primary-400"
-            >
-              Privacy Policy
-            </NuxtLink>
-            .
-          </p>
+          <i18n-t
+            keypath="legal.chatDisclaimer"
+            tag="p"
+            class="text-xs text-muted-600 dark:text-muted-400 text-center"
+          >
+            <template #terms>
+              <NuxtLink
+                :to="localePath('/terms')"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                {{ t('legal.terms') }}
+              </NuxtLink>
+            </template>
+            <template #privacy>
+              <NuxtLink
+                :to="localePath('/privacy')"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                {{ t('legal.privacyPolicy') }}
+              </NuxtLink>
+            </template>
+          </i18n-t>
         </div>
       </UDashboardPanel>
     </UDashboardGroup>
