@@ -241,8 +241,8 @@ The following issues were identified in the scaffolded components and should be 
          <!-- Single tool call -->
          <template v-else-if="hasSingleToolCall">
            <AgentStatus
-             v-for="(part, index) in message.parts.filter(p => p.type === 'tool_call')"
-             :key="index"
+             v-for="part in message.parts.filter(p => p.type === 'tool_call')"
+             :key="part.toolCallId"
              :part="part"
            />
          </template>
@@ -251,7 +251,7 @@ The following issues were identified in the scaffolded components and should be 
          <template v-else>
            <p
              v-for="(part, index) in message.parts.filter(p => p.type === 'text' && p.text.trim())"
-             :key="index"
+             :key="`${message.id}-${index}`"
              class="whitespace-pre-line"
            >
              {{ part.text }}
@@ -260,6 +260,10 @@ The following issues were identified in the scaffolded components and should be 
        </div>
      </template>
      ```
+   - **Note on Stable Keys**: All looped items must provide stable identifier fields:
+     - For `tool_call` parts: Use `part.toolCallId` (the unique identifier for each tool invocation)
+     - For `text` parts: Use composite keys like `${message.id}-${index}` or derive a content-based hash before rendering
+     - Never use array indices as keys when items can be reordered, added, or removed
    - **Impact**: Unpredictable rendering, maintenance issues
    - **Priority**: Medium - code quality
 

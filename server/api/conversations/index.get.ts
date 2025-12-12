@@ -62,14 +62,15 @@ export default defineEventHandler(async (event) => {
   let offset: number
 
   if (pageRaw) {
-    const page = parseOptionalInt(pageRaw, 'page', 1, 1)
+    const page = parseOptionalInt(pageRaw, 'page', 1, 1, 10000)
     offset = (page - 1) * limit
   } else {
     offset = parseOptionalInt(
       getQueryValue(query.offset as string | string[] | undefined) ?? '0',
       'offset',
       0,
-      0
+      0,
+      1000000
     )
   }
 
