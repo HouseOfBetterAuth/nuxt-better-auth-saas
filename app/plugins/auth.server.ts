@@ -1,7 +1,4 @@
-import { eq } from 'drizzle-orm'
-import * as schema from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
-import { getDB } from '~~/server/utils/db'
 import { fetchActiveOrgExtrasForUser, fetchFullOrganizationForSSR } from '~~/server/utils/organization'
 import { createEmptyActiveOrgExtras } from '~~/shared/utils/organizationExtras'
 import { AUTH_USER_DEFAULTS } from '~/composables/useAuth'
@@ -34,32 +31,35 @@ export default defineNuxtPlugin({
 
     const activeOrganizationId = (authSession?.session as any)?.activeOrganizationId
 
-    if (activeOrganizationId) {
-      let fullOrganization = await fetchFullOrganizationForSSR(activeOrganizationId)
-      if (!fullOrganization) {
-        const db = getDB()
-        const [organization] = await db
-          .select()
-          .from(schema.organization)
-          .where(eq(schema.organization.id, activeOrganizationId))
-          .limit(1)
-        fullOrganization = organization ? { data: organization } : null
-      }
-      activeOrgState.value = fullOrganization
-
-      if (authSession?.user?.id) {
-        try {
-          activeOrgExtrasState.value = await fetchActiveOrgExtrasForUser(authSession.user.id, activeOrganizationId)
-        } catch (error) {
-          console.debug('[better-auth-ssr-hydration] Failed to load active org extras', error)
-          activeOrgExtrasState.value = createEmptyActiveOrgExtras()
-        }
-      } else {
-        activeOrgExtrasState.value = createEmptyActiveOrgExtras()
-      }
-    } else {
+    const resetOrgState = () => {
       activeOrgState.value = null
       activeOrgExtrasState.value = createEmptyActiveOrgExtras()
+    }
+
+    if (!activeOrganizationId) {
+      resetOrgState()
+      return
+    }
+
+    if (!authSession?.user?.id) {
+      resetOrgState()
+      return
+    }
+
+    try {
+      const activeOrgExtras = await fetchActiveOrgExtrasForUser(authSession.user.id, activeOrganizationId)
+      activeOrgExtrasState.value = activeOrgExtras
+    } catch (error) {
+      console.debug('[better-auth-ssr-hydration] Failed to verify organization membership', error)
+      resetOrgState()
+      return
+    }
+
+    const fullOrganization = await fetchFullOrganizationForSSR(activeOrganizationId)
+    if (fullOrganization) {
+      activeOrgState.value = fullOrganization
+    } else {
+      resetOrgState()
     }
   }
 })
