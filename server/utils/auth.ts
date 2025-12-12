@@ -1102,6 +1102,22 @@ const ensureDeviceFingerprintInOrg = async (
   }
 }
 
+const buildDeviceFingerprintSearchCondition = (fingerprint: string) => {
+  // Metadata column is stored as text and may contain legacy non-JSON values.
+  // Use safe substring matching instead of JSON casting to avoid runtime errors.
+  const doubleQuotedPattern = `%\"deviceFingerprint\":\"${fingerprint}\"%`
+  const singleQuotedPattern = `%\'deviceFingerprint\':\'${fingerprint}\'%`
+  return sql`
+    (
+      ${schema.organization.metadata} IS NOT NULL
+      AND (
+        ${schema.organization.metadata} LIKE ${doubleQuotedPattern}
+        OR ${schema.organization.metadata} LIKE ${singleQuotedPattern}
+      )
+    )
+  `
+}
+
 export const getConversationQuotaUsage = async (
   db: NodePgDatabase<typeof schema>,
   organizationId: string,
@@ -1130,12 +1146,10 @@ export const getConversationQuotaUsage = async (
       const anonymousOrgs = await db
         .select({ id: schema.organization.id })
         .from(schema.organization)
-        .where(
-          and(
-            sql`${schema.organization.metadata}::jsonb @> ${JSON.stringify({ deviceFingerprint })}::jsonb`,
-            sql`${schema.organization.slug} LIKE 'anonymous-%'`
-          )
-        )
+        .where(and(
+          buildDeviceFingerprintSearchCondition(deviceFingerprint),
+          sql`${schema.organization.slug} LIKE 'anonymous-%'`
+        ))
 
       const orgIds = anonymousOrgs.map(org => org.id)
 
