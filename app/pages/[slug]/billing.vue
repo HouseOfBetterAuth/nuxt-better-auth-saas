@@ -32,19 +32,6 @@ const tierChangePreview = ref<any>(null)
 const showTierChangePreview = ref(false)
 const pendingTierChange = ref<{ tierKey: Exclude<PlanKey, 'free'>, interval: PlanInterval } | null>(null)
 
-if (import.meta.client) {
-  let isInitialLoad = true
-  watch(
-    () => activeOrg.value?.data?.id,
-    (orgId) => {
-      if (orgId && !isInitialLoad)
-        refreshActiveOrganizationExtras(orgId)
-      isInitialLoad = false
-    },
-    { immediate: true }
-  )
-}
-
 // Show upgrade modal if showUpgrade query param is present or if upgrade is needed
 watchEffect(() => {
   if (route.query.showUpgrade === 'true' || activeOrgExtras.value?.needsUpgrade) {

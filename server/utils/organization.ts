@@ -5,6 +5,12 @@ import * as schema from '../db/schema'
 import { setUserActiveOrganization } from '../services/organization/provision'
 import { getAuthSession } from './auth'
 import { getDB } from './db'
+import {
+  computeNeedsUpgrade,
+  computeUserOwnsMultipleOrgs,
+  type ActiveOrgExtras,
+  type OwnershipInfo
+} from '~~/shared/utils/organizationExtras'
 
 interface BetterAuthSession {
   session?: {
@@ -155,4 +161,139 @@ export const requireActiveOrganization = async (
   }
 
   return { organizationId, membership }
+}
+
+const parseMetadata = (value: string | null) => {
+  if (!value)
+    return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+export interface FullOrganizationPayload {
+  data: {
+    id: string
+    name: string
+    slug: string
+    logo: string | null
+    createdAt: Date | null
+    metadata: any
+    stripeCustomerId: string | null
+    referralCode: string | null
+    members: Array<{
+      id: string
+      organizationId: string
+      userId: string
+      role: string
+      createdAt: Date | null
+      user: {
+        id: string
+        name: string
+        email: string
+        image: string | null
+        isAnonymous: boolean | null
+      }
+    }>
+    invitations: Array<{
+      id: string
+      organizationId: string
+      email: string
+      role: string | null
+      status: string
+      expiresAt: Date
+      createdAt: Date
+      inviterId: string
+    }>
+  }
+}
+
+export const fetchFullOrganizationForSSR = async (organizationId: string): Promise<FullOrganizationPayload | null> => {
+  const db = getDB()
+  const [organizationRecord] = await db
+    .select()
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1)
+
+  if (!organizationRecord)
+    return null
+
+  const members = await db
+    .select({
+      id: schema.member.id,
+      organizationId: schema.member.organizationId,
+      userId: schema.member.userId,
+      role: schema.member.role,
+      createdAt: schema.member.createdAt,
+      user: {
+        id: schema.user.id,
+        name: schema.user.name,
+        email: schema.user.email,
+        image: schema.user.image,
+        isAnonymous: schema.user.isAnonymous
+      }
+    })
+    .from(schema.member)
+    .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
+    .where(eq(schema.member.organizationId, organizationId))
+    .orderBy(asc(schema.member.createdAt))
+
+  const invitations = await db
+    .select({
+      id: schema.invitation.id,
+      organizationId: schema.invitation.organizationId,
+      email: schema.invitation.email,
+      role: schema.invitation.role,
+      status: schema.invitation.status,
+      expiresAt: schema.invitation.expiresAt,
+      createdAt: schema.invitation.createdAt,
+      inviterId: schema.invitation.inviterId
+    })
+    .from(schema.invitation)
+    .where(eq(schema.invitation.organizationId, organizationId))
+    .orderBy(asc(schema.invitation.createdAt))
+
+  return {
+    data: {
+      ...organizationRecord,
+      metadata: parseMetadata(organizationRecord.metadata ?? null),
+      members,
+      invitations
+    }
+  }
+}
+
+export const fetchActiveOrgExtrasForUser = async (userId: string, organizationId: string): Promise<ActiveOrgExtras> => {
+  const db = getDB()
+  const subscriptions = await db
+    .select()
+    .from(schema.subscription)
+    .where(eq(schema.subscription.referenceId, organizationId))
+
+  const ownedMemberships = await db
+    .select({
+      organizationId: schema.member.organizationId,
+      createdAt: schema.organization.createdAt
+    })
+    .from(schema.member)
+    .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+    .where(and(
+      eq(schema.member.userId, userId),
+      eq(schema.member.role, 'owner')
+    ))
+    .orderBy(asc(schema.organization.createdAt))
+
+  const ownershipInfo: OwnershipInfo = {
+    ownedCount: ownedMemberships.length,
+    firstOwnedOrgId: ownedMemberships[0]?.organizationId ?? null
+  }
+
+  return {
+    subscriptions,
+    needsUpgrade: computeNeedsUpgrade(organizationId, subscriptions, ownershipInfo),
+    userOwnsMultipleOrgs: computeUserOwnsMultipleOrgs(ownershipInfo)
+  }
 }

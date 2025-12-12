@@ -139,19 +139,32 @@ export function useConversation() {
   }
 
   // Get cached messages if available and fresh
-  const getCachedMessages = (id: string): ChatMessage[] | null => {
+  const getCachedMessagesMeta = (id: string): { messages: ChatMessage[], isStale: boolean, age: number } | null => {
     const cached = messageCache.value.get(id)
     if (!cached)
       return null
 
     const age = Date.now() - cached.timestamp
-    if (age > CACHE_TTL_MS) {
-      // Cache expired, remove it
+    const isStale = age > CACHE_TTL_MS
+
+    return {
+      messages: structuredClone(cached.messages),
+      isStale,
+      age
+    }
+  }
+
+  const getCachedMessages = (id: string): ChatMessage[] | null => {
+    const cached = getCachedMessagesMeta(id)
+    if (!cached)
+      return null
+
+    if (cached.isStale) {
       messageCache.value.delete(id)
       return null
     }
 
-    return structuredClone(cached.messages)
+    return cached.messages
   }
 
   async function callChatEndpoint(body: Record<string, any>) {
@@ -614,6 +627,7 @@ export function useConversation() {
     hydrateConversation,
     resetConversation,
     getCachedMessages,
+    getCachedMessagesMeta,
     prompt,
     mode,
     currentActivity,

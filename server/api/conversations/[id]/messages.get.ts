@@ -1,7 +1,7 @@
-import { and, count, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { createError, getQuery, getRouterParams } from 'h3'
 import * as schema from '~~/server/db/schema'
-import { getConversationById, getConversationMessages } from '~~/server/services/conversation'
+import { getConversationById } from '~~/server/services/conversation'
 import { requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
@@ -64,27 +64,32 @@ export default defineEventHandler(async (event) => {
     offset = validateNumber(parsedOffset, 'offset', 0)
   }
 
-  const messages = await getConversationMessages(db, conversationId, organizationId, {
-    limit,
-    offset
-  })
-
-  const totalResult = await db
-    .select({ value: count() })
+  const rows = await db
+    .select({
+      id: schema.conversationMessage.id,
+      role: schema.conversationMessage.role,
+      content: schema.conversationMessage.content,
+      payload: schema.conversationMessage.payload,
+      createdAt: schema.conversationMessage.createdAt,
+      totalCount: sql<number>`COUNT(*) OVER()`.as('total_count')
+    })
     .from(schema.conversationMessage)
     .where(and(
       eq(schema.conversationMessage.conversationId, conversationId),
       eq(schema.conversationMessage.organizationId, organizationId)
     ))
+    .orderBy(schema.conversationMessage.createdAt)
+    .limit(limit)
+    .offset(offset)
 
-  const total = Number(totalResult[0]?.value ?? 0)
+  const total = rows.length > 0 ? Number(rows[0].totalCount ?? 0) : 0
 
-  const mappedMessages = messages.map(message => ({
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    payload: message.payload,
-    createdAt: message.createdAt
+  const mappedMessages = rows.map(row => ({
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    payload: row.payload,
+    createdAt: row.createdAt
   }))
 
   return createPaginatedResponse(mappedMessages, total, limit, offset)

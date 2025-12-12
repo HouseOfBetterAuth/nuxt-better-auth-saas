@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { watchDebounced } from '@vueuse/core'
 import Logo from '~/components/Logo.vue'
 import OnboardingModal from '~/components/OnboardingModal.vue'
 import OrganizationSwitcher from '~/components/OrganizationSwitcher.vue'
@@ -17,21 +16,6 @@ const slug = computed(() => {
   const param = route.params.slug
   return Array.isArray(param) ? param[0] : param || ''
 })
-
-if (import.meta.client) {
-  let isInitialLoad = true
-  watchDebounced(
-    () => activeOrg.value?.data?.id,
-    async (orgId) => {
-      if (!orgId || isInitialLoad) {
-        isInitialLoad = false
-        return
-      }
-      await refreshActiveOrganizationExtras(orgId)
-    },
-    { immediate: true, debounce: 300 }
-  )
-}
 
 const i18nHead = useLocaleHead()
 

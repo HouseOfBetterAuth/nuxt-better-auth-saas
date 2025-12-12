@@ -20,7 +20,8 @@ const DEFAULT_CONVERSATION_QUOTA = {
   paid: parseConversationQuotaLimit(process.env.NUXT_CONVERSATION_QUOTA_PAID, 0)
 }
 
-let runtimeConfigInstance: NitroRuntimeConfig
+let runtimeConfigInstance: NitroRuntimeConfig | null = null
+let resolvedFromNuxt = false
 
 export const generateRuntimeConfig = () => ({
   preset: process.env.NUXT_NITRO_PRESET,
@@ -97,12 +98,46 @@ export const generateRuntimeConfig = () => ({
   }
 })
 
-if (typeof useRuntimeConfig !== 'undefined') {
-  runtimeConfigInstance = useRuntimeConfig()
-} else {
-  // for cli: npm run auth:schema
-  config()
-  runtimeConfigInstance = generateRuntimeConfig() as NitroRuntimeConfig
+const resolveRuntimeConfig = () => {
+  if (!resolvedFromNuxt && typeof useRuntimeConfig !== 'undefined') {
+    try {
+      runtimeConfigInstance = useRuntimeConfig()
+      resolvedFromNuxt = true
+      return runtimeConfigInstance
+    } catch {
+      // Ignore - Nuxt instance might not be ready yet
+    }
+  }
+
+  if (!runtimeConfigInstance) {
+    // CLI or early usage before Nuxt initializes - fall back to env config
+    config()
+    runtimeConfigInstance = generateRuntimeConfig() as NitroRuntimeConfig
+  }
+
+  return runtimeConfigInstance
 }
 
-export const runtimeConfig = runtimeConfigInstance
+export const runtimeConfig = new Proxy({} as NitroRuntimeConfig, {
+  get(_, prop) {
+    const instance = resolveRuntimeConfig()
+    return (instance as any)[prop]
+  },
+  set(_, prop, value) {
+    const instance = resolveRuntimeConfig()
+    ;(instance as any)[prop] = value
+    return true
+  },
+  has(_, prop) {
+    const instance = resolveRuntimeConfig()
+    return prop in instance
+  },
+  ownKeys() {
+    const instance = resolveRuntimeConfig()
+    return Reflect.ownKeys(instance)
+  },
+  getOwnPropertyDescriptor(_, prop) {
+    const instance = resolveRuntimeConfig()
+    return Object.getOwnPropertyDescriptor(instance, prop as any)
+  }
+})

@@ -50,7 +50,7 @@ const {
   prompt,
   mode,
   hydrateConversation,
-  getCachedMessages
+  getCachedMessagesMeta
 } = useConversation()
 
 // Set initial mode from props
@@ -413,7 +413,7 @@ const isValidUUID = (id: string | null): boolean => {
   return uuidRegex.test(id)
 }
 
-const loadConversationMessages = async (conversationId: string) => {
+const loadConversationMessages = async (conversationId: string, options?: { force?: boolean }) => {
   if (!conversationId) {
     return
   }
@@ -424,16 +424,22 @@ const loadConversationMessages = async (conversationId: string) => {
   }
 
   // OPTIMIZATION: Check cache first for instant display
-  const cached = getCachedMessages(conversationId)
+  const cached = getCachedMessagesMeta(conversationId)
   if (cached) {
     // Show cached messages immediately (optimistic navigation)
     hydrateConversation({
       conversationId,
-      messages: cached
+      messages: cached.messages
     }, { skipCache: true }) // Don't re-cache what we just loaded from cache
   }
 
-  // Fetch fresh data in background (even if cached)
+  const shouldFetch = options?.force || !cached || cached.isStale
+
+  if (!shouldFetch) {
+    return
+  }
+
+  // Fetch fresh data in background when needed
   try {
     const messagesResponse = await $fetch<{ data: ContentConversationMessage[] }>(`/api/conversations/${conversationId}/messages`)
 

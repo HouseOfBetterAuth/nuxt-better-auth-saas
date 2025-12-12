@@ -75,67 +75,65 @@ export default defineEventHandler(async (event) => {
 
   const conversationIds = conversations.map(c => c.id)
 
-  // Fetch artifact counts (1 query with GROUP BY)
-  const artifactCountsRaw = await db
-    .select({
-      conversationId: schema.content.conversationId,
-      count: sql<number>`COUNT(*)`.as('count')
-    })
-    .from(schema.content)
-    .where(inArray(schema.content.conversationId, conversationIds))
-    .groupBy(schema.content.conversationId)
+  type RecentArtifactRow = {
+    conversation_id: string
+    title: string
+  }
+  type LastMessageRow = {
+    conversation_id: string
+    content: string
+  }
+
+  const [
+    artifactCountsRaw,
+    recentArtifactsRaw,
+    lastMessagesRaw,
+    conversationQuota
+  ] = await Promise.all([
+    conversationIds.length
+      ? db
+        .select({
+          conversationId: schema.content.conversationId,
+          count: sql<number>`COUNT(*)`.as('count')
+        })
+        .from(schema.content)
+        .where(inArray(schema.content.conversationId, conversationIds))
+        .groupBy(schema.content.conversationId)
+      : Promise.resolve([]),
+    conversationIds.length
+      ? db.execute<RecentArtifactRow>(sql`
+        SELECT DISTINCT ON (conversation_id)
+          conversation_id,
+          title
+        FROM ${schema.content}
+        WHERE ${inArray(schema.content.conversationId, conversationIds)}
+        ORDER BY conversation_id, ${schema.content.updatedAt} DESC
+      `)
+      : Promise.resolve({ rows: [] as RecentArtifactRow[] }),
+    conversationIds.length
+      ? db.execute<LastMessageRow>(sql`
+        SELECT DISTINCT ON (conversation_id)
+          conversation_id,
+          content
+        FROM ${schema.conversationMessage}
+        WHERE ${inArray(schema.conversationMessage.conversationId, conversationIds)}
+        ORDER BY conversation_id, ${schema.conversationMessage.createdAt} DESC
+      `)
+      : Promise.resolve({ rows: [] as LastMessageRow[] }),
+    getConversationQuotaUsage(db, organizationId, user, event)
+  ])
 
   const artifactCounts = new Map(
     artifactCountsRaw.map(row => [row.conversationId, Number(row.count)])
   )
 
-  // Fetch most recent artifact titles using window function (1 query)
-  const recentArtifactsRaw = await db.execute<{
-    conversation_id: string
-    title: string
-    row_num: number
-  }>(sql`
-    SELECT
-      conversation_id,
-      title,
-      ROW_NUMBER() OVER (
-        PARTITION BY conversation_id
-        ORDER BY updated_at DESC
-      ) as row_num
-    FROM ${schema.content}
-    WHERE ${inArray(schema.content.conversationId, conversationIds)}
-  `)
-
   const recentArtifacts = new Map(
-    recentArtifactsRaw.rows
-      .filter(row => row.row_num === 1)
-      .map(row => [row.conversation_id, row.title])
+    recentArtifactsRaw.rows.map(row => [row.conversation_id, row.title])
   )
-
-  // Fetch last messages using window function (1 query)
-  const lastMessagesRaw = await db.execute<{
-    conversation_id: string
-    content: string
-    row_num: number
-  }>(sql`
-    SELECT
-      conversation_id,
-      content,
-      ROW_NUMBER() OVER (
-        PARTITION BY conversation_id
-        ORDER BY created_at DESC
-      ) as row_num
-    FROM ${schema.conversationMessage}
-    WHERE ${inArray(schema.conversationMessage.conversationId, conversationIds)}
-  `)
 
   const lastMessages = new Map(
-    lastMessagesRaw.rows
-      .filter(row => row.row_num === 1)
-      .map(row => [row.conversation_id, row.content])
+    lastMessagesRaw.rows.map(row => [row.conversation_id, row.content])
   )
-
-  const conversationQuota = await getConversationQuotaUsage(db, organizationId, user, event)
 
   return {
     conversations: conversations.map((conv) => {
