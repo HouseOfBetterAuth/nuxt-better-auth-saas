@@ -1063,12 +1063,12 @@ const ensureDeviceFingerprintInOrg = async (
 
   try {
     // Check if organization is anonymous
-    // Use atomic JSONB update to prevent race conditions
     // Only update if deviceFingerprint not already set
     const [org] = await db
       .select({
         id: schema.organization.id,
-        slug: schema.organization.slug
+        slug: schema.organization.slug,
+        metadata: schema.organization.metadata
       })
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
@@ -1077,23 +1077,24 @@ const ensureDeviceFingerprintInOrg = async (
     if (!org || !org.slug.startsWith('anonymous-'))
       return
 
-    // Atomically update only if deviceFingerprint not already set
-    // Uses JSONB operations to avoid race condition and ensure type safety
-    // Uses parameterized query to prevent SQL injection
+    let metadata: Record<string, any> = {}
+    if (org.metadata) {
+      try {
+        metadata = JSON.parse(org.metadata)
+      } catch {
+        metadata = {}
+      }
+    }
+
+    if (metadata.deviceFingerprint)
+      return
+
+    metadata.deviceFingerprint = deviceFingerprint
+
     await db
       .update(schema.organization)
       .set({
-        metadata: sql`
-          CASE
-            WHEN ${schema.organization.metadata}::jsonb ? 'deviceFingerprint'
-            THEN ${schema.organization.metadata}
-            ELSE jsonb_set(
-              COALESCE(${schema.organization.metadata}::jsonb, '{}'::jsonb),
-              '{deviceFingerprint}',
-              ${JSON.stringify(deviceFingerprint)}::jsonb
-            )::text
-          END
-        `
+        metadata: JSON.stringify(metadata)
       })
       .where(eq(schema.organization.id, organizationId))
   } catch (error) {
