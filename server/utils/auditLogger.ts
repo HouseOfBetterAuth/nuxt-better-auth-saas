@@ -18,9 +18,11 @@ export async function logAuditEvent(data: {
 }, options?: {
   timeout?: number
   queueOnFailure?: boolean
+  throwOnFailure?: boolean
 }) {
   const timeout = options?.timeout ?? AUDIT_LOG_TIMEOUT_MS
   const queueOnFailure = options?.queueOnFailure ?? true
+  const throwOnFailure = options?.throwOnFailure ?? true
 
   try {
     const db = getDB()
@@ -39,14 +41,21 @@ export async function logAuditEvent(data: {
       createdAt: new Date()
     })
 
+    let timeoutId: ReturnType<typeof setTimeout>
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Audit log timeout after ${timeout}ms`)), timeout)
+      timeoutId = setTimeout(() => reject(new Error(`Audit log timeout after ${timeout}ms`)), timeout)
     })
 
-    await Promise.race([insertPromise, timeoutPromise])
+    try {
+      await Promise.race([insertPromise, timeoutPromise])
+    } finally {
+      clearTimeout(timeoutId!)
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Failed to log audit event:', errorMessage)
+
+    let queuedSuccessfully = false
 
     // Queue for retry if enabled
     if (queueOnFailure) {
@@ -60,20 +69,23 @@ export async function logAuditEvent(data: {
           targetId: data.targetId,
           ipAddress: data.ipAddress,
           userAgent: data.userAgent,
-          status: data.status || 'success',
+          status: data.status || 'pending', // Queue items default to 'pending'
           details: data.details,
           error: errorMessage,
           retryCount: 0,
           createdAt: new Date()
         })
+        queuedSuccessfully = true
       } catch (queueError) {
         // If queueing also fails, log but don't throw - we've done our best
         console.error('[Audit] Failed to queue audit event for retry:', queueError)
       }
     }
 
-    // Re-throw for critical events that need to be handled by caller
-    throw error
+    // Re-throw if caller needs to handle failure (or if queuing failed)
+    if (throwOnFailure || !queuedSuccessfully) {
+      throw error
+    }
   }
 }
 
@@ -122,7 +134,7 @@ export async function retryQueuedAuditEvents(maxRetries: number = 5, batchSize: 
           })
           .where(eq(auditLogQueue.id, queuedEvent.id))
 
-        // If exceeded max retries, log for manual investigation
+        // If exceeded max retries, log for manual investigation and remove from queue
         if (newRetryCount >= maxRetries) {
           console.error(`[Audit] Audit event exceeded max retries (${maxRetries}):`, {
             id: queuedEvent.id,
@@ -130,6 +142,8 @@ export async function retryQueuedAuditEvents(maxRetries: number = 5, batchSize: 
             action: queuedEvent.action,
             userId: queuedEvent.userId
           })
+          // Remove from queue to prevent table bloat
+          await db.delete(auditLogQueue).where(eq(auditLogQueue.id, queuedEvent.id))
         }
       }
     }

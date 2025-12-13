@@ -133,34 +133,37 @@ export const setUserActiveOrganization = async (
 const queueOrgProvisioningRetry = async (userId: string, error: Error) => {
   try {
     const db = getDB()
-    // Check if there's already a pending queue entry for this user
-    const [existing] = await db
-      .select()
-      .from(orgProvisioningQueue)
-      .where(and(
-        eq(orgProvisioningQueue.userId, userId),
-        sql`${orgProvisioningQueue.completedAt} IS NULL`
-      ))
-      .limit(1)
+    await db.transaction(async (tx) => {
+      // Check if there's already a pending queue entry for this user
+      const [existing] = await tx
+        .select()
+        .from(orgProvisioningQueue)
+        .where(and(
+          eq(orgProvisioningQueue.userId, userId),
+          sql`${orgProvisioningQueue.completedAt} IS NULL`
+        ))
+        .limit(1)
 
-    if (existing) {
-      // Update existing entry
-      await db
-        .update(orgProvisioningQueue)
-        .set({
+      if (existing) {
+        // Update existing entry
+        await tx
+          .update(orgProvisioningQueue)
+          .set({
+            error: error.message,
+            lastRetryAt: new Date(),
+            retryCount: (existing.retryCount ?? 0) + 1
+          })
+          .where(eq(orgProvisioningQueue.id, existing.id))
+      } else {
+        // Create new entry
+        await tx.insert(orgProvisioningQueue).values({
+          userId,
           error: error.message,
-          lastRetryAt: new Date()
+          retryCount: 0,
+          createdAt: new Date()
         })
-        .where(eq(orgProvisioningQueue.id, existing.id))
-    } else {
-      // Create new entry
-      await db.insert(orgProvisioningQueue).values({
-        userId,
-        error: error.message,
-        retryCount: 0,
-        createdAt: new Date()
-      })
-    }
+      }
+    })
   } catch (queueError) {
     console.error('[OrgProvisioning] Failed to queue provisioning retry:', queueError)
   }
@@ -253,7 +256,7 @@ export const ensureDefaultOrganizationForUser = async (
       return { id: orgId, created: true }
     })
 
-    if (result && result.created) {
+    if (result) {
       await setUserActiveOrganization(user.id, result.id)
     }
 
@@ -339,6 +342,10 @@ export async function retryQueuedOrgProvisioning(maxRetries: number = 5, batchSi
             id: queuedItem.id,
             userId: queuedItem.userId
           })
+          await db
+            .update(orgProvisioningQueue)
+            .set({ completedAt: new Date() })
+            .where(eq(orgProvisioningQueue.id, queuedItem.id))
         }
       }
     }

@@ -1,5 +1,11 @@
-import { integer, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
+import { integer, pgEnum, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
 import { user } from './auth'
+
+/**
+ * Enum for audit log status values.
+ * Used for both audit_log and audit_log_queue tables.
+ */
+export const auditLogStatusEnum = pgEnum('audit_log_status', ['pending', 'success', 'failure'])
 
 /**
  * Queue table for failed audit log events that need to be retried.
@@ -14,7 +20,7 @@ export const auditLogQueue = pgTable('audit_log_queue', {
   targetId: text('target_id'), // ID of the target entity
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  status: text('status').notNull().default('success'), // e.g., 'success', 'failure', 'pending'
+  status: auditLogStatusEnum('status').notNull().default('pending'),
   details: text('details'), // Additional details or error messages
   error: text('error'), // Error message from the failed attempt
   retryCount: integer('retry_count').notNull().default(0),
