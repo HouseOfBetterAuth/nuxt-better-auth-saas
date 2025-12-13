@@ -100,6 +100,10 @@ const handlePromptSubmit = async (value?: string) => {
   prompt.value = ''
   try {
     await sendMessage(trimmed)
+  } catch (error) {
+    // Restore the user's input so it isn't lost if sendMessage fails
+    prompt.value = trimmed
+    throw error
   } finally {
     promptSubmitting.value = false
   }
@@ -172,7 +176,10 @@ const loadConversationMessages = async (conversationId: string, options?: { forc
 
 const requestConversationMessages = async (conversationId: string, options?: { force?: boolean }) => {
   if (!chatVisible.value) {
-    pendingConversationLoad.value = conversationId
+    // Only update if not already pending or if it's a different conversation
+    if (!pendingConversationLoad.value || pendingConversationLoad.value !== conversationId) {
+      pendingConversationLoad.value = conversationId
+    }
     return
   }
   pendingConversationLoad.value = null
@@ -203,6 +210,9 @@ watch(chatVisible, (visible) => {
     return
   const target = pendingConversationLoad.value
   pendingConversationLoad.value = null
+  // Only load if this conversation is still active
+  if (target !== activeConversationId.value)
+    return
   loadConversationMessages(target).catch((error) => {
     console.error('Failed to load conversation after becoming visible', error)
   })
@@ -352,7 +362,7 @@ if (import.meta.client) {
     ref="chatContainerRef"
     class="w-full h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4"
   >
-    <div class="w-full flex-1 flex flex-col justify-center lg:justify-center">
+    <div class="w-full flex-1 flex flex-col justify-end lg:justify-start">
       <div class="space-y-8 w-full max-w-3xl mx-auto">
         <ChatConversationMessages
           :messages="messages"
@@ -371,7 +381,7 @@ if (import.meta.client) {
       </div>
     </div>
 
-    <div class="w-full flex flex-col justify-center mt-8 lg:mt-4 fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 pb-safe lg:static lg:bg-transparent lg:dark:bg-transparent lg:backdrop-blur-none lg:pb-0">
+    <div class="w-full flex flex-col justify-center mt-8 lg:mt-4 fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 pb-safe lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none lg:pb-0">
       <div class="w-full max-w-3xl mx-auto px-4 py-4 lg:py-0">
         <PromptComposer
           v-model="prompt"

@@ -150,10 +150,8 @@ export default defineEventHandler(async (event) => {
   const hasMore = results.length > query.limit
   const conversations = hasMore ? results.slice(0, query.limit) : results
 
-  let nextCursor: string | null = null
-  if (hasMore && conversations.length > 0) {
-    const last = conversations[conversations.length - 1]
-    const updatedAtDate = last.updatedAt instanceof Date ? last.updatedAt : new Date(last.updatedAt)
+  for (const conv of conversations) {
+    const updatedAtDate = conv.updatedAt instanceof Date ? conv.updatedAt : new Date(conv.updatedAt)
     if (Number.isNaN(updatedAtDate.getTime())) {
       throw createError({
         statusCode: 500,
@@ -161,6 +159,12 @@ export default defineEventHandler(async (event) => {
         message: 'Invalid updatedAt value in database'
       })
     }
+  }
+
+  let nextCursor: string | null = null
+  if (hasMore && conversations.length > 0) {
+    const last = conversations[conversations.length - 1]
+    const updatedAtDate = last.updatedAt instanceof Date ? last.updatedAt : new Date(last.updatedAt)
     nextCursor = encodeCursor({
       id: last.id,
       updatedAt: updatedAtDate.toISOString()
