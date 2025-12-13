@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
-const { currentActivity, currentToolName, activeToolActivities } = useConversation()
+const { currentActivity, activeToolActivities } = useConversation()
 
 const liveToolActivities = computed(() => {
   const activities = activeToolActivities.value ?? []
@@ -167,7 +167,6 @@ function toSummaryBullets(summary: string | null | undefined) {
       <AgentProgressTracker
         :message="message"
         :current-activity="currentActivity"
-        :current-tool-name="currentToolName"
         :live-activities="liveToolActivities"
       />
     </template>

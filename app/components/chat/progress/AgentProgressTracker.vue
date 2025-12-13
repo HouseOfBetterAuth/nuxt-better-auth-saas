@@ -18,7 +18,6 @@ interface Props {
   showControls?: boolean
   defaultCollapsed?: boolean
   currentActivity?: 'thinking' | 'streaming' | null
-  currentToolName?: string | null
   liveActivities?: LiveActivity[]
 }
 
@@ -26,7 +25,6 @@ const props = withDefaults(defineProps<Props>(), {
   showControls: true,
   defaultCollapsed: false,
   currentActivity: null,
-  currentToolName: null,
   liveActivities: () => []
 })
 
@@ -46,17 +44,21 @@ const progressSteps = computed(() => {
       timestamp: part.timestamp
     }))
 
-  const liveSteps = (props.liveActivities || []).map(activity => ({
-    stepNumber: 0,
-    toolCallId: activity.toolCallId,
-    toolName: activity.toolName,
-    status: activity.status,
-    args: activity.args,
-    result: null,
-    error: undefined,
-    progressMessage: activity.progressMessage,
-    timestamp: activity.startedAt
-  }))
+  const completedIds = new Set(completedSteps.map(step => step.toolCallId))
+
+  const liveSteps = props.liveActivities
+    .filter(activity => !completedIds.has(activity.toolCallId))
+    .map(activity => ({
+      stepNumber: 0,
+      toolCallId: activity.toolCallId,
+      toolName: activity.toolName,
+      status: activity.status,
+      args: activity.args,
+      result: null,
+      error: undefined,
+      progressMessage: activity.progressMessage,
+      timestamp: activity.startedAt
+    }))
 
   return [...liveSteps, ...completedSteps]
     .sort((a, b) => {

@@ -481,8 +481,8 @@ const simulateToolExecution = async (
     // This shows the tool running with progress messages, but not completed
     const progressStepsToShow = Math.min(3, progressSteps) // Show up to 3 progress steps
     for (let i = 0; i < progressStepsToShow; i++) {
-      // Check if cancelled or state changed
-      if (isCancelled.value || state !== 'in_progress') {
+      // Check if cancelled
+      if (isCancelled.value) {
         return { success: true, result: null }
       }
       const progressMsg = getProgressMessages(toolName, i)
@@ -520,10 +520,6 @@ const simulateToolExecution = async (
       })
       await delay(shouldError && i === 2 ? 500 : stepDelay)
     }
-  }
-
-  if (state === 'in_progress') {
-    return { success: true, result: null }
   }
 
   // Generate result based on tool name and error state (only for "completed")
