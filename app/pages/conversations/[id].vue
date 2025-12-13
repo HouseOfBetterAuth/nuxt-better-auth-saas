@@ -11,14 +11,23 @@ useHead({
   title: 'Conversation'
 })
 
-// The default layout handles rendering the chat experience for /conversations routes.
+const widgetStatus = useState<'loading' | 'ready' | 'error'>('chat-widget-status', () => 'loading')
+const showFallback = computed(() => widgetStatus.value !== 'ready')
+const fallbackMessage = computed(() => {
+  if (widgetStatus.value === 'error')
+    return 'Unable to load this conversation. Please refresh.'
+  return 'Loading conversation...'
+})
 </script>
 
 <template>
   <div
-    class="sr-only"
-    aria-hidden="true"
+    v-if="showFallback"
+    class="flex items-center justify-center min-h-[40vh] px-4 text-center"
+    aria-live="polite"
   >
-    Conversation
+    <p class="text-sm text-muted-foreground">
+      {{ fallbackMessage }}
+    </p>
   </div>
 </template>

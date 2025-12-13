@@ -78,26 +78,32 @@ const { data, pending, error, refresh } = await useFetch<{ org: Org, conversatio
 )
 
 const triggerDetailFetch = async (options?: { force?: boolean }) => {
-  if (!detailKey.value)
+  const currentKey = detailKey.value
+  if (!currentKey)
     return
 
   const force = Boolean(options?.force)
-  if (!force && (!detailVisible.value || lastFetchedKey.value === detailKey.value))
+  if (!force && (!detailVisible.value || lastFetchedKey.value === currentKey))
     return
 
   if (fetchingDetail.value)
     return
 
+  const previousData = data.value
   fetchingDetail.value = true
   try {
     await refresh()
-    lastFetchedKey.value = detailKey.value
+    if (detailKey.value !== currentKey) {
+      data.value = previousData
+      return
+    }
+    lastFetchedKey.value = currentKey
+    detailInitialized.value = true
   } catch (fetchError) {
     console.error('[admin/chats] Failed to load conversation detail', fetchError)
     throw fetchError
   } finally {
     fetchingDetail.value = false
-    detailInitialized.value = true
   }
 }
 

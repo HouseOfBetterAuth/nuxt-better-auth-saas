@@ -10,15 +10,23 @@ useHead({
   title: 'Conversations'
 })
 
-// The default layout detects /conversations routes and mounts QuillioWidget.
-// This page exists solely to provide metadata and header context.
+const widgetStatus = useState<'loading' | 'ready' | 'error'>('chat-widget-status', () => 'loading')
+const showFallback = computed(() => widgetStatus.value !== 'ready')
+const fallbackMessage = computed(() => {
+  if (widgetStatus.value === 'error')
+    return 'Unable to load conversations. Please refresh the page.'
+  return 'Loading conversations...'
+})
 </script>
 
 <template>
   <div
-    class="sr-only"
-    aria-hidden="true"
+    v-if="showFallback"
+    class="flex items-center justify-center min-h-[40vh] px-4 text-center"
+    aria-live="polite"
   >
-    Conversations
+    <p class="text-sm text-muted-foreground">
+      {{ fallbackMessage }}
+    </p>
   </div>
 </template>

@@ -45,18 +45,11 @@ const openConversation = (conversationId: string | null) => {
 }
 
 const createConversation = () => {
-  router.push(localePath('/conversations'))
+  router.push({
+    path: localePath('/conversations'),
+    query: { new: '1' }
+  })
 }
-
-const primaryNavigation = computed(() => ([
-  [
-    {
-      label: 'Home',
-      icon: 'i-lucide-home',
-      to: '/'
-    }
-  ]
-]))
 </script>
 
 <template>
@@ -135,16 +128,6 @@ const primaryNavigation = computed(() => ([
           Load more
         </UButton>
       </div>
-    </section>
-
-    <section>
-      <p class="text-xs uppercase tracking-wide text-muted-foreground mb-3">
-        Navigation
-      </p>
-      <UNavigationMenu
-        :items="primaryNavigation"
-        orientation="vertical"
-      />
     </section>
   </div>
 </template>

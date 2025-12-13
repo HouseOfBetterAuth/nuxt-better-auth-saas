@@ -131,12 +131,15 @@ const primaryActionColor = computed(() => {
     >
       <template #content>
         <div class="w-[80vw] max-w-sm h-full flex flex-col bg-white dark:bg-gray-900 text-left">
-          <div class="px-4 pt-4 pb-2 border-b border-neutral-200/70 dark:border-neutral-800/60 flex items-center gap-2">
+          <NuxtLink
+            :to="localePath('/')"
+            class="px-4 pt-4 pb-2 border-b border-neutral-200/70 dark:border-neutral-800/60 flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <Logo class="h-6 w-6" />
             <span class="text-lg font-semibold truncate">
               {{ t('global.appName') }}
             </span>
-          </div>
+          </NuxtLink>
           <div class="flex-1 overflow-y-auto px-4 py-4">
             <SidebarNavigation />
           </div>
@@ -156,19 +159,28 @@ const primaryActionColor = computed(() => {
         v-if="shouldShowSidebar"
         collapsible
         resizable
+        :ui="{
+          root: 'bg-neutral-50 dark:bg-neutral-900/80 border-r border-neutral-200/70 dark:border-neutral-800/60'
+        }"
       >
         <template #header="{ collapsed }">
-          <div
+          <NuxtLink
             v-if="!collapsed"
-            class="flex items-center gap-2"
+            :to="localePath('/')"
+            class="flex items-center gap-2 hover:opacity-80 transition-opacity"
           >
             <span class="text-sm font-semibold">{{ t('global.appName') }}</span>
-          </div>
-          <UIcon
+          </NuxtLink>
+          <NuxtLink
             v-else
-            name="i-simple-icons-nuxtdotjs"
-            class="size-5 text-primary mx-auto"
-          />
+            :to="localePath('/')"
+            class="flex items-center justify-center hover:opacity-80 transition-opacity"
+          >
+            <UIcon
+              name="i-simple-icons-nuxtdotjs"
+              class="size-5 text-primary"
+            />
+          </NuxtLink>
         </template>
 
         <template #default="{ collapsed }">
