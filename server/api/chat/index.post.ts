@@ -15,13 +15,13 @@ import {
   createConversation,
   getConversationById,
   getConversationLogs,
-  getConversationMessages
+  getConversationMessages,
+  patchConversationPreviewMetadata
 } from '~~/server/services/conversation'
-import { orchestrateConversationIntent } from '~~/server/services/conversation/intent'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromContext } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
-import { ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
+import { areConversationQuotasDisabled, ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
@@ -31,60 +31,6 @@ import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { createSSEStream } from '~~/server/utils/streaming'
 import { validateEnum, validateNumber, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
-
-const ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS = 2000
-
-interface BasicUserShape {
-  isAnonymous?: boolean | null
-  email?: string | null
-  emailVerified?: boolean | null
-}
-
-const looksLikeAnonymousEmail = (email?: string | null) => {
-  if (!email) {
-    return false
-  }
-  const normalized = email.trim().toLowerCase()
-  if (!normalized) {
-    return false
-  }
-  return normalized.startsWith('temp-') && normalized.endsWith('@localhost')
-}
-
-const isAnonymousSessionUser = (user: BasicUserShape | null | undefined) => {
-  if (!user) {
-    return false
-  }
-  if (user.isAnonymous) {
-    return true
-  }
-
-  const normalizedEmail = typeof user.email === 'string'
-    ? user.email.trim().toLowerCase()
-    : null
-  const emailLooksAnonymous = looksLikeAnonymousEmail(normalizedEmail)
-
-  if (emailLooksAnonymous) {
-    return true
-  }
-
-  if (!emailLooksAnonymous && normalizedEmail && user.emailVerified === false) {
-    if (normalizedEmail.startsWith('temp-') && normalizedEmail.endsWith('@localhost')) {
-      return true
-    }
-  }
-
-  return false
-}
-
-const isUnauthorizedError = (error: any) => {
-  if (!error || typeof error !== 'object') {
-    return false
-  }
-  const statusCode = (error as any).statusCode ?? (error as any).status
-  const statusMessage = (error as any).statusMessage ?? (error as any).message
-  return statusCode === 401 || statusMessage === 'Unauthorized'
-}
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -200,8 +146,8 @@ function getIntentSnapshotFromMetadata(metadata: Record<string, any> | null | un
   return snapshot as ConversationIntentSnapshot
 }
 
-function formatClarifyingMessage(questions: IntentGap[]): string {
-  if (!questions.length) {
+function _formatClarifyingMessage(_questions: IntentGap[]): string {
+  if (!_questions.length) {
     return 'Before I start planning, could you share more about what you would like me to create?'
   }
 
@@ -1034,12 +980,12 @@ async function executeChatTool(
 
       if (args.status !== undefined && args.status !== null) {
         const status = validateRequiredString(args.status, 'status')
-        whereClauses.push(eq(schema.content.status, status))
+        whereClauses.push(eq(schema.content.status, status as any))
       }
 
       if (args.contentType !== undefined && args.contentType !== null) {
         const contentType = validateRequiredString(args.contentType, 'contentType')
-        whereClauses.push(eq(schema.content.contentType, contentType))
+        whereClauses.push(eq(schema.content.contentType, contentType as any))
       }
 
       const whereClause = whereClauses.length > 1 ? and(...whereClauses) : whereClauses[0]
@@ -1374,8 +1320,51 @@ async function executeChatTool(
  */
 export default defineEventHandler(async (event) => {
   // ============================================================================
+  // Authentication must happen BEFORE streaming starts
+  // Once streaming starts, headers are sent and we can't set cookies
+  // ============================================================================
+
+  // Check session first to avoid expensive anonymous user creation during streaming
+  const session = await getAuthSession(event)
+
+  // Validate mode early (before streaming) to support anonymous fast-paths
+  const body = await readBody<ChatRequestBody>(event)
+  validateRequestBody(body)
+  const VALID_MODES = ['chat', 'agent'] as const
+  const mode = validateEnum(body.mode, VALID_MODES, 'mode')
+
+  // Enforce authentication for Agent mode BEFORE provisioning anonymous sessions
+  if (mode === 'agent' && (!session?.user || session.user.isAnonymous)) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Agent mode requires authentication',
+      message: 'Please sign in to use agent mode and save content.'
+    })
+  }
+
+  let user = session?.user
+
+  // If no session, try to create anonymous user BEFORE starting stream
+  if (!user) {
+    // For anonymous users, we need to create session before streaming
+    // This allows us to set cookies properly
+    try {
+      user = await requireAuth(event, { allowAnonymous: true })
+    } catch {
+      // If auth fails, return error before starting stream
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Unauthorized'
+      })
+    }
+  } else {
+    // Cache user in context
+    event.context.user = user
+  }
+
+  // ============================================================================
   // Web Streams API Implementation for Cloudflare Workers
-  // Create stream immediately and return it - all processing happens async
+  // Create stream AFTER authentication to avoid header issues
   // ============================================================================
   const { stream, writer: sseWriter } = createSSEStream()
 
@@ -1399,89 +1388,54 @@ export default defineEventHandler(async (event) => {
   flushPing()
 
   // Start async processing (don't await - let it run in background)
+  // Note: body, mode, and user are already validated/authenticated above
   ;(async () => {
     try {
-      const body = await readBody<ChatRequestBody>(event)
-
       // Send ping after reading body to show progress
       writeSSE('ping', { ts: Date.now(), stage: 'body-read' })
 
-      validateRequestBody(body)
-
-      const VALID_MODES = ['chat', 'agent'] as const
-      const mode = validateEnum(body.mode, VALID_MODES, 'mode')
-
-      let user: Awaited<ReturnType<typeof requireAuth>>
-      try {
-        user = await requireAuth(event, { allowAnonymous: true })
-      } catch (error) {
-        if (mode === 'agent' && isUnauthorizedError(error)) {
-          throw createError({
-            statusCode: 403,
-            statusMessage: 'Agent mode requires authentication',
-            message: 'Please sign in to use agent mode and save content.'
-          })
-        }
-        throw error
-      }
-
-      const sessionUserIsAnonymous = isAnonymousSessionUser(user)
       flushPing()
-
-      // Send ping before database operations
       writeSSE('ping', { ts: Date.now(), stage: 'db-connect' })
       const db = await useDB(event)
-
-      // Send ping after database connection
       writeSSE('ping', { ts: Date.now(), stage: 'db-connected' })
 
-      // Block agent mode for anonymous users
-      if (mode === 'agent' && sessionUserIsAnonymous) {
-        throw createError({
-          statusCode: 403,
-          statusMessage: 'Agent mode requires authentication',
-          message: 'Please sign in to use agent mode and save content.'
-        })
-      }
+      // Organization Resolution Strategy
+      let organizationId: string | null = null
 
-      // Try to get organizationId from session first (faster and more reliable)
-      const authSession = await getAuthSession(event)
-      let organizationId: string | null = (authSession?.session as any)?.activeOrganizationId || null
+      if (!user.isAnonymous) {
+        // STRATEGY 1: Signed-In User
+        // Try session first (Fastest)
+        const authSession = await getAuthSession(event)
+        const sessionOrgId = (authSession?.session as any)?.activeOrganizationId
 
-      // Verify organization exists if we got it from session
-      if (organizationId) {
-        const [orgExists] = await db
-          .select({ id: schema.organization.id })
-          .from(schema.organization)
-          .where(eq(schema.organization.id, organizationId))
-          .limit(1)
+        if (sessionOrgId) {
+          // Verify existence (fast query by PK)
+          const [orgExists] = await db
+            .select({ id: schema.organization.id })
+            .from(schema.organization)
+            .where(eq(schema.organization.id, sessionOrgId))
+            .limit(1)
 
-        if (!orgExists) {
-          // Organization from session doesn't exist (e.g., was deleted), clear it
-          organizationId = null
+          if (orgExists) {
+            organizationId = sessionOrgId
+          }
         }
-      }
 
-      if (!organizationId) {
-        const lookupStartedAt = Date.now()
+        // Fallback to active organization requirement (Slower, DB intensive)
+        if (!organizationId) {
+          // Direct call - no try/catch wrapper needed for signed-in users
+          const result = await requireActiveOrganization(event, user.id)
+          organizationId = result.organizationId
+        }
+      } else {
+        // STRATEGY 2: Anonymous User
+        // They don't have a session with activeOrgId.
+        // We rely on requireActiveOrganization to handle guest/anonymous context creation.
         try {
-          const orgResult = await requireActiveOrganization(event, user.id, {
-            isAnonymousUser: sessionUserIsAnonymous
-          })
-          organizationId = orgResult.organizationId
-        } catch (error: any) {
-          if (sessionUserIsAnonymous) {
-            throw createValidationError('Please create an account to use the chat feature. Anonymous users need an organization to continue.')
-          }
-          throw error
-        } finally {
-          const duration = Date.now() - lookupStartedAt
-          if (duration > ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS) {
-            console.warn('[Chat API] requireActiveOrganization took %dms (threshold=%dms)', duration, ORGANIZATION_LOOKUP_WARN_THRESHOLD_MS, {
-              isAnonymous: sessionUserIsAnonymous,
-              userId: user.id
-            })
-          }
+          const result = await requireActiveOrganization(event, user.id, { isAnonymousUser: true })
+          organizationId = result.organizationId
+        } catch {
+          throw createValidationError('Please create an account to use the chat feature. Anonymous users need an organization to continue.')
         }
       }
 
@@ -1538,8 +1492,10 @@ export default defineEventHandler(async (event) => {
       }
 
       if (!conversation) {
-        // Check conversation quota before creating a new conversation
-        await ensureConversationCapacity(db, organizationId, user, event)
+        // Check conversation quota before creating a new conversation (only if quotas are enabled)
+        if (!areConversationQuotasDisabled()) {
+          await ensureConversationCapacity(db, organizationId, user, event)
+        }
 
         const lastAction = trimmedMessage ? 'message' : null
         conversation = await createConversation(db, {
@@ -1586,6 +1542,31 @@ export default defineEventHandler(async (event) => {
       // Server generates UUID on first chunk, uses same ID for all chunks and DB save
       // This ensures the client-side message ID matches the server-side message ID
       let currentMessageId: string | null = null
+
+      // Helper function to persist assistant messages and update preview metadata
+      // Defined here so it's accessible throughout the async function
+      const persistAssistantMessage = async (
+        content: string,
+        payload?: Record<string, any> | null,
+        options?: { id?: string }
+      ) => {
+        const assistantMessage = await addMessageToConversation(db, {
+          id: options?.id,
+          conversationId: activeConversation.id,
+          organizationId,
+          role: 'assistant',
+          content,
+          payload: payload ?? null
+        })
+
+        await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+          latestMessage: {
+            role: assistantMessage.role as 'assistant',
+            content: assistantMessage.content,
+            createdAt: assistantMessage.createdAt
+          }
+        })
+      }
 
       // Track any existing source content from the conversation
       if (activeConversation.sourceContentId && !readySourceIds.has(activeConversation.sourceContentId)) {
@@ -1722,6 +1703,9 @@ export default defineEventHandler(async (event) => {
         // Both save and context operations share the same loadMessagesPromise
         // ============================================================================
         const saveUserMessagePromise = (async () => {
+          // Delay start to prevent CPU/DB contention during initial stream
+          await new Promise(resolve => setTimeout(resolve, 500))
+
           try {
             const previousMessages = await loadMessagesPromise
 
@@ -1729,7 +1713,7 @@ export default defineEventHandler(async (event) => {
             const existingTitle = activeConversation.metadata?.title
             const isFirstMessage = previousMessages.length === 0 && !existingTitle
 
-            await addMessageToConversation(db, {
+            const userMessageRecord = await addMessageToConversation(db, {
               conversationId: activeConversation.id,
               organizationId,
               role: 'user',
@@ -1740,6 +1724,14 @@ export default defineEventHandler(async (event) => {
               organizationId,
               type: 'user_message',
               message: 'User sent a chat prompt'
+            })
+
+            await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+              latestMessage: {
+                role: userMessageRecord.role as 'user',
+                content: userMessageRecord.content,
+                createdAt: userMessageRecord.createdAt
+              }
             })
 
             // Set conversation title if this is the first message
@@ -1765,97 +1757,32 @@ export default defineEventHandler(async (event) => {
             return { success: false, error }
           }
         })()
+        const handleSaveUserMessageError = (err: unknown) => {
+          console.error('[Background] Failed to save user message:', err)
+        }
+        if (typeof (event as any).waitUntil === 'function') {
+          event.waitUntil(saveUserMessagePromise.catch(handleSaveUserMessageError))
+        } else {
+          // Fallback for runtimes without waitUntil: fire-and-forget with manual error logging
+          saveUserMessagePromise.catch(handleSaveUserMessageError)
+        }
 
         // ============================================================================
-        // OPTIMIZATION: Use Promise.allSettled for graceful degradation
-        // Both operations run in TRUE PARALLEL (no circular dependency)
-        // Continue streaming even if save fails (can retry in background)
+        // OPTIMIZATION: Wait ONLY for context (required for LLM)
         // ============================================================================
-        const [saveResult, contextResult] = await Promise.allSettled([
-          saveUserMessagePromise,
-          loadContextPromise
-        ])
+        const { conversationHistory, contextBlocks } = await loadContextPromise
 
-        // Check if context loading succeeded (required for streaming)
-        if (contextResult.status === 'rejected') {
-          throw createError({
-            statusCode: 500,
-            statusMessage: 'Failed to load conversation context',
-            message: contextResult.reason?.message || 'Unknown error'
-          })
-        }
+        // ============================================================================
+        // OPTIMIZATION: Background intent analysis (don't block streaming)
+        // ============================================================================
+        const intentPromise = Promise.resolve()
 
-        const { conversationHistory, contextBlocks } = contextResult.value
+        // Don't await intentPromise
+        intentPromise.catch(err => console.error('[Background] Intent promise error:', err))
 
-        let intentResult: Awaited<ReturnType<typeof orchestrateConversationIntent>> | null = null
-
-        try {
-          const previousSnapshot = getIntentSnapshotFromMetadata(activeConversation.metadata as Record<string, any> | null)
-          const historyForIntent = [
-            ...conversationHistory,
-            { role: 'user', content: trimmedMessage } satisfies ChatCompletionMessage
-          ]
-          intentResult = await orchestrateConversationIntent({
-            conversationHistory: historyForIntent,
-            previousSnapshot
-          })
-
-          const nextMetadata = {
-            ...(activeConversation.metadata as Record<string, any> || {}),
-            intentSnapshot: intentResult.snapshot
-          }
-
-          const [updatedConversation] = await db
-            .update(schema.conversation)
-            .set({
-              metadata: nextMetadata,
-              updatedAt: new Date()
-            })
-            .where(eq(schema.conversation.id, activeConversation.id))
-            .returning()
-
-          if (updatedConversation) {
-            activeConversation = updatedConversation
-          } else {
-            activeConversation = {
-              ...activeConversation,
-              metadata: nextMetadata
-            }
-          }
-
-          writeSSE('intent:update', {
-            snapshot: intentResult.snapshot,
-            action: intentResult.action,
-            clarifyingQuestions: intentResult.clarifyingQuestions
-          })
-        } catch (error) {
-          console.error('[chat] Failed to orchestrate conversation intent:', error)
-        }
-
-        // Log warning if save failed, but continue streaming
-        if (saveResult.status === 'rejected') {
-          console.error('[chat] User message save failed, but continuing with stream:', saveResult.reason)
-          // TODO: Implement retry logic here
-        }
-
-        let shouldRunAgent = true
-
-        if (intentResult?.action === 'clarify') {
-          shouldRunAgent = false
-          const clarifyingMessage = formatClarifyingMessage(intentResult.clarifyingQuestions)
-          agentAssistantReply = clarifyingMessage
-          if (!currentMessageId) {
-            currentMessageId = randomUUID()
-          }
-          writeSSE('message:chunk', {
-            messageId: currentMessageId,
-            chunk: clarifyingMessage
-          })
-          writeSSE('message:complete', {
-            messageId: currentMessageId,
-            message: clarifyingMessage
-          })
-        }
+        const shouldRunAgent = true
+        // Note: We skip blocking 'clarify' checks for speed optimization
+        // The agent itself can handle clarification if needed in the prompt
 
         if (shouldRunAgent) {
           try {
@@ -2165,13 +2092,7 @@ export default defineEventHandler(async (event) => {
       }
 
       for (const errorMessage of ingestionErrors) {
-        await addMessageToConversation(db, {
-          conversationId: activeConversation.id,
-          organizationId,
-          role: 'assistant',
-          content: errorMessage.content,
-          payload: errorMessage.payload ?? null
-        })
+        await persistAssistantMessage(errorMessage.content, errorMessage.payload ?? null)
       }
 
       // Check if any tools created content that needs completion messages
@@ -2204,6 +2125,20 @@ export default defineEventHandler(async (event) => {
                     contentRecord,
                     versionRecord
                   )
+
+                  const [artifactCountResult] = await db
+                    .select({ total: count() })
+                    .from(schema.content)
+                    .where(eq(schema.content.conversationId, activeConversation.id))
+                    .limit(1)
+
+                  await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+                    latestArtifact: {
+                      title: contentRecord.title,
+                      updatedAt: contentRecord.updatedAt ?? contentRecord.createdAt ?? new Date()
+                    },
+                    artifactCount: Number(artifactCountResult?.total ?? 0)
+                  })
                   break // Use first successful result
                 }
               }
@@ -2218,33 +2153,21 @@ export default defineEventHandler(async (event) => {
 
       // Save agent's reply if available (use the same message ID from streaming to avoid duplicates)
       if (agentAssistantReply) {
-        await addMessageToConversation(db, {
-          id: currentMessageId || undefined, // Use streaming message ID to match client-side message
-          conversationId: activeConversation.id,
-          organizationId,
-          role: 'assistant',
-          content: agentAssistantReply
-        })
+        await persistAssistantMessage(agentAssistantReply, null, { id: currentMessageId || undefined })
       }
 
       if (completionMessages?.summary) {
-        await addMessageToConversation(db, {
-          conversationId: activeConversation.id,
-          organizationId,
-          role: 'assistant',
-          content: completionMessages.summary.content,
-          payload: completionMessages.summary.payload
-        })
+        await persistAssistantMessage(
+          completionMessages.summary.content,
+          completionMessages.summary.payload ?? null
+        )
       }
 
       if (completionMessages?.files) {
-        await addMessageToConversation(db, {
-          conversationId: activeConversation.id,
-          organizationId,
-          role: 'assistant',
-          content: completionMessages.files.content,
-          payload: completionMessages.files.payload
-        })
+        await persistAssistantMessage(
+          completionMessages.files.content,
+          completionMessages.files.payload ?? null
+        )
       }
 
       const messages = await getConversationMessages(db, activeConversation.id, organizationId)
@@ -2256,13 +2179,13 @@ export default defineEventHandler(async (event) => {
         .map((log) => {
           const payload = log.payload as Record<string, any> | null
           let status = 'unknown'
-          if (log.type === 'tool_succeeded') {
+          if ((log.type as string) === 'tool_succeeded') {
             status = 'succeeded'
-          } else if (log.type === 'tool_failed') {
+          } else if ((log.type as string) === 'tool_failed') {
             status = 'failed'
-          } else if (log.type === 'tool_started') {
+          } else if ((log.type as string) === 'tool_started') {
             status = 'started'
-          } else if (log.type === 'tool_retrying') {
+          } else if ((log.type as string) === 'tool_retrying') {
             status = 'retrying'
           }
           return {

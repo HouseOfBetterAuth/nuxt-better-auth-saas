@@ -26,6 +26,7 @@
     "sync:upstream:dry-run": "./scripts/sync-upstream.sh --dry-run",
     "sync:upstream:no-backup": "./scripts/sync-upstream.sh --no-backup",
     "db:backfill-device-fingerprints": "tsx scripts/backfill-device-fingerprints.ts",
+    "debug:endpoints": "tsx scripts/debug-endpoint-hangs.ts",
     "prepare": "husky"
   },
   "dependencies": {

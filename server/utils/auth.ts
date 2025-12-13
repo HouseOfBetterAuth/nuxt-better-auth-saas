@@ -55,9 +55,11 @@ const CONVERSATION_QUOTA_SETTINGS = {
   paid: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.paid, 0)
 } as const
 const QUOTA_USAGE_THRESHOLDS = [0.5, 0.8, 1] as const
+const CONVERSATION_QUOTAS_DISABLED = process.env.NUXT_ENABLE_CONVERSATION_QUOTAS !== 'true'
+export const areConversationQuotasDisabled = () => CONVERSATION_QUOTAS_DISABLED
 
-const getQuotaAdvisoryLockKeys = (organizationId: string): [number, number] => {
-  const hash = createHash('sha256').update(`quota:${organizationId}`).digest()
+const _getQuotaAdvisoryLockKeys = (_organizationId: string): [number, number] => {
+  const hash = createHash('sha256').update(`quota:${_organizationId}`).digest()
   return [hash.readInt32BE(0), hash.readInt32BE(4)]
 }
 
@@ -890,51 +892,46 @@ const logQuotaUsageSnapshot = async (
 ) => {
   const thresholdsToLog: Array<{ threshold: number, ratio: number, used: number, limit: number }> = []
   try {
-    await db.transaction(async (tx) => {
-      const [lockKeyA, lockKeyB] = getQuotaAdvisoryLockKeys(organizationId)
-      await tx.execute(sql`select pg_advisory_xact_lock(${lockKeyA}, ${lockKeyB})`)
+    const [last] = await db
+      .select()
+      .from(schema.quotaUsageLog)
+      .where(eq(schema.quotaUsageLog.organizationId, organizationId))
+      .orderBy(desc(schema.quotaUsageLog.createdAt))
+      .limit(1)
 
-      const [last] = await tx
-        .select()
-        .from(schema.quotaUsageLog)
-        .where(eq(schema.quotaUsageLog.organizationId, organizationId))
-        .orderBy(desc(schema.quotaUsageLog.createdAt))
-        .limit(1)
+    const hasMeaningfulChange = !last ||
+      last.used !== quota.used ||
+      (last.quotaLimit ?? null) !== (quota.limit ?? null) ||
+      last.unlimited !== Boolean(quota.unlimited)
 
-      const hasMeaningfulChange = !last ||
-        last.used !== quota.used ||
-        (last.quotaLimit ?? null) !== (quota.limit ?? null) ||
-        last.unlimited !== Boolean(quota.unlimited)
+    if (!hasMeaningfulChange) {
+      return
+    }
 
-      if (!hasMeaningfulChange) {
-        return
-      }
+    await db.insert(schema.quotaUsageLog).values({
+      organizationId,
+      quotaLimit: quota.limit ?? null,
+      used: quota.used,
+      remaining: quota.remaining ?? (quota.limit !== null ? Math.max(0, quota.limit - quota.used) : null),
+      profile: quota.profile,
+      label: quota.label,
+      unlimited: Boolean(quota.unlimited)
+    })
 
-      await tx.insert(schema.quotaUsageLog).values({
-        organizationId,
-        quotaLimit: quota.limit ?? null,
-        used: quota.used,
-        remaining: quota.remaining ?? (quota.limit !== null ? Math.max(0, quota.limit - quota.used) : null),
-        profile: quota.profile,
-        label: quota.label,
-        unlimited: Boolean(quota.unlimited)
-      })
-
-      if (quota.limit && quota.limit > 0) {
-        const ratio = quota.used / quota.limit
-        const lastRatio = last && last.quotaLimit ? (last.used / last.quotaLimit) : 0
-        for (const threshold of QUOTA_USAGE_THRESHOLDS) {
-          if (ratio >= threshold && lastRatio < threshold) {
-            thresholdsToLog.push({
-              threshold,
-              ratio,
-              used: quota.used,
-              limit: quota.limit
-            })
-          }
+    if (quota.limit && quota.limit > 0) {
+      const ratio = quota.used / quota.limit
+      const lastRatio = last && last.quotaLimit ? (last.used / last.quotaLimit) : 0
+      for (const threshold of QUOTA_USAGE_THRESHOLDS) {
+        if (ratio >= threshold && lastRatio < threshold) {
+          thresholdsToLog.push({
+            threshold,
+            ratio,
+            used: quota.used,
+            limit: quota.limit
+          })
         }
       }
-    })
+    }
   } catch (error) {
     console.error('Unable to log quota usage snapshot', error)
   }
@@ -1048,11 +1045,11 @@ export const getDeviceFingerprint = async (
  *
  * Follows Better Auth patterns by using session data when available
  */
-const ensureDeviceFingerprintInOrg = async (
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  event?: H3Event | null,
-  userId?: string | null
+const _ensureDeviceFingerprintInOrg = async (
+  _db: NodePgDatabase<typeof schema>,
+  _organizationId: string,
+  _event?: H3Event | null,
+  _userId?: string | null
 ): Promise<void> => {
   if (!event)
     return
@@ -1183,29 +1180,27 @@ export const getConversationQuotaUsage = async (
   user: User | null,
   event?: H3Event | null
 ): Promise<ConversationQuotaUsageResult> => {
-  const { hasActiveSubscription, planLabel } = await getOrganizationSubscriptionStatus(db, organizationId)
-  const { profile, label } = resolveConversationQuotaProfile(user, hasActiveSubscription)
-  const configuredLimit = CONVERSATION_QUOTA_SETTINGS[profile]
-  const unlimited = profile === 'paid' && configuredLimit <= 0
-
-  // Ensure device fingerprint is stored for anonymous organizations
-  if (profile === 'anonymous' && event) {
-    await ensureDeviceFingerprintInOrg(db, organizationId, event, user?.id || null)
+  if (CONVERSATION_QUOTAS_DISABLED) {
+    return {
+      limit: null,
+      used: 0,
+      remaining: null,
+      label: 'Unlimited access',
+      unlimited: true,
+      profile: user?.isAnonymous ? 'anonymous' : 'paid'
+    }
   }
+  // Run subscription check and conversation count in parallel for non-anonymous users
+  const isAnonymous = user?.isAnonymous ?? false
 
-  let used = 0
-
-  // For anonymous users, aggregate quota across all organizations from the same device
-  // This prevents quota reset when cookies are cleared
-  // Uses Better Auth session data when available for more reliable tracking
-  if (profile === 'anonymous' && event) {
+  // For anonymous users, we need to do device fingerprint lookup first
+  if (isAnonymous && event) {
     const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
     if (deviceFingerprint) {
       const orgIds = await findAnonymousOrganizationIdsForFingerprint(db, deviceFingerprint)
 
       if (orgIds.length > 0) {
         // Count conversations across all anonymous orgs from this device
-        // Exclude archived/completed conversations from quota
         const [aggregateResult] = await db
           .select({ total: count() })
           .from(schema.conversation)
@@ -1215,33 +1210,23 @@ export const getConversationQuotaUsage = async (
             sql`${schema.conversation.status} != 'completed'`
           ))
 
-        used = Number(aggregateResult?.total ?? 0) || 0
-      } else {
-        // Fallback to current organization if no device match found
-        const [countResult] = await db
-          .select({ total: count() })
-          .from(schema.conversation)
-          .where(and(
-            eq(schema.conversation.organizationId, organizationId),
-            sql`${schema.conversation.status} != 'archived'`,
-            sql`${schema.conversation.status} != 'completed'`
-          ))
-        used = Number(countResult?.total ?? 0) || 0
+        const used = Number(aggregateResult?.total ?? 0) || 0
+        const anonymousLimit = CONVERSATION_QUOTA_SETTINGS.anonymous
+        const quota = {
+          limit: anonymousLimit,
+          used,
+          remaining: Math.max(0, anonymousLimit - used),
+          label: 'Guest access',
+          unlimited: false,
+          profile: 'anonymous' as const
+        }
+        logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
+          console.error('[Quota] Failed to log snapshot:', err)
+        })
+        return quota
       }
-    } else {
-      // Fallback to current organization if device fingerprint unavailable
-      const [countResult] = await db
-        .select({ total: count() })
-        .from(schema.conversation)
-        .where(and(
-          eq(schema.conversation.organizationId, organizationId),
-          sql`${schema.conversation.status} != 'archived'`,
-          sql`${schema.conversation.status} != 'completed'`
-        ))
-      used = Number(countResult?.total ?? 0) || 0
     }
-  } else {
-    // For non-anonymous users, use organization-based quota
+    // Fallback to current organization
     const [countResult] = await db
       .select({ total: count() })
       .from(schema.conversation)
@@ -1250,8 +1235,43 @@ export const getConversationQuotaUsage = async (
         sql`${schema.conversation.status} != 'archived'`,
         sql`${schema.conversation.status} != 'completed'`
       ))
-    used = Number(countResult?.total ?? 0) || 0
+    const used = Number(countResult?.total ?? 0) || 0
+    const anonymousLimit = CONVERSATION_QUOTA_SETTINGS.anonymous
+    const quota = {
+      limit: anonymousLimit,
+      used,
+      remaining: Math.max(0, anonymousLimit - used),
+      label: 'Guest access',
+      unlimited: false,
+      profile: 'anonymous' as const
+    }
+    logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
+      console.error('[Quota] Failed to log snapshot:', err)
+    })
+    return quota
   }
+
+  // For signed-in users, run subscription check and conversation count in parallel
+  const [
+    subscriptionStatus,
+    countResult
+  ] = await Promise.all([
+    getOrganizationSubscriptionStatus(db, organizationId),
+    db
+      .select({ total: count() })
+      .from(schema.conversation)
+      .where(and(
+        eq(schema.conversation.organizationId, organizationId),
+        sql`${schema.conversation.status} != 'archived'`,
+        sql`${schema.conversation.status} != 'completed'`
+      ))
+  ])
+
+  const { hasActiveSubscription, planLabel } = subscriptionStatus
+  const { profile, label } = resolveConversationQuotaProfile(user, hasActiveSubscription)
+  const configuredLimit = CONVERSATION_QUOTA_SETTINGS[profile]
+  const unlimited = profile === 'paid' && configuredLimit <= 0
+  const used = Number(countResult[0]?.total ?? 0) || 0
 
   if (unlimited) {
     const quota = {
@@ -1262,7 +1282,10 @@ export const getConversationQuotaUsage = async (
       unlimited: true,
       profile
     }
-    await logQuotaUsageSnapshot(db, organizationId, quota)
+    // Fire and forget - don't block response for logging
+    logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
+      console.error('[Quota] Failed to log snapshot:', err)
+    })
     return quota
   }
 
@@ -1275,7 +1298,10 @@ export const getConversationQuotaUsage = async (
     unlimited: false,
     profile
   }
-  await logQuotaUsageSnapshot(db, organizationId, quota)
+  // Fire and forget - don't block response for logging
+  logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
+    console.error('[Quota] Failed to log snapshot:', err)
+  })
   return quota
 }
 

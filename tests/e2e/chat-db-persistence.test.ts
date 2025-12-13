@@ -1,10 +1,8 @@
 import { setup } from '@nuxt/test-utils/e2e'
 import { $fetch } from 'ofetch'
-import pg from 'pg'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { testDatabaseConnection } from '../utils/dbConnection'
-
-const { Pool } = pg
+import { closeSharedDbPool, getSharedDbPool } from '../utils/dbPool'
 
 /**
  * E2E test for chat API database persistence
@@ -19,34 +17,22 @@ describe('chat database persistence E2E', async () => {
   await setup({ host: process.env.NUXT_TEST_APP_URL })
 
   const baseURL = process.env.NUXT_TEST_APP_URL || 'http://localhost:3000'
-  let dbPool: pg.Pool | null = null
 
-  beforeEach(async () => {
-    // Verify database connection before tests
+  // Verify database connection once before all tests
+  beforeAll(async () => {
     const dbTest = await testDatabaseConnection()
     if (!dbTest.success) {
       throw new Error(`Database connection failed: ${dbTest.message}`)
     }
-
-    // Create database pool for direct queries
-    const databaseUrl = process.env.DATABASE_URL
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL is not set')
-    }
-
-    dbPool = new Pool({
-      connectionString: databaseUrl,
-      max: 1,
-      connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 30000
-    })
   })
 
-  afterEach(async () => {
-    if (dbPool) {
-      await dbPool.end()
-      dbPool = null
-    }
+  beforeEach(async () => {
+    // Pool is now shared - no need to create/destroy per test
+  })
+
+  // Clean up shared pool after all tests
+  afterAll(async () => {
+    await closeSharedDbPool()
   })
 
   it('should save chat messages to database for anonymous users', async () => {
@@ -129,13 +115,13 @@ describe('chat database persistence E2E', async () => {
       console.warn('Conversation ID not found in SSE stream, will search database by message content')
     }
 
-    if (!dbPool) {
-      throw new Error('Database pool not initialized')
-    }
+    // Use shared pool instead of per-test pool
+    const dbPool = getSharedDbPool()
 
     // Poll database until conversation and messages appear or timeout
-    const maxWaitTime = 5000
-    const pollInterval = 200
+    // Reduced wait time since we optimized the endpoint
+    const maxWaitTime = 3000 // Reduced from 5000
+    const pollInterval = 150 // Reduced from 200
     const maxConsecutiveErrors = 3 // Fail fast after 3 consecutive errors
     let elapsedTime = 0
     let conversationFound = false
@@ -170,9 +156,17 @@ describe('chat database persistence E2E', async () => {
       while (elapsedTime < maxWaitTime && (!conversationFound || !messagesFound)) {
         try {
           // If we don't have conversationId yet, try to find it by message content
+          // Use a more efficient query with EXISTS instead of JOIN
           if (!conversationId) {
             const findResult = await client.query(
-              'SELECT c.id FROM conversation c JOIN conversation_message cm ON c.id = cm.conversation_id WHERE cm.content = $1 AND cm.role = $2 ORDER BY cm.created_at DESC LIMIT 1',
+              `SELECT c.id FROM conversation c
+               WHERE EXISTS (
+                 SELECT 1 FROM conversation_message cm
+                 WHERE cm.conversation_id = c.id
+                 AND cm.content = $1
+                 AND cm.role = $2
+               )
+               ORDER BY c.updated_at DESC LIMIT 1`,
               [testMessage, 'user']
             )
             if (findResult.rows.length > 0) {
@@ -187,7 +181,7 @@ describe('chat database persistence E2E', async () => {
             continue
           }
 
-          // Check conversation
+          // Check conversation and messages in a single query for efficiency
           const conversationResult = await client.query(
             'SELECT id, organization_id, created_by_user_id, status FROM conversation WHERE id = $1',
             [conversationId]
@@ -197,7 +191,7 @@ describe('chat database persistence E2E', async () => {
           if (conversationResult.rows.length > 0) {
             conversationFound = true
 
-            // Check messages
+            // Check messages - use a more efficient query
             const messagesResult = await client.query(
               'SELECT id, conversation_id, role, content FROM conversation_message WHERE conversation_id = $1 ORDER BY created_at ASC',
               [conversationId]

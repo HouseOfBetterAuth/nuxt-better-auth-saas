@@ -1,6 +1,6 @@
 import type { ChatMessage } from '#shared/utils/types'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/db/schema'
 
@@ -198,6 +198,97 @@ export async function getConversationLogs(
       eq(schema.conversationLog.organizationId, organizationId)
     ))
     .orderBy(schema.conversationLog.createdAt)
+}
+
+const PREVIEW_MESSAGE_MAX_LENGTH = 280
+
+const normalizePreviewText = (content: string) => {
+  if (!content) {
+    return ''
+  }
+  const normalized = content.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= PREVIEW_MESSAGE_MAX_LENGTH) {
+    return normalized
+  }
+  return `${normalized.slice(0, PREVIEW_MESSAGE_MAX_LENGTH - 3).trimEnd()}...`
+}
+
+export interface ConversationPreviewMetadataPatch {
+  latestMessage?: {
+    role: 'user' | 'assistant' | 'system' | 'function'
+    content: string
+    createdAt: Date | string
+  }
+  latestArtifact?: {
+    title: string | null
+    updatedAt?: Date | string | null
+  }
+  artifactCount?: number
+}
+
+export const patchConversationPreviewMetadata = async (
+  db: NodePgDatabase<typeof schema>,
+  conversationId: string,
+  organizationId: string,
+  updates: ConversationPreviewMetadataPatch
+) => {
+  let patch = sql`'{}'::jsonb`
+  let hasUpdates = false
+
+  if (updates.latestMessage) {
+    hasUpdates = true
+    const createdAt = new Date(updates.latestMessage.createdAt).toISOString()
+    const previewMessage = normalizePreviewText(updates.latestMessage.content)
+    patch = sql`${patch} || jsonb_build_object(
+      'latestMessage',
+      jsonb_build_object(
+        'role', ${updates.latestMessage.role}::text,
+        'content', ${previewMessage}::text,
+        'createdAt', ${createdAt}::text
+      )
+    )`
+  }
+
+  if (updates.latestArtifact) {
+    hasUpdates = true
+    const updatedAt = updates.latestArtifact.updatedAt
+      ? new Date(updates.latestArtifact.updatedAt).toISOString()
+      : null
+    patch = sql`${patch} || jsonb_build_object(
+      'latestArtifact',
+      jsonb_build_object(
+        'title', ${updates.latestArtifact.title ?? null}::text,
+        'updatedAt', ${updatedAt}::text
+      )
+    )`
+  }
+
+  if (typeof updates.artifactCount === 'number') {
+    hasUpdates = true
+    // Cast to integer explicitly so PostgreSQL can determine the type
+    patch = sql`${patch} || jsonb_build_object('artifactCount', ${updates.artifactCount}::integer)`
+  }
+
+  if (!hasUpdates) {
+    return
+  }
+
+  await db
+    .update(schema.conversation)
+    .set({
+      metadata: sql`
+        jsonb_set(
+          COALESCE(${schema.conversation.metadata}, '{}'::jsonb),
+          '{preview}',
+          COALESCE(${schema.conversation.metadata}->'preview', '{}'::jsonb) || (${patch})
+        )
+      `,
+      updatedAt: new Date()
+    })
+    .where(and(
+      eq(schema.conversation.id, conversationId),
+      eq(schema.conversation.organizationId, organizationId)
+    ))
 }
 
 /**
