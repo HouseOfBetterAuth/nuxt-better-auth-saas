@@ -188,7 +188,8 @@ export const createBetterAuth = () => betterAuth({
                     createdAt: new Date(),
                     // Store device fingerprint if available in context/headers?
                     // Ideally we'd capture this, but for now just creating the org is the priority.
-                    metadata: JSON.stringify({ isAnonymous: true })
+                    metadata: JSON.stringify({ isAnonymous: true }),
+                    isAnonymous: true
                   })
                   .returning()
 
@@ -655,7 +656,7 @@ export const createBetterAuth = () => betterAuth({
                 .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
                 .where(and(
                   eq(schema.member.userId, previousUserId),
-                  sql`${schema.organization.slug} LIKE 'anonymous-%'`
+                  eq(schema.organization.isAnonymous, true)
                 ))
 
               const anonOrgIds = Array.from(
@@ -685,7 +686,8 @@ export const createBetterAuth = () => betterAuth({
                 ))
 
               // Set active org to the first anonymous org (best-effort).
-              await setUserActiveOrganization(newUserId, anonOrgIds[0])
+              // Use the transaction so this participates in the same transaction
+              await setUserActiveOrganization(newUserId, anonOrgIds[0], tx)
             })
           } catch (error) {
             console.error('[Auth] Failed to transfer anonymous org membership during upgrade:', error)
@@ -1108,10 +1110,10 @@ export const getDeviceFingerprint = async (
  * Follows Better Auth patterns by using session data when available
  */
 const _ensureDeviceFingerprintInOrg = async (
-  _db: NodePgDatabase<typeof schema>,
-  _organizationId: string,
-  _event?: H3Event | null,
-  _userId?: string | null
+  db: NodePgDatabase<typeof schema>,
+  organizationId: string,
+  event?: H3Event | null,
+  userId?: string | null
 ): Promise<void> => {
   if (!event)
     return
@@ -1126,7 +1128,7 @@ const _ensureDeviceFingerprintInOrg = async (
     const [org] = await db
       .select({
         id: schema.organization.id,
-        slug: schema.organization.slug,
+        isAnonymous: schema.organization.isAnonymous,
         metadata: schema.organization.metadata,
         deviceFingerprint: schema.organization.deviceFingerprint
       })
@@ -1134,7 +1136,7 @@ const _ensureDeviceFingerprintInOrg = async (
       .where(eq(schema.organization.id, organizationId))
       .limit(1)
 
-    if (!org || !org.slug.startsWith('anonymous-'))
+    if (!org || !org.isAnonymous)
       return
 
     let metadata: Record<string, any> = {}
@@ -1198,14 +1200,12 @@ const findAnonymousOrganizationIdsForFingerprint = async (
   if (!fingerprint)
     return [] as string[]
 
-  const baseConditions = sql`${schema.organization.slug} LIKE 'anonymous-%'`
-
   const directMatches = await db
     .select({ id: schema.organization.id })
     .from(schema.organization)
     .where(and(
       eq(schema.organization.deviceFingerprint, fingerprint),
-      baseConditions
+      eq(schema.organization.isAnonymous, true)
     ))
 
   if (directMatches.length > 0)
@@ -1216,7 +1216,7 @@ const findAnonymousOrganizationIdsForFingerprint = async (
     .from(schema.organization)
     .where(and(
       buildDeviceFingerprintSearchCondition(fingerprint),
-      baseConditions
+      eq(schema.organization.isAnonymous, true)
     ))
 
   if (legacyMatches.length === 0)

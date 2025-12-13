@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3'
 import type { ActiveOrgExtras, OwnershipInfo } from '~~/shared/utils/organizationExtras'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import {
   computeNeedsUpgrade,
@@ -64,7 +64,7 @@ export const requireActiveOrganization = async (
       .innerJoin(schema.member, eq(schema.member.organizationId, schema.organization.id))
       .where(and(
         eq(schema.member.userId, userId),
-        sql`${schema.organization.slug} LIKE 'anonymous-%'`
+        eq(schema.organization.isAnonymous, true)
       ))
       .limit(1)
 

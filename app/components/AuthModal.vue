@@ -201,34 +201,42 @@ async function onSignUpSubmit(event: FormSubmitEvent<SignUpSchema>) {
   loading.value = true
   loadingAction.value = 'submit'
 
-  const { error } = await auth.signUp.email({
-    name: event.data.name,
-    email: event.data.email,
-    password: event.data.password,
-    referralCode: referralCode.value || undefined
-  })
+  try {
+    const { error } = await auth.signUp.email({
+      name: event.data.name,
+      email: event.data.email,
+      password: event.data.password,
+      referralCode: referralCode.value || undefined
+    })
 
-  if (error) {
+    if (error) {
+      toast.add({
+        title: error.message || (error as any).statusText,
+        color: 'error'
+      })
+    } else {
+      toast.add({
+        title: t('signUp.sendEmailSuccess'),
+        color: 'success'
+      })
+
+      signUpState.name = undefined
+      signUpState.email = undefined
+      signUpState.password = undefined
+      signUpState.confirmPassword = undefined
+
+      setMode('signin')
+    }
+  } catch (err: any) {
     toast.add({
-      title: error.message || (error as any).statusText,
+      title: err?.message || err?.statusText || 'An error occurred',
       color: 'error'
     })
-  } else {
-    toast.add({
-      title: t('signUp.sendEmailSuccess'),
-      color: 'success'
-    })
-
-    signUpState.name = undefined
-    signUpState.email = undefined
-    signUpState.password = undefined
-    signUpState.confirmPassword = undefined
-
-    setMode('signin')
+    console.error(err)
+  } finally {
+    loading.value = false
+    loadingAction.value = ''
   }
-
-  loading.value = false
-  loadingAction.value = ''
 }
 </script>
 

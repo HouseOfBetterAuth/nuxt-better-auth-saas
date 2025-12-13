@@ -1,5 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '../../db/schema'
 import { getDB } from '../../utils/db'
@@ -105,17 +105,21 @@ const generateUniqueSlug = async (db: DbInstance, seed: string) => {
   throw new Error('Unable to generate a unique organization slug')
 }
 
-export const setUserActiveOrganization = async (userId: string, organizationId: string) => {
+export const setUserActiveOrganization = async (
+  userId: string,
+  organizationId: string,
+  db?: DbInstance
+) => {
   if (!userId || !organizationId)
     return
 
-  const db = getDB()
+  const dbInstance = db || getDB()
   await Promise.all([
-    db
+    dbInstance
       .update(schema.user)
       .set({ lastActiveOrganizationId: organizationId })
       .where(eq(schema.user.id, userId)),
-    db
+    dbInstance
       .update(schema.session)
       .set({ activeOrganizationId: organizationId })
       .where(eq(schema.session.userId, userId))
@@ -138,7 +142,7 @@ export const ensureDefaultOrganizationForUser = async (
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
       .where(and(
         eq(schema.member.userId, user.id),
-        sql`${schema.organization.slug} NOT LIKE 'anonymous-%'`
+        eq(schema.organization.isAnonymous, false)
       ))
       .limit(1)
 
@@ -154,7 +158,7 @@ export const ensureDefaultOrganizationForUser = async (
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
       .where(and(
         eq(schema.member.userId, user.id),
-        sql`${schema.organization.slug} LIKE 'anonymous-%'`
+        eq(schema.organization.isAnonymous, true)
       ))
       .limit(1)
 
