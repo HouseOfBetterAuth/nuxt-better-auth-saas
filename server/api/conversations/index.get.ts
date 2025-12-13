@@ -22,20 +22,34 @@ const encodeCursor = (payload: CursorPayload) => {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '')
 }
 
+const MAX_CURSOR_LENGTH = 2048
+
 const decodeCursor = (cursor: string): CursorPayload => {
-  const base64 = cursor.replace(/-/g, '+').replace(/_/g, '/')
-  const paddingNeeded = (4 - (base64.length % 4 || 4)) % 4
-  const padded = `${base64}${'='.repeat(paddingNeeded)}`
-  const json = Buffer.from(padded, 'base64').toString('utf8')
-  const parsed = JSON.parse(json) as CursorPayload
-  if (!parsed?.id || !parsed?.updatedAt) {
+  if (cursor.length > MAX_CURSOR_LENGTH) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
       message: 'Invalid cursor value'
     })
   }
-  return parsed
+
+  try {
+    const base64 = cursor.replace(/-/g, '+').replace(/_/g, '/')
+    const paddingNeeded = (4 - (base64.length % 4 || 4)) % 4
+    const padded = `${base64}${'='.repeat(paddingNeeded)}`
+    const json = Buffer.from(padded, 'base64').toString('utf8')
+    const parsed = JSON.parse(json) as CursorPayload
+    if (!parsed?.id || !parsed?.updatedAt) {
+      throw new Error('Invalid payload')
+    }
+    return parsed
+  } catch {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      message: 'Invalid cursor value'
+    })
+  }
 }
 
 const deriveTitle = (metadata: Record<string, any> | null | undefined) => {
@@ -61,22 +75,17 @@ export default defineEventHandler(async (event) => {
   let cursorDate: Date | null = null
   let cursorId: string | null = null
   if (query.cursor) {
-    try {
-      const decoded = decodeCursor(query.cursor)
-      cursorId = decoded.id
-      const parsedDate = new Date(decoded.updatedAt)
-      if (Number.isNaN(parsedDate.getTime())) {
-        throw new Error('Invalid timestamp')
-      }
-      cursorDate = parsedDate
-    } catch (error) {
-      console.error('[conversations] Failed to decode cursor', error)
+    const decoded = decodeCursor(query.cursor)
+    cursorId = decoded.id
+    const parsedDate = new Date(decoded.updatedAt)
+    if (Number.isNaN(parsedDate.getTime())) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
         message: 'Invalid cursor value'
       })
     }
+    cursorDate = parsedDate
   }
 
   const filters = [eq(schema.conversation.organizationId, organizationId)]

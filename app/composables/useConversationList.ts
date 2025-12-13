@@ -17,14 +17,17 @@ interface FetchResponse {
 
 const DEFAULT_PAGE_SIZE = 30
 
-export function useConversationList(options?: { pageSize?: number }) {
+export function useConversationList(options?: { pageSize?: number, stateKey?: string }) {
   const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE
-  const itemsState = useState<ConversationListItem[]>('conversation-list:items', () => [])
-  const cursorState = useState<string | null>('conversation-list:cursor', () => null)
-  const hasMoreState = useState<boolean>('conversation-list:has-more', () => true)
-  const pendingState = useState<boolean>('conversation-list:pending', () => false)
-  const errorState = useState<string | null>('conversation-list:error', () => null)
-  const initializedState = useState<boolean>('conversation-list:initialized', () => false)
+  const baseKey = options?.stateKey ?? `default:${pageSize}`
+  const resolveKey = (segment: string) => `conversation-list:${baseKey}:${segment}`
+
+  const itemsState = useState<ConversationListItem[]>(resolveKey('items'), () => [])
+  const cursorState = useState<string | null>(resolveKey('cursor'), () => null)
+  const hasMoreState = useState<boolean>(resolveKey('has-more'), () => true)
+  const pendingState = useState<boolean>(resolveKey('pending'), () => false)
+  const errorState = useState<string | null>(resolveKey('error'), () => null)
+  const initializedState = useState<boolean>(resolveKey('initialized'), () => false)
 
   const mergeItems = (incoming: ConversationListItem[], replace = false) => {
     if (replace) {
