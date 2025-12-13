@@ -1324,643 +1324,707 @@ export default defineEventHandler(async (event) => {
   // Once streaming starts, headers are sent and we can't set cookies
   // ============================================================================
 
-  // Check session first to avoid expensive anonymous user creation during streaming
-  const session = await getAuthSession(event)
-
-  // Validate mode early (before streaming) to support anonymous fast-paths
-  const body = await readBody<ChatRequestBody>(event)
-  validateRequestBody(body)
-  const VALID_MODES = ['chat', 'agent'] as const
-  const mode = validateEnum(body.mode, VALID_MODES, 'mode')
-
-  // Enforce authentication for Agent mode BEFORE provisioning anonymous sessions
-  if (mode === 'agent' && (!session?.user || session.user.isAnonymous)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Agent mode requires authentication',
-      message: 'Please sign in to use agent mode and save content.'
+  try {
+    console.log('[Chat API] Starting request')
+    // Check session first to avoid expensive anonymous user creation during streaming
+    // Add timeout to prevent hanging in Cloudflare Workers
+    const sessionPromise = getAuthSession(event)
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('getAuthSession timeout after 5s')), 5000)
     })
-  }
+    const session = await Promise.race([sessionPromise, timeoutPromise]).catch((error) => {
+      console.error('[Chat API] getAuthSession failed or timed out:', error)
+      return null // Return null on timeout/error to allow anonymous fallback
+    })
+    console.log('[Chat API] Session obtained:', { hasUser: !!session?.user, userId: session?.user?.id })
 
-  let user = session?.user
+    // Validate mode early (before streaming) to support anonymous fast-paths
+    const body = await readBody<ChatRequestBody>(event)
+    validateRequestBody(body)
+    const VALID_MODES = ['chat', 'agent'] as const
+    const mode = validateEnum(body.mode, VALID_MODES, 'mode')
 
-  // If no session, try to create anonymous user BEFORE starting stream
-  if (!user) {
-    // For anonymous users, we need to create session before streaming
-    // This allows us to set cookies properly
-    try {
-      user = await requireAuth(event, { allowAnonymous: true })
-    } catch {
-      // If auth fails, return error before starting stream
+    // Enforce authentication for Agent mode BEFORE provisioning anonymous sessions
+    if (mode === 'agent' && (!session?.user || session.user.isAnonymous)) {
       throw createError({
-        statusCode: 401,
-        statusMessage: 'Unauthorized'
+        statusCode: 403,
+        statusMessage: 'Agent mode requires authentication',
+        message: 'Please sign in to use agent mode and save content.'
       })
     }
-  } else {
+
+    let user = session?.user
+
+    // If no session, try to create anonymous user BEFORE starting stream
+    if (!user) {
+    // For anonymous users, we need to create session before streaming
+    // This allows us to set cookies properly
+      try {
+        user = await requireAuth(event, { allowAnonymous: true })
+      } catch {
+      // If auth fails, return error before starting stream
+        throw createError({
+          statusCode: 401,
+          statusMessage: 'Unauthorized'
+        })
+      }
+    } else {
     // Cache user in context
-    event.context.user = user
-  }
-
-  // ============================================================================
-  // Web Streams API Implementation for Cloudflare Workers
-  // Create stream AFTER authentication to avoid header issues
-  // ============================================================================
-  const { stream, writer: sseWriter } = createSSEStream()
-
-  // Helper to write SSE events
-  const writeSSE = (eventType: string, data: any) => {
-    sseWriter.write(eventType, data)
-  }
-
-  let pingSent = false
-  const flushPing = () => {
-    if (pingSent) {
-      return
+      event.context.user = user
     }
-    pingSent = true
-    writeSSE('ping', { ts: Date.now() })
-  }
 
-  // Send initial ping immediately to keep connection alive
-  // This prevents Cloudflare Workers from detecting the stream as hung
-  // if async processing takes time to start
-  flushPing()
+    // ============================================================================
+    // Web Streams API Implementation for Cloudflare Workers
+    // Create stream AFTER authentication to avoid header issues
+    // ============================================================================
+    const { stream, writer: sseWriter } = createSSEStream()
 
-  // Start async processing (don't await - let it run in background)
-  // Note: body, mode, and user are already validated/authenticated above
-  ;(async () => {
-    try {
+    // Helper to write SSE events
+    const writeSSE = (eventType: string, data: any) => {
+      sseWriter.write(eventType, data)
+    }
+
+    let pingSent = false
+    const flushPing = () => {
+      if (pingSent) {
+        return
+      }
+      pingSent = true
+      writeSSE('ping', { ts: Date.now() })
+    }
+
+    // Send initial ping immediately to keep connection alive
+    // This prevents Cloudflare Workers from detecting the stream as hung
+    // if async processing takes time to start
+    console.log('[Chat API] Sending initial ping')
+    flushPing()
+
+    // Start async processing (don't await - let it run in background)
+    // Note: body, mode, and user are already validated/authenticated above
+    console.log('[Chat API] Starting async processing')
+    ;(async () => {
+      try {
       // Send ping after reading body to show progress
-      writeSSE('ping', { ts: Date.now(), stage: 'body-read' })
+        writeSSE('ping', { ts: Date.now(), stage: 'body-read' })
 
-      flushPing()
-      writeSSE('ping', { ts: Date.now(), stage: 'db-connect' })
-      const db = await useDB(event)
-      writeSSE('ping', { ts: Date.now(), stage: 'db-connected' })
+        flushPing()
+        writeSSE('ping', { ts: Date.now(), stage: 'db-connect' })
+        const db = await useDB(event)
+        writeSSE('ping', { ts: Date.now(), stage: 'db-connected' })
 
-      // Organization Resolution Strategy
-      let organizationId: string | null = null
+        // Organization Resolution Strategy
+        let organizationId: string | null = null
 
-      if (!user.isAnonymous) {
+        if (!user.isAnonymous) {
         // STRATEGY 1: Signed-In User
         // Try session first (Fastest)
-        const authSession = await getAuthSession(event)
-        const sessionOrgId = (authSession?.session as any)?.activeOrganizationId
+          const authSession = await getAuthSession(event)
+          const sessionOrgId = (authSession?.session as any)?.activeOrganizationId
 
-        if (sessionOrgId) {
+          if (sessionOrgId) {
           // Verify existence (fast query by PK)
-          const [orgExists] = await db
-            .select({ id: schema.organization.id })
-            .from(schema.organization)
-            .where(eq(schema.organization.id, sessionOrgId))
-            .limit(1)
+            const [orgExists] = await db
+              .select({ id: schema.organization.id })
+              .from(schema.organization)
+              .where(eq(schema.organization.id, sessionOrgId))
+              .limit(1)
 
-          if (orgExists) {
-            organizationId = sessionOrgId
+            if (orgExists) {
+              organizationId = sessionOrgId
+            }
           }
-        }
 
-        // Fallback to active organization requirement (Slower, DB intensive)
-        if (!organizationId) {
+          // Fallback to active organization requirement (Slower, DB intensive)
+          if (!organizationId) {
           // Direct call - no try/catch wrapper needed for signed-in users
-          const result = await requireActiveOrganization(event, user.id)
-          organizationId = result.organizationId
-        }
-      } else {
+            const result = await requireActiveOrganization(event, user.id)
+            organizationId = result.organizationId
+          }
+        } else {
         // STRATEGY 2: Anonymous User
         // They don't have a session with activeOrgId.
         // We rely on requireActiveOrganization to handle guest/anonymous context creation.
-        try {
-          const result = await requireActiveOrganization(event, user.id, { isAnonymousUser: true })
-          organizationId = result.organizationId
-        } catch {
-          throw createValidationError('Unable to initialize anonymous session. Please try again or create an account to continue.')
-        }
-      }
-
-      if (!organizationId) {
-        throw createValidationError('No active organization found. Please create an account or select an organization.')
-      }
-
-      const message = typeof body.message === 'string' ? body.message : ''
-      const trimmedMessage = message.trim()
-      const requestConversationId = body.conversationId
-        ? validateOptionalUUID(body.conversationId, 'conversationId')
-        : null
-
-      if (!trimmedMessage) {
-        throw createValidationError('Message is required')
-      }
-
-      const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
-      const readySources: typeof schema.sourceContent.$inferSelect[] = []
-      const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
-      const readySourceIds = new Set<string>()
-      let agentAssistantReply: string | null = null
-
-      const trackReadySource = (
-        source: typeof schema.sourceContent.$inferSelect | null | undefined,
-        options?: { isNew?: boolean }
-      ) => {
-        if (!source || !source.id || source.ingestStatus !== 'ingested' || readySourceIds.has(source.id)) {
-          return
+          try {
+            const result = await requireActiveOrganization(event, user.id, { isAnonymousUser: true })
+            organizationId = result.organizationId
+          } catch {
+            throw createValidationError('Unable to initialize anonymous session. Please try again or create an account to continue.')
+          }
         }
 
-        readySources.push(source)
-        readySourceIds.add(source.id)
-        if (options?.isNew) {
-          newlyReadySources.push(source)
+        if (!organizationId) {
+          throw createValidationError('No active organization found. Please create an account or select an organization.')
         }
-      }
 
-      const requestContentId = (body as any).contentId
-        ? validateOptionalUUID((body as any).contentId, 'contentId')
-        : null
+        const message = typeof body.message === 'string' ? body.message : ''
+        const trimmedMessage = message.trim()
+        const requestConversationId = body.conversationId
+          ? validateOptionalUUID(body.conversationId, 'conversationId')
+          : null
 
-      const _initialSessionContentId = requestContentId
+        if (!trimmedMessage) {
+          throw createValidationError('Message is required')
+        }
 
-      // Declare multiPassResult variable for use later
-      let multiPassResult: Awaited<ReturnType<typeof runChatAgentWithMultiPassStream>> | null = null
+        const ingestionErrors: Array<{ content: string, payload?: Record<string, any> | null }> = []
+        const readySources: typeof schema.sourceContent.$inferSelect[] = []
+        const newlyReadySources: typeof schema.sourceContent.$inferSelect[] = []
+        const readySourceIds = new Set<string>()
+        let agentAssistantReply: string | null = null
 
-      let conversation: typeof schema.conversation.$inferSelect | null = null
-      if (requestConversationId) {
-        conversation = await getConversationById(db, requestConversationId, organizationId)
+        const trackReadySource = (
+          source: typeof schema.sourceContent.$inferSelect | null | undefined,
+          options?: { isNew?: boolean }
+        ) => {
+          if (!source || !source.id || source.ingestStatus !== 'ingested' || readySourceIds.has(source.id)) {
+            return
+          }
+
+          readySources.push(source)
+          readySourceIds.add(source.id)
+          if (options?.isNew) {
+            newlyReadySources.push(source)
+          }
+        }
+
+        const requestContentId = (body as any).contentId
+          ? validateOptionalUUID((body as any).contentId, 'contentId')
+          : null
+
+        const _initialSessionContentId = requestContentId
+
+        // Declare multiPassResult variable for use later
+        let multiPassResult: Awaited<ReturnType<typeof runChatAgentWithMultiPassStream>> | null = null
+
+        let conversation: typeof schema.conversation.$inferSelect | null = null
+        if (requestConversationId) {
+          conversation = await getConversationById(db, requestConversationId, organizationId)
+          if (!conversation) {
+            console.warn(`Conversation ${requestConversationId} not found for organization ${organizationId}, creating new conversation`)
+          }
+        }
+
         if (!conversation) {
-          console.warn(`Conversation ${requestConversationId} not found for organization ${organizationId}, creating new conversation`)
-        }
-      }
-
-      if (!conversation) {
         // Check conversation quota before creating a new conversation (only if quotas are enabled)
-        if (!areConversationQuotasDisabled()) {
-          await ensureConversationCapacity(db, organizationId, user, event)
-        }
-
-        const lastAction = trimmedMessage ? 'message' : null
-        conversation = await createConversation(db, {
-          organizationId,
-          sourceContentId: null, // Tools will set this when sources are created
-          createdByUserId: user.id,
-          metadata: {
-            lastAction
+          if (!areConversationQuotasDisabled()) {
+            await ensureConversationCapacity(db, organizationId, user, event)
           }
-        })
-      } else {
+
+          const lastAction = trimmedMessage ? 'message' : null
+          conversation = await createConversation(db, {
+            organizationId,
+            sourceContentId: null, // Tools will set this when sources are created
+            createdByUserId: user.id,
+            metadata: {
+              lastAction
+            }
+          })
+        } else {
         // Update conversation metadata with last action if provided
+          if (trimmedMessage) {
+            const lastAction = 'message'
+            const [updatedConversation] = await db
+              .update(schema.conversation)
+              .set({
+                metadata: {
+                  ...(conversation.metadata as Record<string, any> || {}),
+                  lastAction
+                },
+                updatedAt: new Date()
+              })
+              .where(eq(schema.conversation.id, conversation.id))
+              .returning()
+            if (updatedConversation) {
+              conversation = updatedConversation
+            }
+          }
+        }
+
+        if (!conversation) {
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to create chat conversation'
+          })
+        }
+
+        // From this point on, conversation is guaranteed to be non-null
+        // Use activeConversation variable to avoid null checks
+        let activeConversation = conversation
+
+        // Track message ID for current streaming assistant message
+        // Server generates UUID on first chunk, uses same ID for all chunks and DB save
+        // This ensures the client-side message ID matches the server-side message ID
+        let currentMessageId: string | null = null
+
+        // Helper function to persist assistant messages and update preview metadata
+        // Defined here so it's accessible throughout the async function
+        const persistAssistantMessage = async (
+          content: string,
+          payload?: Record<string, any> | null,
+          options?: { id?: string }
+        ) => {
+          const assistantMessage = await addMessageToConversation(db, {
+            id: options?.id,
+            conversationId: activeConversation.id,
+            organizationId,
+            role: 'assistant',
+            content,
+            payload: payload ?? null
+          })
+
+          await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+            latestMessage: {
+              role: assistantMessage.role as 'assistant',
+              content: assistantMessage.content,
+              createdAt: assistantMessage.createdAt
+            }
+          })
+        }
+
+        // Track any existing source content from the conversation
+        if (activeConversation.sourceContentId && !readySourceIds.has(activeConversation.sourceContentId)) {
+          const [conversationSource] = await db
+            .select()
+            .from(schema.sourceContent)
+            .where(and(
+              eq(schema.sourceContent.id, activeConversation.sourceContentId),
+              eq(schema.sourceContent.organizationId, organizationId)
+            ))
+            .limit(1)
+          if (conversationSource) {
+            trackReadySource(conversationSource)
+          }
+        }
+
         if (trimmedMessage) {
-          const lastAction = 'message'
-          const [updatedConversation] = await db
-            .update(schema.conversation)
-            .set({
-              metadata: {
-                ...(conversation.metadata as Record<string, any> || {}),
-                lastAction
-              },
-              updatedAt: new Date()
-            })
-            .where(eq(schema.conversation.id, conversation.id))
-            .returning()
-          if (updatedConversation) {
-            conversation = updatedConversation
-          }
-        }
-      }
-
-      if (!conversation) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: 'Failed to create chat conversation'
-        })
-      }
-
-      // From this point on, conversation is guaranteed to be non-null
-      // Use activeConversation variable to avoid null checks
-      let activeConversation = conversation
-
-      // Track message ID for current streaming assistant message
-      // Server generates UUID on first chunk, uses same ID for all chunks and DB save
-      // This ensures the client-side message ID matches the server-side message ID
-      let currentMessageId: string | null = null
-
-      // Helper function to persist assistant messages and update preview metadata
-      // Defined here so it's accessible throughout the async function
-      const persistAssistantMessage = async (
-        content: string,
-        payload?: Record<string, any> | null,
-        options?: { id?: string }
-      ) => {
-        const assistantMessage = await addMessageToConversation(db, {
-          id: options?.id,
-          conversationId: activeConversation.id,
-          organizationId,
-          role: 'assistant',
-          content,
-          payload: payload ?? null
-        })
-
-        await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
-          latestMessage: {
-            role: assistantMessage.role as 'assistant',
-            content: assistantMessage.content,
-            createdAt: assistantMessage.createdAt
-          }
-        })
-      }
-
-      // Track any existing source content from the conversation
-      if (activeConversation.sourceContentId && !readySourceIds.has(activeConversation.sourceContentId)) {
-        const [conversationSource] = await db
-          .select()
-          .from(schema.sourceContent)
-          .where(and(
-            eq(schema.sourceContent.id, activeConversation.sourceContentId),
-            eq(schema.sourceContent.organizationId, organizationId)
-          ))
-          .limit(1)
-        if (conversationSource) {
-          trackReadySource(conversationSource)
-        }
-      }
-
-      if (trimmedMessage) {
         // Import crypto for UUID generation for streaming message IDs
-        const { randomUUID } = await import('crypto')
+          const { randomUUID } = await import('crypto')
 
-        // ============================================================================
-        // OPTIMIZATION: Send conversation:update IMMEDIATELY (before any DB operations)
-        // This allows the client to update the URL instantly
-        // ============================================================================
-        writeSSE('conversation:update', {
-          conversationId: activeConversation.id
-        })
+          // ============================================================================
+          // OPTIMIZATION: Send conversation:update IMMEDIATELY (before any DB operations)
+          // This allows the client to update the URL instantly
+          // ============================================================================
+          writeSSE('conversation:update', {
+            conversationId: activeConversation.id
+          })
 
-        // ============================================================================
-        // OPTIMIZATION: Load conversation history ONCE and share between operations
-        // This eliminates the double query and enables true parallel execution
-        // ============================================================================
-        const loadMessagesPromise = getConversationMessages(db, activeConversation.id, organizationId)
+          // ============================================================================
+          // OPTIMIZATION: Load conversation history ONCE and share between operations
+          // This eliminates the double query and enables true parallel execution
+          // ============================================================================
+          const loadMessagesPromise = getConversationMessages(db, activeConversation.id, organizationId)
 
-        // ============================================================================
-        // OPTIMIZATION: Build context in parallel with message save
-        // Both operations share the same message history to avoid double query
-        // ============================================================================
-        const loadContextPromise = (async () => {
-          const previousMessages = await loadMessagesPromise
-          const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
-            role: message.role === 'assistant'
-              ? 'assistant'
-              : message.role === 'system'
-                ? 'system'
-                : 'user',
-            content: message.content
-          }))
+          // ============================================================================
+          // OPTIMIZATION: Build context in parallel with message save
+          // Both operations share the same message history to avoid double query
+          // ============================================================================
+          const loadContextPromise = (async () => {
+            const previousMessages = await loadMessagesPromise
+            const conversationHistory: ChatCompletionMessage[] = previousMessages.map(message => ({
+              role: message.role === 'assistant'
+                ? 'assistant'
+                : message.role === 'system'
+                  ? 'system'
+                  : 'user',
+              content: message.content
+            }))
 
-          const contextBlocks: string[] = []
+            const contextBlocks: string[] = []
 
-          // Build workspace summary if content exists
-          const linkedContentId = (activeConversation.metadata as Record<string, any>)?.linkedContentId
-          if (linkedContentId) {
-            try {
-              const [contentRecord] = await db
-                .select()
-                .from(schema.content)
-                .where(and(
-                  eq(schema.content.id, linkedContentId),
-                  eq(schema.content.organizationId, organizationId)
-                ))
-                .limit(1)
+            // Build workspace summary if content exists
+            const linkedContentId = (activeConversation.metadata as Record<string, any>)?.linkedContentId
+            if (linkedContentId) {
+              try {
+                const [contentRecord] = await db
+                  .select()
+                  .from(schema.content)
+                  .where(and(
+                    eq(schema.content.id, linkedContentId),
+                    eq(schema.content.organizationId, organizationId)
+                  ))
+                  .limit(1)
 
-              if (contentRecord) {
-                const [versionRecord] = contentRecord.currentVersionId
-                  ? await db
-                      .select()
-                      .from(schema.contentVersion)
-                      .where(eq(schema.contentVersion.id, contentRecord.currentVersionId))
-                      .limit(1)
-                  : [null]
-
-                if (versionRecord) {
-                  const [sourceRecord] = contentRecord.sourceContentId
+                if (contentRecord) {
+                  const [versionRecord] = contentRecord.currentVersionId
                     ? await db
                         .select()
-                        .from(schema.sourceContent)
-                        .where(and(
-                          eq(schema.sourceContent.id, contentRecord.sourceContentId),
-                          eq(schema.sourceContent.organizationId, organizationId)
-                        ))
+                        .from(schema.contentVersion)
+                        .where(eq(schema.contentVersion.id, contentRecord.currentVersionId))
                         .limit(1)
                     : [null]
 
-                  const workspaceSummary = buildWorkspaceSummary({
-                    content: contentRecord,
-                    currentVersion: versionRecord,
-                    sourceContent: sourceRecord ?? null
-                  })
+                  if (versionRecord) {
+                    const [sourceRecord] = contentRecord.sourceContentId
+                      ? await db
+                          .select()
+                          .from(schema.sourceContent)
+                          .where(and(
+                            eq(schema.sourceContent.id, contentRecord.sourceContentId),
+                            eq(schema.sourceContent.organizationId, organizationId)
+                          ))
+                          .limit(1)
+                      : [null]
 
-                  if (workspaceSummary) {
-                    contextBlocks.push(`Workspace Summary:\n${workspaceSummary}`)
+                    const workspaceSummary = buildWorkspaceSummary({
+                      content: contentRecord,
+                      currentVersion: versionRecord,
+                      sourceContent: sourceRecord ?? null
+                    })
+
+                    if (workspaceSummary) {
+                      contextBlocks.push(`Workspace Summary:\n${workspaceSummary}`)
+                    } else {
+                      contextBlocks.push(`Current content: "${contentRecord.title}" (${contentRecord.status})`)
+                    }
                   } else {
-                    contextBlocks.push(`Current content: "${contentRecord.title}" (${contentRecord.status})`)
+                    contextBlocks.push(`Current content ID: ${linkedContentId}`)
                   }
                 } else {
-                  contextBlocks.push(`Current content ID: ${linkedContentId}`)
+                  console.warn(`Content ${linkedContentId} not found`)
                 }
-              } else {
-                console.warn(`Content ${linkedContentId} not found`)
+              } catch (error) {
+                console.error('Failed to build workspace summary for context', error)
+                contextBlocks.push(`Current content ID: ${linkedContentId}`)
               }
-            } catch (error) {
-              console.error('Failed to build workspace summary for context', error)
-              contextBlocks.push(`Current content ID: ${linkedContentId}`)
             }
-          }
 
-          // Add ready sources with details
-          if (readySources.length > 0) {
-            const sourceDetails = readySources.map((source) => {
-              const title = source.title || 'Untitled source'
-              const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
-              const status = source.ingestStatus === 'ingested' ? 'ready' : source.ingestStatus
-              return `- ${title} (${typeLabel}, ${status})`
-            }).join('\n')
-            contextBlocks.push(`Ready sources for content generation:\n${sourceDetails}`)
-          }
+            // Add ready sources with details
+            if (readySources.length > 0) {
+              const sourceDetails = readySources.map((source) => {
+                const title = source.title || 'Untitled source'
+                const typeLabel = source.sourceType?.replace('_', ' ') || 'source'
+                const status = source.ingestStatus === 'ingested' ? 'ready' : source.ingestStatus
+                return `- ${title} (${typeLabel}, ${status})`
+              }).join('\n')
+              contextBlocks.push(`Ready sources for content generation:\n${sourceDetails}`)
+            }
 
-          // OPTIMIZATION: Removed conversation logs loading - unnecessary overhead
-          // Logs are only needed for debugging, not for LLM context
+            // OPTIMIZATION: Removed conversation logs loading - unnecessary overhead
+            // Logs are only needed for debugging, not for LLM context
 
-          // Add ingestion failures if any
-          if (ingestionErrors.length > 0) {
-            const failureSummary = ingestionErrors.map(err => `- ${err.content}`).join('\n')
-            contextBlocks.push(`Ingestion failures:\n${failureSummary}`)
-          }
+            // Add ingestion failures if any
+            if (ingestionErrors.length > 0) {
+              const failureSummary = ingestionErrors.map(err => `- ${err.content}`).join('\n')
+              contextBlocks.push(`Ingestion failures:\n${failureSummary}`)
+            }
 
-          return { conversationHistory, contextBlocks }
-        })()
+            return { conversationHistory, contextBlocks }
+          })()
 
-        // ============================================================================
-        // OPTIMIZATION: Save user message in TRUE PARALLEL (no circular dependency)
-        // Both save and context operations share the same loadMessagesPromise
-        // ============================================================================
-        const saveUserMessagePromise = (async () => {
-          try {
-            const previousMessages = await loadMessagesPromise
+          // ============================================================================
+          // OPTIMIZATION: Save user message in TRUE PARALLEL (no circular dependency)
+          // Both save and context operations share the same loadMessagesPromise
+          // ============================================================================
+          const saveUserMessagePromise = (async () => {
+            try {
+              const previousMessages = await loadMessagesPromise
 
-            // OPTIMIZATION: Reuse previousMessages instead of querying again
-            const existingTitle = activeConversation.metadata?.title
-            const isFirstMessage = previousMessages.length === 0 && !existingTitle
+              // OPTIMIZATION: Reuse previousMessages instead of querying again
+              const existingTitle = activeConversation.metadata?.title
+              const isFirstMessage = previousMessages.length === 0 && !existingTitle
 
-            const userMessageRecord = await addMessageToConversation(db, {
-              conversationId: activeConversation.id,
-              organizationId,
-              role: 'user',
-              content: trimmedMessage
-            })
-            await addLogEntryToConversation(db, {
-              conversationId: activeConversation.id,
-              organizationId,
-              type: 'user_message',
-              message: 'User sent a chat prompt'
-            })
+              const userMessageRecord = await addMessageToConversation(db, {
+                conversationId: activeConversation.id,
+                organizationId,
+                role: 'user',
+                content: trimmedMessage
+              })
+              await addLogEntryToConversation(db, {
+                conversationId: activeConversation.id,
+                organizationId,
+                type: 'user_message',
+                message: 'User sent a chat prompt'
+              })
 
-            await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
-              latestMessage: {
-                role: userMessageRecord.role as 'user',
-                content: userMessageRecord.content,
-                createdAt: userMessageRecord.createdAt
-              }
-            })
+              await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+                latestMessage: {
+                  role: userMessageRecord.role as 'user',
+                  content: userMessageRecord.content,
+                  createdAt: userMessageRecord.createdAt
+                }
+              })
 
-            // Set conversation title if this is the first message
-            if (isFirstMessage) {
+              // Set conversation title if this is the first message
+              if (isFirstMessage) {
               // Create title from first 6 words, truncated to 60 chars
-              const words = trimmedMessage.trim().split(/\s+/).slice(0, 6).join(' ')
-              const title = words.length > 60 ? `${words.slice(0, 57)}...` : (words || 'Untitled conversation')
-              await db
-                .update(schema.conversation)
-                .set({
-                  metadata: {
-                    ...(activeConversation.metadata as Record<string, any> || {}),
-                    title
-                  },
-                  updatedAt: new Date()
-                })
-                .where(eq(schema.conversation.id, activeConversation.id))
+                const words = trimmedMessage.trim().split(/\s+/).slice(0, 6).join(' ')
+                const title = words.length > 60 ? `${words.slice(0, 57)}...` : (words || 'Untitled conversation')
+                await db
+                  .update(schema.conversation)
+                  .set({
+                    metadata: {
+                      ...(activeConversation.metadata as Record<string, any> || {}),
+                      title
+                    },
+                    updatedAt: new Date()
+                  })
+                  .where(eq(schema.conversation.id, activeConversation.id))
+              }
+
+              return { success: true }
+            } catch (error) {
+              console.error('[chat] Failed to save user message:', error)
+              return { success: false, error }
             }
-
-            return { success: true }
-          } catch (error) {
-            console.error('[chat] Failed to save user message:', error)
-            return { success: false, error }
+          })()
+          const handleSaveUserMessageError = (err: unknown) => {
+            console.error('[Background] Failed to save user message:', err)
           }
-        })()
-        const handleSaveUserMessageError = (err: unknown) => {
-          console.error('[Background] Failed to save user message:', err)
-        }
-        if (typeof (event as any).waitUntil === 'function') {
-          event.waitUntil(saveUserMessagePromise.catch(handleSaveUserMessageError))
-        } else {
+          if (typeof (event as any).waitUntil === 'function') {
+            event.waitUntil(saveUserMessagePromise.catch(handleSaveUserMessageError))
+          } else {
           // Fallback for runtimes without waitUntil: fire-and-forget with manual error logging
-          saveUserMessagePromise.catch(handleSaveUserMessageError)
-        }
+            saveUserMessagePromise.catch(handleSaveUserMessageError)
+          }
 
-        // ============================================================================
-        // OPTIMIZATION: Wait ONLY for context (required for LLM)
-        // ============================================================================
-        const { conversationHistory, contextBlocks } = await loadContextPromise
+          // ============================================================================
+          // OPTIMIZATION: Wait ONLY for context (required for LLM)
+          // ============================================================================
+          const { conversationHistory, contextBlocks } = await loadContextPromise
 
-        // ============================================================================
-        // OPTIMIZATION: Background intent analysis (don't block streaming)
-        // ============================================================================
-        const intentPromise = Promise.resolve()
+          // ============================================================================
+          // OPTIMIZATION: Background intent analysis (don't block streaming)
+          // ============================================================================
+          const intentPromise = Promise.resolve()
 
-        // Don't await intentPromise
-        intentPromise.catch(err => console.error('[Background] Intent promise error:', err))
+          // Don't await intentPromise
+          intentPromise.catch(err => console.error('[Background] Intent promise error:', err))
 
-        const shouldRunAgent = true
-        // Note: We skip blocking 'clarify' checks for speed optimization
-        // The agent itself can handle clarification if needed in the prompt
+          const shouldRunAgent = true
+          // Note: We skip blocking 'clarify' checks for speed optimization
+          // The agent itself can handle clarification if needed in the prompt
 
-        if (shouldRunAgent) {
-          try {
+          if (shouldRunAgent) {
+            try {
             // Streaming multi-pass orchestration - handles all tools directly
             // Track assistant message for potential future use (used in callbacks)
-            let _currentAssistantMessage = ''
+              let _currentAssistantMessage = ''
 
-            // Log request context before calling agent
-            console.log('[Chat API] Calling agent with context:', {
-              mode,
-              conversationId: activeConversation.id,
-              organizationId,
-              userId: user.id,
-              userMessageLength: trimmedMessage.length,
-              conversationHistoryLength: conversationHistory.length,
-              contextBlocksCount: contextBlocks.length,
-              readySourcesCount: readySources.length,
-              ingestionErrorsCount: ingestionErrors.length
-            })
+              // Log request context before calling agent
+              console.log('[Chat API] Calling agent with context:', {
+                mode,
+                conversationId: activeConversation.id,
+                organizationId,
+                userId: user.id,
+                userMessageLength: trimmedMessage.length,
+                conversationHistoryLength: conversationHistory.length,
+                contextBlocksCount: contextBlocks.length,
+                readySourcesCount: readySources.length,
+                ingestionErrorsCount: ingestionErrors.length
+              })
 
-            multiPassResult = await runChatAgentWithMultiPassStream({
-              mode,
-              conversationHistory,
-              userMessage: trimmedMessage,
-              contextBlocks,
-              onLLMChunk: (chunk: string) => {
-                _currentAssistantMessage += chunk
-                if (!currentMessageId) {
-                  currentMessageId = randomUUID()
-                }
-                // Event: message:chunk - Incremental text chunks from LLM during current turn
-                // Client should create temporary assistant message on first chunk (using server messageId)
-                // and update its content as chunks arrive
-                writeSSE('message:chunk', {
-                  messageId: currentMessageId,
-                  chunk
-                })
-              },
-              onToolPreparing: (toolCallId: string, toolName: string) => {
+              multiPassResult = await runChatAgentWithMultiPassStream({
+                mode,
+                conversationHistory,
+                userMessage: trimmedMessage,
+                contextBlocks,
+                onLLMChunk: (chunk: string) => {
+                  _currentAssistantMessage += chunk
+                  if (!currentMessageId) {
+                    currentMessageId = randomUUID()
+                  }
+                  // Event: message:chunk - Incremental text chunks from LLM during current turn
+                  // Client should create temporary assistant message on first chunk (using server messageId)
+                  // and update its content as chunks arrive
+                  writeSSE('message:chunk', {
+                    messageId: currentMessageId,
+                    chunk
+                  })
+                },
+                onToolPreparing: (toolCallId: string, toolName: string) => {
                 // Event: tool:preparing - Tool call detected but arguments not yet complete
                 // Client should show "Preparing [tool name]..." immediately for better UX
-                writeSSE('tool:preparing', {
-                  toolCallId,
-                  toolName,
-                  timestamp: new Date().toISOString()
-                })
-              },
-              onToolStart: async (toolCallId: string, toolName: string) => {
+                  writeSSE('tool:preparing', {
+                    toolCallId,
+                    toolName,
+                    timestamp: new Date().toISOString()
+                  })
+                },
+                onToolStart: async (toolCallId: string, toolName: string) => {
                 // Log tool start to database
-                await logToolEvent(
-                  db,
-                  activeConversation.id,
-                  organizationId,
-                  'tool_started',
-                  toolName,
-                  undefined,
-                  undefined,
-                  writeSSE
-                )
-                // Emit SSE with toolCallId for client tracking
-                writeSSE('tool:start', {
-                  toolCallId,
-                  toolName,
-                  timestamp: new Date().toISOString()
-                })
-              },
-              onToolProgress: (toolCallId: string, message: string) => {
+                  await logToolEvent(
+                    db,
+                    activeConversation.id,
+                    organizationId,
+                    'tool_started',
+                    toolName,
+                    undefined,
+                    undefined,
+                    writeSSE
+                  )
+                  // Emit SSE with toolCallId for client tracking
+                  writeSSE('tool:start', {
+                    toolCallId,
+                    toolName,
+                    timestamp: new Date().toISOString()
+                  })
+                },
+                onToolProgress: (toolCallId: string, message: string) => {
                 // Emit progress update for long-running operations
-                writeSSE('tool:progress', {
-                  toolCallId,
-                  message,
-                  timestamp: new Date().toISOString()
-                })
-              },
-              onToolComplete: async (toolCallId: string, toolName: string, result: any) => {
+                  writeSSE('tool:progress', {
+                    toolCallId,
+                    message,
+                    timestamp: new Date().toISOString()
+                  })
+                },
+                onToolComplete: async (toolCallId: string, toolName: string, result: any) => {
                 // Event: tool:complete - Tool execution finished for current turn
                 // Client should update UI to reflect tool completion status
-                writeSSE('tool:complete', {
-                  toolCallId,
-                  toolName,
-                  success: result.success,
-                  result: result.result,
-                  error: result.error,
-                  timestamp: new Date().toISOString()
-                })
-              },
-              onFinalMessage: (message: string) => {
-                _currentAssistantMessage = message
-                // Event: message:complete - LLM text generation finished for current turn (before DB snapshot)
-                // This is an intermediate signal; the authoritative message list comes in messages:complete
-                writeSSE('message:complete', {
-                  messageId: currentMessageId,
-                  message
-                })
-              },
-              onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
+                  writeSSE('tool:complete', {
+                    toolCallId,
+                    toolName,
+                    success: result.success,
+                    result: result.result,
+                    error: result.error,
+                    timestamp: new Date().toISOString()
+                  })
+                },
+                onFinalMessage: (message: string) => {
+                  _currentAssistantMessage = message
+                  // Event: message:complete - LLM text generation finished for current turn (before DB snapshot)
+                  // This is an intermediate signal; the authoritative message list comes in messages:complete
+                  writeSSE('message:complete', {
+                    messageId: currentMessageId,
+                    message
+                  })
+                },
+                onRetry: async (toolInvocation: ChatToolInvocation, retryCount: number) => {
                 // Log tool retry to database
-                await logToolEvent(
-                  db,
-                  activeConversation.id,
-                  organizationId,
-                  'tool_retrying',
-                  toolInvocation.name,
-                  toolInvocation.arguments,
-                  retryCount,
-                  writeSSE
-                )
-              },
-              executeTool: async (toolInvocation: ChatToolInvocation, toolCallId: string, onProgress?: (message: string) => void) => {
-                return await executeChatTool(toolInvocation, {
-                  mode,
-                  db,
-                  organizationId,
-                  userId: user.id,
-                  conversationId: activeConversation.id,
-                  event,
-                  conversationMetadata: activeConversation.metadata as Record<string, any> | null,
-                  toolCallId,
-                  onToolProgress: (toolCallId: string, message: string) => {
+                  await logToolEvent(
+                    db,
+                    activeConversation.id,
+                    organizationId,
+                    'tool_retrying',
+                    toolInvocation.name,
+                    toolInvocation.arguments,
+                    retryCount,
+                    writeSSE
+                  )
+                },
+                executeTool: async (toolInvocation: ChatToolInvocation, toolCallId: string, onProgress?: (message: string) => void) => {
+                  return await executeChatTool(toolInvocation, {
+                    mode,
+                    db,
+                    organizationId,
+                    userId: user.id,
+                    conversationId: activeConversation.id,
+                    event,
+                    conversationMetadata: activeConversation.metadata as Record<string, any> | null,
+                    toolCallId,
+                    onToolProgress: (toolCallId: string, message: string) => {
                     // Forward progress to SSE stream using the callback if provided
-                    if (onProgress) {
-                      onProgress(message)
-                    } else {
+                      if (onProgress) {
+                        onProgress(message)
+                      } else {
                       // Fallback to direct SSE write if no callback provided
-                      writeSSE('tool:progress', {
-                        toolCallId,
-                        message,
-                        timestamp: new Date().toISOString()
-                      })
+                        writeSSE('tool:progress', {
+                          toolCallId,
+                          message,
+                          timestamp: new Date().toISOString()
+                        })
+                      }
                     }
-                  }
-                })
-              }
-            })
-
-            // Process multi-pass results
-            if (multiPassResult && multiPassResult.toolHistory.length > 0) {
-              // Update conversation with any new sources or content created
-              for (const toolExec of multiPassResult.toolHistory) {
-                if (toolExec.result.success && toolExec.result.sourceContentId) {
-                  const newSourceId = toolExec.result.sourceContentId
-                  // Update conversation with new source if different from current
-                  if (activeConversation.sourceContentId !== newSourceId) {
-                    const [updatedConversation] = await db
-                      .update(schema.conversation)
-                      .set({ sourceContentId: newSourceId })
-                      .where(eq(schema.conversation.id, activeConversation.id))
-                      .returning()
-                    if (updatedConversation) {
-                      activeConversation = updatedConversation
-                      writeSSE('conversation:update', {
-                        conversationId: activeConversation.id
-                      })
-                    }
-                  }
-                  // Track ready source
-                  const [sourceRecord] = await db
-                    .select()
-                    .from(schema.sourceContent)
-                    .where(and(
-                      eq(schema.sourceContent.id, newSourceId),
-                      eq(schema.sourceContent.organizationId, organizationId)
-                    ))
-                    .limit(1)
-                  if (sourceRecord) {
-                    trackReadySource(sourceRecord, { isNew: true })
-                  }
+                  })
                 }
-                // Update conversation with new content if content_write or edit_section succeeded
-                if (toolExec.result.success && toolExec.result.contentId) {
-                  const newContentId = toolExec.result.contentId
-                  const currentLinkedId = (activeConversation.metadata as Record<string, any>)?.linkedContentId
-                  if (currentLinkedId !== newContentId) {
+              })
+
+              // Process multi-pass results
+              if (multiPassResult && multiPassResult.toolHistory.length > 0) {
+              // Update conversation with any new sources or content created
+                for (const toolExec of multiPassResult.toolHistory) {
+                  if (toolExec.result.success && toolExec.result.sourceContentId) {
+                    const newSourceId = toolExec.result.sourceContentId
+                    // Update conversation with new source if different from current
+                    if (activeConversation.sourceContentId !== newSourceId) {
+                      const [updatedConversation] = await db
+                        .update(schema.conversation)
+                        .set({ sourceContentId: newSourceId })
+                        .where(eq(schema.conversation.id, activeConversation.id))
+                        .returning()
+                      if (updatedConversation) {
+                        activeConversation = updatedConversation
+                        writeSSE('conversation:update', {
+                          conversationId: activeConversation.id
+                        })
+                      }
+                    }
+                    // Track ready source
+                    const [sourceRecord] = await db
+                      .select()
+                      .from(schema.sourceContent)
+                      .where(and(
+                        eq(schema.sourceContent.id, newSourceId),
+                        eq(schema.sourceContent.organizationId, organizationId)
+                      ))
+                      .limit(1)
+                    if (sourceRecord) {
+                      trackReadySource(sourceRecord, { isNew: true })
+                    }
+                  }
+                  // Update conversation with new content if content_write or edit_section succeeded
+                  if (toolExec.result.success && toolExec.result.contentId) {
+                    const newContentId = toolExec.result.contentId
+                    const currentLinkedId = (activeConversation.metadata as Record<string, any>)?.linkedContentId
+                    if (currentLinkedId !== newContentId) {
+                      const [updatedConversation] = await db
+                        .update(schema.conversation)
+                        .set({
+                        // contentId removed from schema, stored in metadata only
+                          metadata: {
+                            ...(activeConversation.metadata as Record<string, any> || {}),
+                            linkedContentId: newContentId,
+                            linkedAt: new Date().toISOString()
+                          },
+                          updatedAt: new Date()
+                        })
+                        .where(eq(schema.conversation.id, activeConversation.id))
+                        .returning()
+                      if (updatedConversation) {
+                        activeConversation = updatedConversation
+                        writeSSE('conversation:update', {
+                          conversationId: activeConversation.id
+                        })
+                      }
+                    }
+                  }
+
+                  // Log tool execution
+                  const logEntry = await addLogEntryToConversation(db, {
+                    conversationId: activeConversation.id,
+                    organizationId,
+                    type: toolExec.result.success ? 'tool_succeeded' : 'tool_failed',
+                    message: toolExec.result.success
+                      ? `Tool ${toolExec.toolName} executed successfully`
+                      : `Tool ${toolExec.toolName} failed: ${toolExec.result.error || 'Unknown error'}`,
+                    payload: {
+                      toolName: toolExec.toolName,
+                      args: toolExec.invocation.arguments,
+                      result: toolExec.result.result,
+                      error: toolExec.result.error
+                    }
+                  })
+
+                  // Event: log:entry - Log entry added to database (tool_started, tool_succeeded, tool_failed, etc.)
+                  // Client should append to logs array for UI display
+                  if (logEntry) {
+                    writeSSE('log:entry', {
+                      id: logEntry.id,
+                      type: logEntry.type,
+                      message: logEntry.message,
+                      payload: logEntry.payload,
+                      createdAt: logEntry.createdAt
+                    })
+                  }
+
+                  // Update conversation metadata with last successful tool
+                  if (toolExec.result.success) {
                     const [updatedConversation] = await db
                       .update(schema.conversation)
                       .set({
-                        // contentId removed from schema, stored in metadata only
                         metadata: {
                           ...(activeConversation.metadata as Record<string, any> || {}),
-                          linkedContentId: newContentId,
-                          linkedAt: new Date().toISOString()
+                          lastAction: toolExec.toolName,
+                          lastToolSuccess: new Date().toISOString()
                         },
                         updatedAt: new Date()
                       })
@@ -1968,324 +2032,292 @@ export default defineEventHandler(async (event) => {
                       .returning()
                     if (updatedConversation) {
                       activeConversation = updatedConversation
-                      writeSSE('conversation:update', {
-                        conversationId: activeConversation.id
-                      })
                     }
                   }
                 }
-
-                // Log tool execution
-                const logEntry = await addLogEntryToConversation(db, {
-                  conversationId: activeConversation.id,
-                  organizationId,
-                  type: toolExec.result.success ? 'tool_succeeded' : 'tool_failed',
-                  message: toolExec.result.success
-                    ? `Tool ${toolExec.toolName} executed successfully`
-                    : `Tool ${toolExec.toolName} failed: ${toolExec.result.error || 'Unknown error'}`,
-                  payload: {
-                    toolName: toolExec.toolName,
-                    args: toolExec.invocation.arguments,
-                    result: toolExec.result.result,
-                    error: toolExec.result.error
-                  }
-                })
-
-                // Event: log:entry - Log entry added to database (tool_started, tool_succeeded, tool_failed, etc.)
-                // Client should append to logs array for UI display
-                if (logEntry) {
-                  writeSSE('log:entry', {
-                    id: logEntry.id,
-                    type: logEntry.type,
-                    message: logEntry.message,
-                    payload: logEntry.payload,
-                    createdAt: logEntry.createdAt
-                  })
-                }
-
-                // Update conversation metadata with last successful tool
-                if (toolExec.result.success) {
-                  const [updatedConversation] = await db
-                    .update(schema.conversation)
-                    .set({
-                      metadata: {
-                        ...(activeConversation.metadata as Record<string, any> || {}),
-                        lastAction: toolExec.toolName,
-                        lastToolSuccess: new Date().toISOString()
-                      },
-                      updatedAt: new Date()
-                    })
-                    .where(eq(schema.conversation.id, activeConversation.id))
-                    .returning()
-                  if (updatedConversation) {
-                    activeConversation = updatedConversation
-                  }
-                }
               }
-            }
-            if (multiPassResult?.finalMessage) {
-              agentAssistantReply = multiPassResult.finalMessage
-            }
-          } catch (error: any) {
-            const isDev = process.env.NODE_ENV === 'development'
-
-            // Extract detailed error information
-            const errorMessage = error?.message || error?.data?.message || error?.statusMessage || 'Unknown error'
-            const errorStatus = error?.statusCode || error?.status || 'N/A'
-            const errorData = error?.data || {}
-
-            // Log comprehensive error details with full request context
-            const chatApiErrorContext = {
-              mode,
-              conversationId: activeConversation.id,
-              organizationId,
-              userId: user.id,
-              userMessageLength: trimmedMessage.length,
-              userMessagePreview: isDev ? trimmedMessage.slice(0, 100) + (trimmedMessage.length > 100 ? '...' : '') : undefined,
-              conversationHistoryLength: conversationHistory.length,
-              contextBlocksCount: contextBlocks.length,
-              readySourcesCount: readySources.length,
-              ingestionErrorsCount: ingestionErrors.length,
-              message: errorMessage,
-              status: errorStatus,
-              stack: isDev && error instanceof Error ? error.stack : undefined
-            }
-
-            console.error('[Chat API] Agent turn failed with full context:', chatApiErrorContext)
-
-            // Include actual error details in dev mode, generic message in prod
-            // Add helpful context about what failed
-            let userErrorMessage = isDev
-              ? `I encountered an error while processing your request: ${errorMessage}`
-              : 'I encountered an error while processing your request. Please try again.'
-
-            // Add mode-specific context to error message
-            if (isDev && mode === 'agent') {
-              userErrorMessage += `\n\n[Debug Info] Mode: ${mode}, Error Status: ${errorStatus}`
-              if (errorData?.details) {
-                userErrorMessage += `\n[Debug Info] Gateway Response: ${JSON.stringify(errorData.details, null, 2)}`
+              if (multiPassResult?.finalMessage) {
+                agentAssistantReply = multiPassResult.finalMessage
               }
-            }
+            } catch (error: any) {
+              const isDev = process.env.NODE_ENV === 'development'
 
-            ingestionErrors.push({
-              content: userErrorMessage,
-              payload: {
-                error: errorMessage,
+              // Extract detailed error information
+              const errorMessage = error?.message || error?.data?.message || error?.statusMessage || 'Unknown error'
+              const errorStatus = error?.statusCode || error?.status || 'N/A'
+              const errorData = error?.data || {}
+
+              // Log comprehensive error details with full request context
+              const chatApiErrorContext = {
+                mode,
+                conversationId: activeConversation.id,
+                organizationId,
+                userId: user.id,
+                userMessageLength: trimmedMessage.length,
+                userMessagePreview: isDev ? trimmedMessage.slice(0, 100) + (trimmedMessage.length > 100 ? '...' : '') : undefined,
+                conversationHistoryLength: conversationHistory.length,
+                contextBlocksCount: contextBlocks.length,
+                readySourcesCount: readySources.length,
+                ingestionErrorsCount: ingestionErrors.length,
+                message: errorMessage,
                 status: errorStatus,
-                type: 'agent_failure',
-                ...(isDev && error instanceof Error && error.stack
-                  ? { stack: error.stack }
-                  : {}),
-                ...(isDev && error instanceof Error
-                  ? {
-                      errorName: error.name,
-                      errorCause: error.cause ? String(error.cause) : undefined
-                    }
-                  : {})
+                stack: isDev && error instanceof Error ? error.stack : undefined
               }
-            })
+
+              console.error('[Chat API] Agent turn failed with full context:', chatApiErrorContext)
+
+              // Include actual error details in dev mode, generic message in prod
+              // Add helpful context about what failed
+              let userErrorMessage = isDev
+                ? `I encountered an error while processing your request: ${errorMessage}`
+                : 'I encountered an error while processing your request. Please try again.'
+
+              // Add mode-specific context to error message
+              if (isDev && mode === 'agent') {
+                userErrorMessage += `\n\n[Debug Info] Mode: ${mode}, Error Status: ${errorStatus}`
+                if (errorData?.details) {
+                  userErrorMessage += `\n[Debug Info] Gateway Response: ${JSON.stringify(errorData.details, null, 2)}`
+                }
+              }
+
+              ingestionErrors.push({
+                content: userErrorMessage,
+                payload: {
+                  error: errorMessage,
+                  status: errorStatus,
+                  type: 'agent_failure',
+                  ...(isDev && error instanceof Error && error.stack
+                    ? { stack: error.stack }
+                    : {}),
+                  ...(isDev && error instanceof Error
+                    ? {
+                        errorName: error.name,
+                        errorCause: error.cause ? String(error.cause) : undefined
+                      }
+                    : {})
+                }
+              })
+            }
           }
         }
-      }
 
-      for (const errorMessage of ingestionErrors) {
-        await persistAssistantMessage(errorMessage.content, errorMessage.payload ?? null)
-      }
+        for (const errorMessage of ingestionErrors) {
+          await persistAssistantMessage(errorMessage.content, errorMessage.payload ?? null)
+        }
 
-      // Check if any tools created content that needs completion messages
-      let completionMessages: Awaited<ReturnType<typeof composeWorkspaceCompletionMessages>> | null = null
-      if (multiPassResult && multiPassResult.toolHistory.length > 0) {
+        // Check if any tools created content that needs completion messages
+        let completionMessages: Awaited<ReturnType<typeof composeWorkspaceCompletionMessages>> | null = null
+        if (multiPassResult && multiPassResult.toolHistory.length > 0) {
         // Find content_write or edit_section results
-        for (const toolExec of multiPassResult.toolHistory) {
-          if (toolExec.result.success && toolExec.result.contentId) {
-            try {
-              const [contentRecord] = await db
-                .select()
-                .from(schema.content)
-                .where(and(
-                  eq(schema.content.id, toolExec.result.contentId),
-                  eq(schema.content.organizationId, organizationId)
-                ))
-                .limit(1)
-
-              if (contentRecord && contentRecord.currentVersionId) {
-                const [versionRecord] = await db
+          for (const toolExec of multiPassResult.toolHistory) {
+            if (toolExec.result.success && toolExec.result.contentId) {
+              try {
+                const [contentRecord] = await db
                   .select()
-                  .from(schema.contentVersion)
-                  .where(eq(schema.contentVersion.id, contentRecord.currentVersionId))
+                  .from(schema.content)
+                  .where(and(
+                    eq(schema.content.id, toolExec.result.contentId),
+                    eq(schema.content.organizationId, organizationId)
+                  ))
                   .limit(1)
 
-                if (versionRecord) {
-                  completionMessages = await composeWorkspaceCompletionMessages(
-                    db,
-                    organizationId,
-                    contentRecord,
-                    versionRecord
-                  )
-
-                  const [artifactCountResult] = await db
-                    .select({ total: count() })
-                    .from(schema.content)
-                    .where(eq(schema.content.conversationId, activeConversation.id))
+                if (contentRecord && contentRecord.currentVersionId) {
+                  const [versionRecord] = await db
+                    .select()
+                    .from(schema.contentVersion)
+                    .where(eq(schema.contentVersion.id, contentRecord.currentVersionId))
                     .limit(1)
 
-                  await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
-                    latestArtifact: {
-                      title: contentRecord.title,
-                      updatedAt: contentRecord.updatedAt ?? contentRecord.createdAt ?? new Date()
-                    },
-                    artifactCount: Number(artifactCountResult?.total ?? 0)
-                  })
-                  break // Use first successful result
+                  if (versionRecord) {
+                    completionMessages = await composeWorkspaceCompletionMessages(
+                      db,
+                      organizationId,
+                      contentRecord,
+                      versionRecord
+                    )
+
+                    const [artifactCountResult] = await db
+                      .select({ total: count() })
+                      .from(schema.content)
+                      .where(eq(schema.content.conversationId, activeConversation.id))
+                      .limit(1)
+
+                    await patchConversationPreviewMetadata(db, activeConversation.id, organizationId, {
+                      latestArtifact: {
+                        title: contentRecord.title,
+                        updatedAt: contentRecord.updatedAt ?? contentRecord.createdAt ?? new Date()
+                      },
+                      artifactCount: Number(artifactCountResult?.total ?? 0)
+                    })
+                    break // Use first successful result
+                  }
                 }
+              } catch (error) {
+                console.error('Failed to build completion messages', error)
               }
-            } catch (error) {
-              console.error('Failed to build completion messages', error)
             }
           }
         }
-      }
 
-      // User message is now saved before agent execution to ensure persistence
+        // User message is now saved before agent execution to ensure persistence
 
-      // Save agent's reply if available (use the same message ID from streaming to avoid duplicates)
-      if (agentAssistantReply) {
-        await persistAssistantMessage(agentAssistantReply, null, { id: currentMessageId || undefined })
-      }
+        // Save agent's reply if available (use the same message ID from streaming to avoid duplicates)
+        if (agentAssistantReply) {
+          await persistAssistantMessage(agentAssistantReply, null, { id: currentMessageId || undefined })
+        }
 
-      if (completionMessages?.summary) {
-        await persistAssistantMessage(
-          completionMessages.summary.content,
-          completionMessages.summary.payload ?? null
-        )
-      }
+        if (completionMessages?.summary) {
+          await persistAssistantMessage(
+            completionMessages.summary.content,
+            completionMessages.summary.payload ?? null
+          )
+        }
 
-      if (completionMessages?.files) {
-        await persistAssistantMessage(
-          completionMessages.files.content,
-          completionMessages.files.payload ?? null
-        )
-      }
+        if (completionMessages?.files) {
+          await persistAssistantMessage(
+            completionMessages.files.content,
+            completionMessages.files.payload ?? null
+          )
+        }
 
-      const messages = await getConversationMessages(db, activeConversation.id, organizationId)
-      const logs = await getConversationLogs(db, activeConversation.id, organizationId)
+        const messages = await getConversationMessages(db, activeConversation.id, organizationId)
+        const logs = await getConversationLogs(db, activeConversation.id, organizationId)
 
-      // Build tool history from logs
-      const toolHistory = logs
-        .filter(log => log.type && log.type.startsWith('tool_'))
-        .map((log) => {
-          const payload = log.payload as Record<string, any> | null
-          let status = 'unknown'
-          if ((log.type as string) === 'tool_succeeded') {
-            status = 'succeeded'
-          } else if ((log.type as string) === 'tool_failed') {
-            status = 'failed'
-          } else if ((log.type as string) === 'tool_started') {
-            status = 'started'
-          } else if ((log.type as string) === 'tool_retrying') {
-            status = 'retrying'
-          }
-          return {
-            toolName: payload?.toolName || 'unknown',
-            timestamp: log.createdAt,
-            status
-          }
+        // Build tool history from logs
+        const toolHistory = logs
+          .filter(log => log.type && log.type.startsWith('tool_'))
+          .map((log) => {
+            const payload = log.payload as Record<string, any> | null
+            let status = 'unknown'
+            if ((log.type as string) === 'tool_succeeded') {
+              status = 'succeeded'
+            } else if ((log.type as string) === 'tool_failed') {
+              status = 'failed'
+            } else if ((log.type as string) === 'tool_started') {
+              status = 'started'
+            } else if ((log.type as string) === 'tool_retrying') {
+              status = 'retrying'
+            }
+            return {
+              toolName: payload?.toolName || 'unknown',
+              timestamp: log.createdAt,
+              status
+            }
+          })
+          .slice(-10) // Last 10 tool executions
+
+        // Get last action from conversation metadata
+        const lastAction = (activeConversation.metadata as Record<string, any> | null)?.lastAction || null
+
+        // Build agentContext
+        const intentSnapshot = getIntentSnapshotFromMetadata(activeConversation.metadata as Record<string, any> | null)
+
+        const agentContext = {
+          readySources: readySources.map(source => ({
+            id: source.id,
+            title: source.title,
+            sourceType: source.sourceType,
+            ingestStatus: source.ingestStatus,
+            createdAt: source.createdAt,
+            updatedAt: source.updatedAt
+          })),
+          ingestFailures: ingestionErrors.map(err => ({
+            content: err.content,
+            payload: err.payload
+          })),
+          lastAction,
+          toolHistory,
+          intentSnapshot
+        }
+
+        // Write final authoritative state as SSE events
+        // These events represent the committed database state after all processing
+        const finalMessages = messages.map(message => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.createdAt,
+          payload: message.payload
+        }))
+
+        const finalLogs = logs.map(log => ({
+          id: log.id,
+          type: log.type,
+          message: log.message,
+          payload: log.payload,
+          createdAt: log.createdAt
+        }))
+
+        // Event: messages:complete - Authoritative message list from database
+        // This is the single source of truth. Client MUST replace its messages array with this snapshot
+        // and clear all temporary streaming state (currentAssistantMessageId, currentAssistantMessageText, etc.)
+        writeSSE('messages:complete', {
+          messages: finalMessages
         })
-        .slice(-10) // Last 10 tool executions
 
-      // Get last action from conversation metadata
-      const lastAction = (activeConversation.metadata as Record<string, any> | null)?.lastAction || null
-
-      // Build agentContext
-      const intentSnapshot = getIntentSnapshotFromMetadata(activeConversation.metadata as Record<string, any> | null)
-
-      const agentContext = {
-        readySources: readySources.map(source => ({
-          id: source.id,
-          title: source.title,
-          sourceType: source.sourceType,
-          ingestStatus: source.ingestStatus,
-          createdAt: source.createdAt,
-          updatedAt: source.updatedAt
-        })),
-        ingestFailures: ingestionErrors.map(err => ({
-          content: err.content,
-          payload: err.payload
-        })),
-        lastAction,
-        toolHistory,
-        intentSnapshot
-      }
-
-      // Write final authoritative state as SSE events
-      // These events represent the committed database state after all processing
-      const finalMessages = messages.map(message => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        createdAt: message.createdAt,
-        payload: message.payload
-      }))
-
-      const finalLogs = logs.map(log => ({
-        id: log.id,
-        type: log.type,
-        message: log.message,
-        payload: log.payload,
-        createdAt: log.createdAt
-      }))
-
-      // Event: messages:complete - Authoritative message list from database
-      // This is the single source of truth. Client MUST replace its messages array with this snapshot
-      // and clear all temporary streaming state (currentAssistantMessageId, currentAssistantMessageText, etc.)
-      writeSSE('messages:complete', {
-        messages: finalMessages
-      })
-
-      // Event: logs:complete - Authoritative log list from database
-      // Client should replace its logs array with this snapshot
-      writeSSE('logs:complete', {
-        logs: finalLogs
-      })
-
-      // Event: agentContext:update - Final agent context (readySources, ingestFailures, lastAction, toolHistory)
-      // Client should update agentContext state with this data
-      writeSSE('agentContext:update', agentContext)
-
-      // Event: conversation:final - Final conversation state after all processing
-      // Client should update conversationId with final value
-      writeSSE('conversation:final', {
-        conversationId: activeConversation.id
-      })
-
-      // Event: done - Stream completion signal
-      // Client should treat stream as complete. If messages:complete was not received, treat as error.
-      writeSSE('done', {})
-
-      // Close the stream
-      sseWriter.close()
-    } catch (error: any) {
-      flushPing()
-      console.error('[Chat API] Error during streaming:', error)
-      // Try to send error event before closing
-      try {
-        writeSSE('error', {
-          message: error.message || 'An error occurred during streaming'
+        // Event: logs:complete - Authoritative log list from database
+        // Client should replace its logs array with this snapshot
+        writeSSE('logs:complete', {
+          logs: finalLogs
         })
-      } catch {
+
+        // Event: agentContext:update - Final agent context (readySources, ingestFailures, lastAction, toolHistory)
+        // Client should update agentContext state with this data
+        writeSSE('agentContext:update', agentContext)
+
+        // Event: conversation:final - Final conversation state after all processing
+        // Client should update conversationId with final value
+        writeSSE('conversation:final', {
+          conversationId: activeConversation.id
+        })
+
+        // Event: done - Stream completion signal
+        // Client should treat stream as complete. If messages:complete was not received, treat as error.
+        writeSSE('done', {})
+
+        // Close the stream
+        sseWriter.close()
+      } catch (error: any) {
+        flushPing()
+        console.error('[Chat API] Error during streaming:', error)
+        // Try to send error event before closing
+        try {
+          writeSSE('error', {
+            message: error.message || 'An error occurred during streaming'
+          })
+        } catch {
         // Silent fail if we can't send error
+        }
+        sseWriter.close()
       }
-      sseWriter.close()
-    }
-  })() // Execute async IIFE immediately
+    })() // Execute async IIFE immediately
 
-  // Return the stream as a Response with SSE headers
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no'
+    // Return the stream as a Response with SSE headers
+    // IMPORTANT: Return immediately after starting async processing
+    // Cloudflare Workers will detect the stream as active once data is written
+    console.log('[Chat API] Returning Response with stream')
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      }
+    })
+  } catch (error) {
+    console.error('[Chat API] Error before streaming:', error)
+    if (error instanceof Error) {
+      console.error('[Chat API] Error stack:', error.stack)
+      console.error('[Chat API] Error name:', error.name)
     }
-  })
+    // Re-throw H3 errors as-is
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      throw error
+    }
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'An unexpected error occurred'
+    })
+  }
 })
