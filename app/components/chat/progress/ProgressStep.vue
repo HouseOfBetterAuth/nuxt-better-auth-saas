@@ -35,9 +35,9 @@ const isCollapsed = ref(props.collapsed ?? false)
 
 // Determine step type from toolName and result
 const stepType = computed(() => {
-  // Check for thinking step first (preparing status with thinking content or currentActivity)
+  // Check for thinking step first (preparing or running status with thinking content or currentActivity)
   if (
-    (props.step.status === 'preparing' && props.currentActivity === 'thinking') ||
+    ((props.step.status === 'preparing' || props.step.status === 'running') && props.currentActivity === 'thinking') ||
     props.step.result?.thinking ||
     props.step.args?.thinking
   ) {
