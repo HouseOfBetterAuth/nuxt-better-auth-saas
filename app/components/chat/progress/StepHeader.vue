@@ -7,9 +7,12 @@ interface Props {
   toolName: string
   status: 'preparing' | 'running' | 'success' | 'error'
   collapsed: boolean
+  hideStepNumber?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  hideStepNumber: false
+})
 const emit = defineEmits<{
   (event: 'toggle'): void
 }>()
@@ -57,8 +60,9 @@ const statusColor = computed(() => {
     aria-label="Toggle step details"
     @click="emit('toggle')"
   >
-    <!-- Step Number Badge -->
+    <!-- Step Number Badge (hidden for single steps) -->
     <UBadge
+      v-if="!hideStepNumber"
       :color="statusColor"
       variant="soft"
       size="sm"

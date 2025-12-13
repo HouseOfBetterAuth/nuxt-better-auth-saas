@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage, MessagePart } from '#shared/utils/types'
 import { computed } from 'vue'
-import AgentStatus from './AgentStatus.vue'
 import AgentProgressTracker from './progress/AgentProgressTracker.vue'
 import WorkspaceFilesAccordion from './WorkspaceFilesAccordion.vue'
 
@@ -15,12 +14,23 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
-const { currentActivity, currentToolName } = useConversation()
+const { currentActivity, currentToolName, activeToolActivities } = useConversation()
 
-// Determine if we should use the new tracker or simple AgentStatus
+const liveToolActivities = computed(() => {
+  const activities = activeToolActivities.value ?? []
+  return activities
+    .filter(activity => activity.messageId === props.message.id)
+    .sort((a, b) => {
+      const aTime = new Date(a.startedAt).getTime()
+      const bTime = new Date(b.startedAt).getTime()
+      return aTime - bTime
+    })
+})
+const hasLiveToolActivities = computed(() => liveToolActivities.value.length > 0)
+
+// Check if message has tool calls
 const toolCalls = computed(() => props.message.parts.filter(p => p.type === 'tool_call'))
-const hasMultipleToolCalls = computed(() => toolCalls.value.length > 1)
-const hasSingleToolCall = computed(() => toolCalls.value.length === 1)
+const hasToolCalls = computed(() => toolCalls.value.length > 0)
 const textParts = computed(() => props.message.parts.filter((p): p is Extract<MessagePart, { type: 'text' }> => p.type === 'text' && !!p.text?.trim()))
 
 const ALLOWED_EMBED_DOMAINS = [
@@ -152,8 +162,18 @@ function toSummaryBullets(summary: string | null | undefined) {
       </p>
     </div>
 
-    <!-- Text parts (shown first if present) -->
-    <template v-if="textParts.length > 0">
+    <!-- Tool calls: Show first (they execute before the LLM response) -->
+    <template v-if="hasToolCalls || hasLiveToolActivities">
+      <AgentProgressTracker
+        :message="message"
+        :current-activity="currentActivity"
+        :current-tool-name="currentToolName"
+        :live-activities="liveToolActivities"
+      />
+    </template>
+
+    <!-- Text parts: Show after tool calls (LLM response reflects tool results) -->
+    <template v-if="textParts.length > 0 && !hasLiveToolActivities">
       <p
         v-for="(part, index) in textParts"
         :key="`${message.id}-text-${index}`"
@@ -161,24 +181,6 @@ function toSummaryBullets(summary: string | null | undefined) {
       >
         {{ part.text }}
       </p>
-    </template>
-
-    <!-- Multiple tool calls: Use AgentProgressTracker -->
-    <template v-if="hasMultipleToolCalls">
-      <AgentProgressTracker
-        :message="message"
-        :current-activity="currentActivity"
-        :current-tool-name="currentToolName"
-      />
-    </template>
-
-    <!-- Single tool call: Use simple AgentStatus (backward compat) -->
-    <template v-else-if="hasSingleToolCall">
-      <AgentStatus
-        v-for="part in toolCalls"
-        :key="part.toolCallId"
-        :part="part"
-      />
     </template>
   </div>
 </template>

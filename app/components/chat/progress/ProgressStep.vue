@@ -19,11 +19,13 @@ interface Props {
   step: Step
   collapsed?: boolean
   currentActivity?: 'thinking' | 'streaming' | null
+  hideStepNumber?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   collapsed: false,
-  currentActivity: null
+  currentActivity: null,
+  hideStepNumber: false
 })
 const emit = defineEmits<{
   (event: 'toggle', toolCallId: string): void
@@ -81,6 +83,7 @@ watch(() => props.collapsed, (newVal) => {
       :tool-name="step.toolName"
       :status="step.status"
       :collapsed="isCollapsed"
+      :hide-step-number="hideStepNumber"
       @toggle="handleToggle"
     />
 

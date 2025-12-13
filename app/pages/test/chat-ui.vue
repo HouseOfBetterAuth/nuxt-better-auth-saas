@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage } from '#shared/utils/types'
+import type { ChatMessage, MessagePart } from '#shared/utils/types'
 import { computed, onMounted, ref, watch } from 'vue'
 import ChatConversationMessages from '~/components/chat/ChatConversationMessages.vue'
 import PromptComposer from '~/components/chat/PromptComposer.vue'
@@ -8,6 +8,16 @@ import PromptComposer from '~/components/chat/PromptComposer.vue'
 definePageMeta({
   layout: false
 })
+
+interface ActiveToolActivityState {
+  toolCallId: string
+  messageId: string
+  toolName: string
+  status: 'preparing' | 'running'
+  args?: Record<string, any>
+  progressMessage?: string
+  startedAt: string
+}
 
 // Only show this page in development
 const runtimeConfig = useRuntimeConfig()
@@ -31,25 +41,37 @@ const promptSubmitting = ref(false)
 // Realistic times: source_ingest ~3min, content_write ~5min, others ~2min
 // Speed multiplier: 1.0 = realistic, 0.1 = 10x faster, 0.01 = 100x faster
 const simulationSpeed = ref(0.1) // Default to 10x faster for testing
-const speedOptions = [
-  { value: 1.0, label: 'Realistic (slow)', description: 'Real-world timing' },
-  { value: 0.1, label: 'Fast (10x)', description: 'Good for testing' },
-  { value: 0.01, label: 'Very Fast (100x)', description: 'Quick iteration' }
+
+const scenarioStates = [
+  {
+    value: 'start' as const,
+    label: 'Tool Planned',
+    description: 'LLM decided to call tools but has not started execution yet.'
+  },
+  {
+    value: 'in_progress' as const,
+    label: 'Tool Running',
+    description: 'Tool execution is underway with progress streaming.'
+  },
+  {
+    value: 'completed' as const,
+    label: 'Tool Completed',
+    description: 'Tool calls finished and the LLM streams its response.'
+  }
 ]
+type ScenarioState = (typeof scenarioStates)[number]['value']
 
 // Mock conversation state
 const mockMessages = ref<ChatMessage[]>([])
 const mockStatus = ref<'ready' | 'submitted' | 'streaming' | 'error'>('ready')
 const mockConversationId = ref<string | null>(null)
-const mockStreamingToolCalls = ref<Map<string, {
-  toolCallId: string
-  toolName: string
-  status: 'preparing' | 'running' | 'success' | 'error'
-  progressMessage?: string
-  args?: Record<string, any>
-  result?: any
-  error?: string
-}>>(new Map())
+const isCancelled = ref(false) // Flag to cancel ongoing operations
+const currentSimulationState = ref<ScenarioState>('completed')
+const currentRunningScenario = ref<typeof scenarios[0] | null>(null)
+
+const currentActivityState = useState<'thinking' | 'streaming' | null>('chat/current-activity', () => null)
+const currentToolNameState = useState<string | null>('chat/current-tool-name', () => null)
+const activeToolActivitiesState = useState<Map<string, ActiveToolActivityState>>('chat/active-tool-activities', () => new Map())
 
 // Computed
 const activeMessages = computed(() => mockMessages.value)
@@ -68,6 +90,128 @@ watch(mockStatus, (newStatus) => {
     timestamp: new Date()
   })
 }, { immediate: false })
+
+const setThinkingState = (toolName?: string | null) => {
+  currentActivityState.value = 'thinking'
+  currentToolNameState.value = toolName ?? null
+}
+
+const setStreamingState = () => {
+  currentActivityState.value = 'streaming'
+  currentToolNameState.value = null
+}
+
+const upsertActiveToolActivity = (toolCallId: string, patch: Partial<ActiveToolActivityState>) => {
+  if (!toolCallId) {
+    return null
+  }
+  const next = new Map(activeToolActivitiesState.value)
+  const existing = next.get(toolCallId) ?? null
+  const messageId = patch.messageId ?? existing?.messageId
+  if (!messageId) {
+    return null
+  }
+  const merged: ActiveToolActivityState = {
+    toolCallId,
+    messageId,
+    toolName: patch.toolName ?? existing?.toolName ?? 'Tool',
+    status: patch.status ?? existing?.status ?? 'preparing',
+    args: patch.args ?? existing?.args,
+    progressMessage: patch.progressMessage ?? existing?.progressMessage,
+    startedAt: patch.startedAt ?? existing?.startedAt ?? new Date().toISOString()
+  }
+  next.set(toolCallId, merged)
+  activeToolActivitiesState.value = next
+  return merged
+}
+
+const removeActiveToolActivity = (toolCallId: string) => {
+  if (!toolCallId) {
+    return {
+      removed: null as ActiveToolActivityState | null,
+      remaining: activeToolActivitiesState.value.size
+    }
+  }
+  const next = new Map(activeToolActivitiesState.value)
+  const removed = next.get(toolCallId) ?? null
+  next.delete(toolCallId)
+  activeToolActivitiesState.value = next
+  return {
+    removed,
+    remaining: next.size
+  }
+}
+
+const clearActiveToolActivities = () => {
+  if (!activeToolActivitiesState.value.size) {
+    return
+  }
+  activeToolActivitiesState.value = new Map()
+}
+
+const ensureAssistantMessage = (messageId: string) => {
+  const index = mockMessages.value.findIndex(message => message.id === messageId)
+  if (index >= 0) {
+    const existing = mockMessages.value[index]
+    if (!existing.parts.some(part => part.type === 'text')) {
+      mockMessages.value[index] = {
+        ...existing,
+        parts: [{ type: 'text', text: '' }, ...existing.parts]
+      }
+      return mockMessages.value[index]
+    }
+    return existing
+  }
+
+  const newMessage: ChatMessage = {
+    id: messageId,
+    role: 'assistant',
+    parts: [{ type: 'text', text: '' }],
+    createdAt: new Date()
+  }
+  mockMessages.value.push(newMessage)
+  return newMessage
+}
+
+const updateAssistantMessageText = (messageId: string, text: string) => {
+  const index = mockMessages.value.findIndex(message => message.id === messageId)
+  if (index < 0) {
+    ensureAssistantMessage(messageId)
+    return updateAssistantMessageText(messageId, text)
+  }
+
+  const existing = mockMessages.value[index]
+  const nextParts = [...existing.parts]
+  const textPartIndex = nextParts.findIndex(part => part.type === 'text')
+  if (textPartIndex >= 0) {
+    nextParts[textPartIndex] = {
+      ...nextParts[textPartIndex],
+      text
+    }
+  } else {
+    nextParts.unshift({ type: 'text', text })
+  }
+
+  mockMessages.value[index] = {
+    ...existing,
+    parts: nextParts
+  }
+}
+
+const appendToolPartToMessage = (messageId: string, toolPart: Extract<MessagePart, { type: 'tool_call' }>) => {
+  const index = mockMessages.value.findIndex(message => message.id === messageId)
+  if (index < 0) {
+    const message = ensureAssistantMessage(messageId)
+    message.parts.push(toolPart)
+    return
+  }
+
+  const existing = mockMessages.value[index]
+  mockMessages.value[index] = {
+    ...existing,
+    parts: [...existing.parts, toolPart]
+  }
+}
 
 // Clear debug events
 const clearDebugEvents = () => {
@@ -112,104 +256,69 @@ const _apiEndpoints = [
 // Test scenarios - designed to test different UX patterns
 const scenarios = [
   {
-    id: 'youtube-ingest',
-    name: 'YouTube Ingest (Heavy)',
-    description: 'Long-running: YouTube transcript + content generation',
-    prompt: 'Create content from this YouTube video: https://youtube.com/watch?v=example',
+    id: 'single-content-write',
+    name: 'Write Content',
+    description: 'Single tool call - content generation',
+    prompt: 'Write content about AI agents',
     mode: 'agent' as const,
-    tools: ['source_ingest', 'content_write'],
-    timing: 'heavy' // Long-running operations
+    tools: ['content_write']
   },
   {
     id: 'context-ingest',
-    name: 'Context Ingest (Medium)',
-    description: 'Medium: Text processing + content generation',
+    name: 'Ingest & Write',
+    description: 'Source ingestion + content generation',
     prompt: 'Create content from this text: [paste your text here]',
     mode: 'agent' as const,
-    tools: ['source_ingest', 'content_write'],
-    timing: 'medium'
+    tools: ['source_ingest', 'content_write']
   },
   {
     id: 'edit-section',
-    name: 'Edit Section (Quick)',
-    description: 'Quick: Read + edit operation',
+    name: 'Edit Section',
+    description: 'Read + edit operation',
     prompt: 'Make the introduction section more engaging',
     mode: 'agent' as const,
-    tools: ['read_content', 'edit_section'],
-    timing: 'quick'
+    tools: ['read_content', 'edit_section']
   },
   {
     id: 'update-metadata',
-    name: 'Update Metadata (Quick)',
-    description: 'Quick: Read + metadata update',
+    name: 'Update Metadata',
+    description: 'Read + metadata update',
     prompt: 'Change the title to "New Title" and set status to published',
     mode: 'agent' as const,
-    tools: ['read_content', 'edit_metadata'],
-    timing: 'quick'
+    tools: ['read_content', 'edit_metadata']
   },
   {
     id: 'read-content',
-    name: 'Read Content (Chat)',
+    name: 'Read Content',
     description: 'Chat mode: Simple read operation',
     prompt: 'Show me the content with ID abc-123',
     mode: 'chat' as const,
-    tools: ['read_content'],
-    timing: 'quick'
+    tools: ['read_content']
   },
   {
     id: 'list-content',
-    name: 'List Content (Chat)',
+    name: 'List Content',
     description: 'Chat mode: List operation',
     prompt: 'Show me all my content',
     mode: 'chat' as const,
-    tools: ['read_content_list'],
-    timing: 'quick'
+    tools: ['read_content_list']
   },
   {
     id: 'workspace-summary',
-    name: 'Workspace Summary (Chat)',
+    name: 'Workspace Summary',
     description: 'Chat mode: Summary generation',
     prompt: 'Give me a summary of my workspace',
     mode: 'chat' as const,
-    tools: ['read_workspace_summary'],
-    timing: 'medium'
-  },
-  {
-    id: 'multi-tool',
-    name: 'Multi-Tool Sequence',
-    description: 'Multiple tools in sequence',
-    prompt: 'Read content abc-123, then edit the introduction section to be more engaging',
-    mode: 'agent' as const,
-    tools: ['read_content', 'edit_section'],
-    timing: 'medium'
-  },
-  {
-    id: 'complex-workflow',
-    name: 'Complex Workflow (Heavy)',
-    description: 'Full workflow: Ingest → Read → Edit → Update',
-    prompt: 'Ingest this YouTube video, read the generated content, edit the intro section, and update the metadata',
-    mode: 'agent' as const,
-    tools: ['source_ingest', 'read_content', 'edit_section', 'edit_metadata'],
-    timing: 'heavy'
+    tools: ['read_workspace_summary']
   },
   {
     id: 'tool-error',
-    name: 'Tool Error Scenario',
+    name: 'Tool Error',
     description: 'Simulate a tool failure to test error handling',
     prompt: 'Try to ingest an invalid YouTube URL',
     mode: 'agent' as const,
     tools: ['source_ingest'],
-    timing: 'quick',
     simulateError: true
-  },
-  {
-    id: 'long-content-write',
-    name: 'Long Content Write (Heavy)',
-    description: 'Simulate long content generation',
-    prompt: 'Create a comprehensive 5000-word article about AI agents',
-    mode: 'agent' as const,
-    tools: ['content_write'],
-    timing: 'heavy'
   }
 ]
 
@@ -271,12 +380,22 @@ const getProgressMessages = (toolName: string, step: number): string => {
 }
 
 const resetConversation = () => {
+  // Set cancellation flag to stop any ongoing async operations
+  isCancelled.value = true
+  // Clear state
   mockMessages.value = []
   mockStatus.value = 'ready'
   mockConversationId.value = null
-  mockStreamingToolCalls.value.clear()
+  clearActiveToolActivities()
+  currentActivityState.value = null
+  currentToolNameState.value = null
+  currentRunningScenario.value = null
   prompt.value = ''
   clearDebugEvents()
+  // Reset cancellation flag after a brief delay to allow operations to check it
+  setTimeout(() => {
+    isCancelled.value = false
+  }, 100)
 }
 
 // Add user message to the conversation
@@ -297,52 +416,117 @@ const simulateToolExecution = async (
   toolName: string,
   args: Record<string, any>,
   progressSteps: number,
-  shouldError: boolean
+  shouldError: boolean,
+  assistantMessageId: string,
+  state: ScenarioState
 ): Promise<{ success: boolean, result: any, error?: string }> => {
+  // Check if cancelled before starting
+  if (isCancelled.value) {
+    return { success: true, result: null }
+  }
+
+  ensureAssistantMessage(assistantMessageId)
+  const startedAt = new Date().toISOString()
+
   // Simulate tool:preparing
-  mockStreamingToolCalls.value.set(toolCallId, {
-    toolCallId,
+  setThinkingState(toolName)
+  upsertActiveToolActivity(toolCallId, {
+    messageId: assistantMessageId,
     toolName,
-    status: 'preparing'
+    status: 'preparing',
+    args,
+    startedAt
   })
   await simulateEvent('tool:preparing', {
     toolCallId,
     toolName,
+    messageId: assistantMessageId,
     timestamp: new Date().toISOString()
   })
 
   await delay(800)
 
-  // Simulate tool:start
-  const tool = mockStreamingToolCalls.value.get(toolCallId)
-  if (tool) {
-    tool.status = 'running'
-    tool.args = args
+  // Check if cancelled after delay
+  if (isCancelled.value) {
+    return { success: true, result: null }
   }
+
+  // Simulate tool:start
+  setThinkingState(toolName)
+  upsertActiveToolActivity(toolCallId, {
+    messageId: assistantMessageId,
+    toolName,
+    status: 'running',
+    args
+  })
   await simulateEvent('tool:start', {
     toolCallId,
     toolName,
+    messageId: assistantMessageId,
+    args,
     timestamp: new Date().toISOString()
   })
+
+  // If previewing only the planning phase, stop here
+  if (state === 'start') {
+    return { success: true, result: null }
+  }
 
   // Determine delay per step based on tool (content_write is longer)
   const stepDelay = toolName === 'content_write' ? 3000 : 2000
 
   // Simulate realistic progress updates
-  for (let i = 0; i < progressSteps; i++) {
-    const progressMsg = getProgressMessages(toolName, i)
-    if (tool) {
-      tool.progressMessage = progressMsg
+  if (state === 'in_progress') {
+    // Show a few progress steps to demonstrate it's in progress, then stop
+    // This shows the tool running with progress messages, but not completed
+    const progressStepsToShow = Math.min(3, progressSteps) // Show up to 3 progress steps
+    for (let i = 0; i < progressStepsToShow; i++) {
+      // Check if cancelled or state changed
+      if (isCancelled.value || state !== 'in_progress') {
+        return { success: true, result: null }
+      }
+      const progressMsg = getProgressMessages(toolName, i)
+      upsertActiveToolActivity(toolCallId, {
+        messageId: assistantMessageId,
+        progressMessage: progressMsg
+      })
+      await simulateEvent('tool:progress', {
+        toolCallId,
+        message: progressMsg,
+        messageId: assistantMessageId,
+        timestamp: new Date().toISOString()
+      })
+      await delay(stepDelay)
     }
-    await simulateEvent('tool:progress', {
-      toolCallId,
-      message: progressMsg,
-      timestamp: new Date().toISOString()
-    })
-    await delay(shouldError && i === 2 ? 500 : stepDelay)
+    // Stop here without completing - tool stays in "running" state
+    return { success: true, result: null }
+  } else {
+    // For "completed", run through all progress steps normally
+    for (let i = 0; i < progressSteps; i++) {
+      // Check if cancelled
+      if (isCancelled.value) {
+        return { success: true, result: null }
+      }
+      const progressMsg = getProgressMessages(toolName, i)
+      upsertActiveToolActivity(toolCallId, {
+        messageId: assistantMessageId,
+        progressMessage: progressMsg
+      })
+      await simulateEvent('tool:progress', {
+        toolCallId,
+        message: progressMsg,
+        messageId: assistantMessageId,
+        timestamp: new Date().toISOString()
+      })
+      await delay(shouldError && i === 2 ? 500 : stepDelay)
+    }
   }
 
-  // Generate result based on tool name and error state
+  if (state === 'in_progress') {
+    return { success: true, result: null }
+  }
+
+  // Generate result based on tool name and error state (only for "completed")
   let result: any = null
   let error: string | undefined
 
@@ -381,56 +565,52 @@ const simulateToolExecution = async (
     }
   }
 
-  if (tool) {
-    tool.status = shouldError ? 'error' : 'success'
-    tool.result = result
-    tool.error = error
-  }
-
   await simulateEvent('tool:complete', {
     toolCallId,
     toolName,
     success: !shouldError,
     result,
     error,
+    messageId: assistantMessageId,
     timestamp: new Date().toISOString()
   })
+
+  const { removed } = removeActiveToolActivity(toolCallId)
+  appendToolPartToMessage(assistantMessageId, {
+    type: 'tool_call',
+    toolCallId,
+    toolName,
+    status: shouldError ? 'error' : 'success',
+    args,
+    result,
+    error,
+    progressMessage: removed?.progressMessage,
+    timestamp: new Date().toISOString()
+  })
+
+  if (!activeToolActivitiesState.value.size) {
+    currentToolNameState.value = null
+  }
 
   return { success: !shouldError, result, error }
 }
 
 // Simulate streaming assistant message with chunks
 const simulateStreamingAssistantMessage = async (messageId: string, text: string) => {
+  ensureAssistantMessage(messageId)
+  setStreamingState()
   let currentText = ''
-
-  // Create temporary assistant message for streaming
-  const tempAssistantMessage: ChatMessage = {
-    id: messageId,
-    role: 'assistant',
-    parts: [{ type: 'text', text: '' }],
-    createdAt: new Date()
-  }
-  mockMessages.value.push(tempAssistantMessage)
 
   // Stream text in chunks
   for (let i = 0; i < text.length; i += 3) {
+    if (isCancelled.value) {
+      return
+    }
+
     const chunk = text.slice(i, i + 3)
     currentText += chunk
 
-    // Update the message in place
-    const msgIndex = mockMessages.value.findIndex(m => m.id === messageId)
-    if (msgIndex >= 0) {
-      const existingMessage = mockMessages.value[msgIndex]
-      if (existingMessage) {
-        mockMessages.value[msgIndex] = {
-          id: existingMessage.id,
-          role: existingMessage.role,
-          parts: [{ type: 'text', text: currentText }],
-          createdAt: existingMessage.createdAt,
-          payload: existingMessage.payload
-        }
-      }
-    }
+    updateAssistantMessageText(messageId, currentText)
 
     await simulateEvent('message:chunk', {
       messageId,
@@ -439,44 +619,12 @@ const simulateStreamingAssistantMessage = async (messageId: string, text: string
     await delay(30)
   }
 
-  // Simulate message:complete
   await simulateEvent('message:complete', {
     messageId,
     message: text
   })
-}
 
-// Build final message with tool calls attached
-const buildFinalMessageWithToolCalls = (
-  messageId: string,
-  text: string,
-  toolCalls: Array<{
-    toolCallId: string
-    toolName: string
-    status: 'success' | 'error'
-    args?: Record<string, any>
-    result?: any
-    error?: string
-  }>
-): ChatMessage => {
-  return {
-    id: messageId,
-    role: 'assistant',
-    parts: [
-      { type: 'text', text },
-      ...toolCalls.map(tc => ({
-        type: 'tool_call' as const,
-        toolCallId: tc.toolCallId,
-        toolName: tc.toolName,
-        status: tc.status,
-        args: tc.args,
-        result: tc.result,
-        error: tc.error,
-        timestamp: new Date().toISOString()
-      }))
-    ],
-    createdAt: new Date()
-  }
+  currentActivityState.value = null
 }
 
 // Emit all completion events (logs, messages, agent context, etc.)
@@ -586,67 +734,207 @@ const emitCompletionEvents = async (
   await simulateEvent('done', {})
 }
 
-const simulateAgentTurn = async (messageText: string) => {
+const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'completed') => {
+  // Reset cancellation flag at start of new turn
+  isCancelled.value = false
+
   const text = messageText
   const scenario = scenarios.find(s => text.includes(s.prompt) || text === s.prompt)
   const shouldSimulateError = scenario?.simulateError || false
+  const toolsToRun = scenario?.tools || ['source_ingest', 'content_write'] // Default to multi-tool
+
+  clearActiveToolActivities()
+  currentActivityState.value = null
+  currentToolNameState.value = null
 
   mockStatus.value = 'submitted'
   promptSubmitting.value = true
-  mockStreamingToolCalls.value.clear()
 
   // Add user message
   addUserMessage(text)
+  const assistantMessageId = crypto.randomUUID()
+  ensureAssistantMessage(assistantMessageId)
 
   await delay(500)
+
+  // Check if cancelled
+  if (isCancelled.value) {
+    mockStatus.value = 'ready'
+    promptSubmitting.value = false
+    return
+  }
+
   mockStatus.value = 'streaming'
 
   // Simulate conversation:update
   mockConversationId.value = crypto.randomUUID()
   await simulateEvent('conversation:update', { conversationId: mockConversationId.value })
 
-  // Simulate first tool execution (source_ingest)
-  const toolCallId1 = crypto.randomUUID()
-  const tool1Args = {
-    sourceType: 'youtube',
-    youtubeUrl: 'https://youtube.com/watch?v=example'
+  const toolCalls: Array<{
+    toolCallId: string
+    toolName: string
+    status: 'success' | 'error'
+    args?: Record<string, any>
+    result?: any
+    error?: string
+  }> = []
+
+  // Simulate tool executions based on scenario
+  let previousResult: any = null
+
+  for (let i = 0; i < toolsToRun.length; i++) {
+    // Check if cancelled before processing each tool
+    if (isCancelled.value) {
+      mockStatus.value = 'ready'
+      promptSubmitting.value = false
+      return
+    }
+
+    const toolName = toolsToRun[i]
+    const toolCallId = crypto.randomUUID()
+    let toolArgs: Record<string, any> = {}
+    let progressSteps = 4
+
+    // Set up tool-specific args
+    if (toolName === 'source_ingest') {
+      toolArgs = {
+        sourceType: 'youtube',
+        youtubeUrl: 'https://youtube.com/watch?v=example'
+      }
+      progressSteps = 4
+    } else if (toolName === 'content_write') {
+      toolArgs = {
+        action: 'create',
+        sourceContentId: previousResult?.sourceContentId || crypto.randomUUID()
+      }
+      progressSteps = 6
+    } else if (toolName === 'read_content') {
+      toolArgs = { contentId: 'abc-123' }
+      progressSteps = 2
+    } else if (toolName === 'edit_section') {
+      toolArgs = { contentId: 'abc-123', sectionId: 'intro' }
+      progressSteps = 3
+    } else if (toolName === 'edit_metadata') {
+      toolArgs = { contentId: 'abc-123', title: 'New Title', status: 'published' }
+      progressSteps = 2
+    }
+
+    const shouldError = shouldSimulateError && i === 0 // Error on first tool if error scenario
+    const toolExecution = await simulateToolExecution(
+      toolCallId,
+      toolName,
+      toolArgs,
+      progressSteps,
+      shouldError,
+      assistantMessageId,
+      state
+    )
+
+    // Check if cancelled after tool execution
+    if (isCancelled.value) {
+      mockStatus.value = 'ready'
+      promptSubmitting.value = false
+      return
+    }
+
+    // If error scenario and this is the first tool, stop here
+    if (shouldError) {
+      const errorText = toolName === 'source_ingest'
+        ? 'I encountered an error while trying to ingest the YouTube video. The video URL appears to be invalid or the video is private.'
+        : `I encountered an error while executing ${toolName}. Please try again.`
+
+      updateAssistantMessageText(assistantMessageId, errorText)
+
+      await simulateEvent('message:complete', {
+        messageId: assistantMessageId,
+        message: errorText
+      })
+
+      await simulateEvent('messages:complete', {
+        messages: mockMessages.value.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.parts.find(p => p.type === 'text')?.text || '',
+          createdAt: msg.createdAt,
+          payload: msg.payload
+        }))
+      })
+
+      clearActiveToolActivities()
+      currentActivityState.value = null
+      currentToolNameState.value = null
+
+      await simulateEvent('done', {})
+      mockStatus.value = 'ready'
+      promptSubmitting.value = false
+      return
+    }
+
+    // Only add to toolCalls if the tool completed
+    if (state === 'completed') {
+      toolCalls.push({
+        toolCallId,
+        toolName,
+        status: toolExecution.success ? 'success' : 'error',
+        args: toolArgs,
+        result: toolExecution.result,
+        error: toolExecution.error
+      })
+    }
+
+    previousResult = toolExecution.result
+    if (i < toolsToRun.length - 1) {
+      await delay(500)
+      // Check if cancelled after delay between tools
+      if (isCancelled.value) {
+        mockStatus.value = 'ready'
+        promptSubmitting.value = false
+        return
+      }
+    }
   }
-  const tool1Execution = await simulateToolExecution(
-    toolCallId1,
-    'source_ingest',
-    tool1Args,
-    4,
-    shouldSimulateError
-  )
 
-  // If error scenario, stop here and show error message
-  if (shouldSimulateError) {
-    const errorMessageId = crypto.randomUUID()
-    const errorText = 'I encountered an error while trying to ingest the YouTube video. The video URL appears to be invalid or the video is private.'
+  // Check if cancelled before finalizing
+  if (isCancelled.value) {
+    mockStatus.value = 'ready'
+    promptSubmitting.value = false
+    return
+  }
 
-    mockMessages.value.push({
-      id: errorMessageId,
-      role: 'assistant',
-      parts: [{ type: 'text', text: errorText }],
-      createdAt: new Date()
-    })
+  // If state is "start" or "in_progress", keep tools running and don't complete
+  if (state !== 'completed') {
+    promptSubmitting.value = false
+    return
+  }
 
-    await simulateEvent('message:complete', {
-      messageId: errorMessageId,
-      message: errorText
-    })
+  await delay(500)
 
-    await simulateEvent('messages:complete', {
-      messages: mockMessages.value.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.parts.find(p => p.type === 'text')?.text || '',
-        createdAt: msg.createdAt,
-        payload: msg.payload
-      }))
-    })
+  // Check if cancelled before generating assistant message
+  if (isCancelled.value) {
+    mockStatus.value = 'ready'
+    promptSubmitting.value = false
+    return
+  }
 
-    await simulateEvent('done', {})
+  // Generate appropriate assistant message based on tools
+  let assistantText = ''
+  if (toolsToRun.includes('content_write')) {
+    assistantText = 'I\'ve successfully created content from the YouTube video. The content includes a comprehensive introduction to AI agents with sections covering key concepts, use cases, and implementation strategies.'
+  } else if (toolsToRun.includes('edit_section')) {
+    assistantText = 'I\'ve updated the introduction section to be more engaging and compelling.'
+  } else if (toolsToRun.includes('edit_metadata')) {
+    assistantText = 'I\'ve successfully updated the metadata for the content item.'
+  } else if (toolsToRun.includes('read_content')) {
+    assistantText = 'Here is the content you requested. [Content details would appear here]'
+  } else {
+    assistantText = 'I\'ve completed the requested operation successfully.'
+  }
+
+  // Simulate streaming assistant message
+  await simulateStreamingAssistantMessage(assistantMessageId, assistantText)
+
+  // Check if cancelled after streaming
+  if (isCancelled.value) {
     mockStatus.value = 'ready'
     promptSubmitting.value = false
     return
@@ -654,74 +942,52 @@ const simulateAgentTurn = async (messageText: string) => {
 
   await delay(500)
 
-  // Simulate second tool execution (content_write)
-  const toolCallId2 = crypto.randomUUID()
-  const tool2Args = {
-    action: 'create',
-    sourceContentId: tool1Execution.result.sourceContentId
-  }
-  const tool2Execution = await simulateToolExecution(
-    toolCallId2,
-    'content_write',
-    tool2Args,
-    6,
-    false
-  )
-
-  await delay(500)
-
-  // Simulate streaming assistant message
-  const assistantMessageId = crypto.randomUUID()
-  const assistantText = 'I\'ve successfully created content from the YouTube video. The content includes a comprehensive introduction to AI agents with sections covering key concepts, use cases, and implementation strategies.'
-  await simulateStreamingAssistantMessage(assistantMessageId, assistantText)
-
-  await delay(500)
-
-  // Build and replace with final message containing tool calls
-  const toolCalls = [
-    {
-      toolCallId: toolCallId1,
-      toolName: 'source_ingest',
-      status: 'success' as const,
-      args: tool1Args,
-      result: tool1Execution.result
-    },
-    {
-      toolCallId: toolCallId2,
-      toolName: 'content_write',
-      status: 'success' as const,
-      args: tool2Args,
-      result: tool2Execution.result
-    }
-  ]
-
-  const finalAssistantMessage = buildFinalMessageWithToolCalls(
-    assistantMessageId,
-    assistantText,
-    toolCalls
-  )
-
-  // Replace temporary message with final message
-  const msgIndex = mockMessages.value.findIndex(m => m.id === assistantMessageId)
-  if (msgIndex >= 0) {
-    mockMessages.value[msgIndex] = finalAssistantMessage
+  // Check if cancelled before finalizing
+  if (isCancelled.value) {
+    mockStatus.value = 'ready'
+    promptSubmitting.value = false
+    return
   }
 
   // Emit all completion events
   await emitCompletionEvents(toolCalls)
 
+  clearActiveToolActivities()
+  currentActivityState.value = null
+  currentToolNameState.value = null
+  currentRunningScenario.value = null
+
   mockStatus.value = 'ready'
   promptSubmitting.value = false
-  mockStreamingToolCalls.value.clear()
 }
 
-// Handle scenario click - start it immediately
-const handleScenarioClick = async (scenario: typeof scenarios[0]) => {
-  if (isBusy.value)
-    return
+// Handle scenario click - start it with current selected state
+const handleScenarioRun = async (scenario: typeof scenarios[0]) => {
+  // If busy, cancel current simulation first
+  if (isBusy.value) {
+    isCancelled.value = true
+    // Wait a bit for cancellation to take effect
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+
+  currentRunningScenario.value = scenario
   mode.value = scenario.mode
-  resetConversation()
-  await simulateAgentTurn(scenario.prompt)
+  await simulateAgentTurn(scenario.prompt, currentSimulationState.value)
+}
+
+// Handle state change in controls
+const handleStateChange = async (state: ScenarioState) => {
+  currentSimulationState.value = state
+
+  // If simulation is running, cancel it and restart with new state
+  if (isBusy.value && currentRunningScenario.value) {
+    isCancelled.value = true
+    // Wait a bit for cancellation to take effect
+    await new Promise(resolve => setTimeout(resolve, 100))
+    // Restart the current scenario with the new state
+    mode.value = currentRunningScenario.value.mode
+    await simulateAgentTurn(currentRunningScenario.value.prompt, state)
+  }
 }
 
 // Handle prompt submit
@@ -729,7 +995,7 @@ const handlePromptSubmit = async (value: string) => {
   if (!value.trim() || isBusy.value) {
     return
   }
-  await simulateAgentTurn(value)
+  await simulateAgentTurn(value, 'completed')
 }
 
 // Mock handlers for ChatConversationMessages
@@ -783,7 +1049,6 @@ const handleShare = (message: ChatMessage) => {
             <UBadge
               :color="activeStatus === 'streaming' ? 'primary' : activeStatus === 'error' ? 'error' : 'neutral'"
               variant="soft"
-              size="xs"
             >
               {{ activeStatus }}
             </UBadge>
@@ -791,34 +1056,9 @@ const handleShare = (message: ChatMessage) => {
 
           <!-- Quick Controls -->
           <div class="space-y-2">
-            <!-- Simulation Speed Control -->
-            <div>
-              <label class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">
-                Speed
-              </label>
-              <UInputMenu
-                v-model="simulationSpeed"
-                :items="speedOptions.map(opt => ({ value: opt.value, label: opt.label }))"
-                value-key="value"
-                label-key="label"
-                variant="outline"
-                size="xs"
-                :disabled="isBusy"
-                class="w-full"
-              >
-                <template #leading>
-                  <UIcon
-                    name="i-lucide-gauge"
-                    class="w-3 h-3"
-                  />
-                </template>
-              </UInputMenu>
-            </div>
-
             <UButton
               variant="outline"
               size="xs"
-              :disabled="isBusy"
               icon="i-lucide-refresh-cw"
               class="w-full"
               @click="resetConversation"
@@ -835,6 +1075,23 @@ const handleShare = (message: ChatMessage) => {
                 {{ activeConversationId.slice(0, 8) }}
               </code>
             </div>
+
+            <div class="space-y-2">
+              <div class="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                Preview States
+              </div>
+              <div class="flex flex-col gap-1">
+                <UButton
+                  v-for="preset in scenarioStates"
+                  :key="preset.value"
+                  :variant="currentSimulationState === preset.value ? 'solid' : 'outline'"
+                  class="w-full justify-start"
+                  @click="handleStateChange(preset.value)"
+                >
+                  {{ preset.label }}
+                </UButton>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -849,34 +1106,36 @@ const handleShare = (message: ChatMessage) => {
               />
               Scenarios
             </h2>
-            <div class="space-y-2">
-              <UButton
+            <div class="space-y-3">
+              <div
                 v-for="scenario in scenarios"
                 :key="scenario.id"
-                variant="outline"
-                size="xs"
-                class="w-full justify-start text-left h-auto py-1.5"
-                :disabled="isBusy"
-                @click="handleScenarioClick(scenario)"
+                class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-3 py-2 space-y-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                @click="handleScenarioRun(scenario)"
               >
-                <div class="flex-1 text-left min-w-0">
-                  <div class="flex items-center gap-1.5 mb-0.5">
-                    <div class="font-medium text-xs truncate">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="text-xs font-semibold text-gray-900 dark:text-gray-50 truncate">
                       {{ scenario.name }}
-                    </div>
+                    </p>
+                    <p class="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2">
+                      {{ scenario.description }}
+                    </p>
+                  </div>
+                  <div class="flex flex-col gap-1 items-end shrink-0">
                     <UBadge
                       :color="scenario.mode === 'agent' ? 'primary' : 'neutral'"
                       variant="soft"
-                      size="xs"
                     >
                       {{ scenario.mode }}
                     </UBadge>
                   </div>
-                  <div class="text-xs text-gray-600 dark:text-gray-400 line-clamp-1">
-                    {{ scenario.description }}
-                  </div>
                 </div>
-              </UButton>
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                  <span class="font-semibold text-gray-700 dark:text-gray-200">Tools:</span>
+                  {{ scenario.tools.join(' → ') }}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -956,7 +1215,6 @@ const handleShare = (message: ChatMessage) => {
             />
             Debug Events
             <UBadge
-              size="xs"
               variant="soft"
             >
               {{ debugEvents.length }}

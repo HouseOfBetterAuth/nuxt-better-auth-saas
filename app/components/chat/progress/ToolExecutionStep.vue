@@ -110,9 +110,15 @@ const showResult = computed(() => props.step.status === 'success' && formattedRe
     <!-- Progress Message -->
     <div
       v-if="step.progressMessage && (step.status === 'running' || step.status === 'preparing')"
-      class="text-xs text-muted-600 dark:text-muted-400 italic"
+      class="text-xs text-muted-600 dark:text-muted-400 italic transition-all duration-200 ease-in-out"
     >
-      {{ step.progressMessage }}
+      <span class="inline-flex items-center gap-1.5">
+        <UIcon
+          name="i-lucide-loader-circle"
+          class="h-3 w-3 animate-spin flex-shrink-0"
+        />
+        <span>{{ step.progressMessage }}</span>
+      </span>
     </div>
 
     <!-- Tool Arguments (if available and not too long) -->
