@@ -126,7 +126,7 @@ const primaryActionColor = computed(() => {
     </header>
 
     <USlideover
-      v-model="mobileSidebarOpen"
+      v-model:open="mobileSidebarOpen"
       side="left"
       :handle="false"
       aria-label="Mobile navigation"
@@ -137,7 +137,6 @@ const primaryActionColor = computed(() => {
             :to="localePath('/')"
             class="px-4 pt-4 pb-2 border-b border-neutral-200/70 dark:border-neutral-800/60 flex items-center gap-2 hover:opacity-80 transition-opacity"
           >
-            <Logo class="h-6 w-6" />
             <span class="text-lg font-semibold truncate">
               {{ t('global.appName') }}
             </span>

@@ -556,30 +556,6 @@ if (import.meta.client) {
               </component>
             </template>
           </PromptComposer>
-
-          <i18n-t
-            v-if="!loggedIn"
-            keypath="global.legal.chatDisclaimer"
-            tag="p"
-            class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2"
-          >
-            <template #terms>
-              <NuxtLink
-                :to="localePath('/terms')"
-                class="underline hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                {{ $t('global.legal.terms') }}
-              </NuxtLink>
-            </template>
-            <template #privacy>
-              <NuxtLink
-                :to="localePath('/privacy')"
-                class="underline hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                {{ $t('global.legal.privacyPolicy') }}
-              </NuxtLink>
-            </template>
-          </i18n-t>
         </div>
       </div>
     </template>
