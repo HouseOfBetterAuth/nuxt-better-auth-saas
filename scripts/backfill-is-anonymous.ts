@@ -8,6 +8,7 @@
  * Usage: pnpm db:backfill-is-anonymous
  */
 
+import type { PoolClient } from 'pg'
 import * as dotenv from 'dotenv'
 import { Pool } from 'pg'
 
@@ -26,7 +27,15 @@ async function backfillIsAnonymous() {
     connectionString: process.env.DATABASE_URL
   })
 
-  const client = await pool.connect()
+  let client: PoolClient | undefined
+
+  try {
+    client = await pool.connect()
+  } catch (error) {
+    console.error('❌ Error connecting to database:', error)
+    await pool.end()
+    throw error
+  }
 
   try {
     await client.query('BEGIN')
@@ -60,11 +69,19 @@ async function backfillIsAnonymous() {
     console.log('\n✅ Ensured all non-anonymous organizations have isAnonymous = false')
     console.log('\n✅ Backfill completed successfully!')
   } catch (error) {
-    await client.query('ROLLBACK')
+    if (client) {
+      try {
+        await client.query('ROLLBACK')
+      } catch (rollbackError) {
+        console.error('❌ Error during rollback:', rollbackError)
+      }
+    }
     console.error('❌ Error during backfill:', error)
     throw error
   } finally {
-    client.release()
+    if (client) {
+      client.release()
+    }
     await pool.end()
   }
 }

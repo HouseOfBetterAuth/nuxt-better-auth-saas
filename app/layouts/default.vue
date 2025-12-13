@@ -91,10 +91,16 @@ const primaryActionColor = computed(() => {
 const conversationQuotaState = useState<ConversationQuotaUsagePayload | null>('conversation-quota-usage', () => null)
 
 // Format quota display for mobile header
+// Hide quota display when quotas are disabled (feature flag off)
 const quotaDisplay = computed(() => {
   const quota = conversationQuotaState.value
   if (!quota)
     return null
+
+  // Hide quota display when quotas are disabled (indicated by 'Unlimited access' label)
+  if (quota.label === 'Unlimited access') {
+    return null
+  }
 
   if (quota.unlimited) {
     return '∞'
