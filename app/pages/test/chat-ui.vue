@@ -262,7 +262,8 @@ const getProgressMessages = (toolName: string, step: number): string => {
     ]
   }
   const toolMessages = messages[toolName] || ['Processing...', 'Working...', 'Almost done...']
-  return toolMessages[step % toolMessages.length] || toolMessages[toolMessages.length - 1]
+  const index = step % toolMessages.length
+  return toolMessages[index] ?? toolMessages[toolMessages.length - 1] ?? 'Processing...'
 }
 
 const resetConversation = () => {
@@ -272,6 +273,313 @@ const resetConversation = () => {
   mockStreamingToolCalls.value.clear()
   prompt.value = ''
   clearDebugEvents()
+}
+
+// Add user message to the conversation
+const addUserMessage = (text: string) => {
+  const userMessage: ChatMessage = {
+    id: crypto.randomUUID(),
+    role: 'user',
+    parts: [{ type: 'text', text }],
+    createdAt: new Date()
+  }
+  mockMessages.value.push(userMessage)
+  prompt.value = ''
+}
+
+// Simulate tool execution with progress updates
+const simulateToolExecution = async (
+  toolCallId: string,
+  toolName: string,
+  args: Record<string, any>,
+  progressSteps: number,
+  shouldError: boolean
+): Promise<{ success: boolean, result: any, error?: string }> => {
+  // Simulate tool:preparing
+  mockStreamingToolCalls.value.set(toolCallId, {
+    toolCallId,
+    toolName,
+    status: 'preparing'
+  })
+  await simulateEvent('tool:preparing', {
+    toolCallId,
+    toolName,
+    timestamp: new Date().toISOString()
+  })
+
+  await delay(800)
+
+  // Simulate tool:start
+  const tool = mockStreamingToolCalls.value.get(toolCallId)
+  if (tool) {
+    tool.status = 'running'
+    tool.args = args
+  }
+  await simulateEvent('tool:start', {
+    toolCallId,
+    toolName,
+    timestamp: new Date().toISOString()
+  })
+
+  // Determine delay per step based on tool (content_write is longer)
+  const stepDelay = toolName === 'content_write' ? 3000 : 2000
+
+  // Simulate realistic progress updates
+  for (let i = 0; i < progressSteps; i++) {
+    const progressMsg = getProgressMessages(toolName, i)
+    if (tool) {
+      tool.progressMessage = progressMsg
+    }
+    await simulateEvent('tool:progress', {
+      toolCallId,
+      message: progressMsg,
+      timestamp: new Date().toISOString()
+    })
+    await delay(shouldError && i === 2 ? 500 : stepDelay)
+  }
+
+  // Generate result based on tool name and error state
+  let result: any = null
+  let error: string | undefined
+
+  if (shouldError) {
+    // Use specific error message for source_ingest
+    if (toolName === 'source_ingest') {
+      error = 'Failed to fetch YouTube transcript: Video not found or private'
+    } else {
+      error = `Failed to execute ${toolName}: Simulated error`
+    }
+  } else {
+    // Generate appropriate result based on tool
+    if (toolName === 'source_ingest') {
+      result = {
+        sourceContentId: crypto.randomUUID(),
+        sourceType: args.sourceType || 'youtube',
+        ingestStatus: 'ingested',
+        sourceContent: {
+          id: crypto.randomUUID(),
+          title: 'Introduction to AI Agents',
+          ingestStatus: 'ingested'
+        }
+      }
+    } else if (toolName === 'content_write') {
+      result = {
+        contentId: crypto.randomUUID(),
+        versionId: crypto.randomUUID(),
+        content: {
+          id: crypto.randomUUID(),
+          title: 'Introduction to AI Agents',
+          slug: 'introduction-to-ai-agents'
+        }
+      }
+    } else {
+      result = { success: true, toolName }
+    }
+  }
+
+  if (tool) {
+    tool.status = shouldError ? 'error' : 'success'
+    tool.result = result
+    tool.error = error
+  }
+
+  await simulateEvent('tool:complete', {
+    toolCallId,
+    toolName,
+    success: !shouldError,
+    result,
+    error,
+    timestamp: new Date().toISOString()
+  })
+
+  return { success: !shouldError, result, error }
+}
+
+// Simulate streaming assistant message with chunks
+const simulateStreamingAssistantMessage = async (messageId: string, text: string) => {
+  let currentText = ''
+
+  // Create temporary assistant message for streaming
+  const tempAssistantMessage: ChatMessage = {
+    id: messageId,
+    role: 'assistant',
+    parts: [{ type: 'text', text: '' }],
+    createdAt: new Date()
+  }
+  mockMessages.value.push(tempAssistantMessage)
+
+  // Stream text in chunks
+  for (let i = 0; i < text.length; i += 3) {
+    const chunk = text.slice(i, i + 3)
+    currentText += chunk
+
+    // Update the message in place
+    const msgIndex = mockMessages.value.findIndex(m => m.id === messageId)
+    if (msgIndex >= 0) {
+      const existingMessage = mockMessages.value[msgIndex]
+      if (existingMessage) {
+        mockMessages.value[msgIndex] = {
+          id: existingMessage.id,
+          role: existingMessage.role,
+          parts: [{ type: 'text', text: currentText }],
+          createdAt: existingMessage.createdAt,
+          payload: existingMessage.payload
+        }
+      }
+    }
+
+    await simulateEvent('message:chunk', {
+      messageId,
+      chunk
+    })
+    await delay(30)
+  }
+
+  // Simulate message:complete
+  await simulateEvent('message:complete', {
+    messageId,
+    message: text
+  })
+}
+
+// Build final message with tool calls attached
+const buildFinalMessageWithToolCalls = (
+  messageId: string,
+  text: string,
+  toolCalls: Array<{
+    toolCallId: string
+    toolName: string
+    status: 'success' | 'error'
+    args?: Record<string, any>
+    result?: any
+    error?: string
+  }>
+): ChatMessage => {
+  return {
+    id: messageId,
+    role: 'assistant',
+    parts: [
+      { type: 'text', text },
+      ...toolCalls.map(tc => ({
+        type: 'tool_call' as const,
+        toolCallId: tc.toolCallId,
+        toolName: tc.toolName,
+        status: tc.status,
+        args: tc.args,
+        result: tc.result,
+        error: tc.error,
+        timestamp: new Date().toISOString()
+      }))
+    ],
+    createdAt: new Date()
+  }
+}
+
+// Emit all completion events (logs, messages, agent context, etc.)
+const emitCompletionEvents = async (
+  toolCalls: Array<{
+    toolCallId: string
+    toolName: string
+    args?: Record<string, any>
+    result?: any
+    error?: string
+  }>
+) => {
+  // Simulate log:entry events (tool_started, tool_succeeded)
+  for (const tc of toolCalls) {
+    if (!tc.error) {
+      await simulateEvent('log:entry', {
+        id: crypto.randomUUID(),
+        type: 'tool_started',
+        message: `Tool ${tc.toolName} started`,
+        payload: {
+          toolName: tc.toolName,
+          args: tc.args
+        },
+        createdAt: new Date().toISOString()
+      })
+
+      await simulateEvent('log:entry', {
+        id: crypto.randomUUID(),
+        type: 'tool_succeeded',
+        message: `Tool ${tc.toolName} executed successfully`,
+        payload: {
+          toolName: tc.toolName,
+          args: tc.args,
+          result: tc.result
+        },
+        createdAt: new Date().toISOString()
+      })
+    }
+  }
+
+  // Simulate messages:complete (authoritative snapshot)
+  await simulateEvent('messages:complete', {
+    messages: mockMessages.value.map(msg => ({
+      id: msg.id,
+      role: msg.role,
+      content: msg.parts.find(p => p.type === 'text')?.text || '',
+      createdAt: msg.createdAt,
+      payload: msg.payload
+    }))
+  })
+
+  // Simulate logs:complete (authoritative log snapshot)
+  await simulateEvent('logs:complete', {
+    logs: toolCalls
+      .filter(tc => !tc.error)
+      .flatMap(tc => [
+        {
+          id: crypto.randomUUID(),
+          type: 'tool_started' as const,
+          message: `Tool ${tc.toolName} started`,
+          payload: { toolName: tc.toolName, args: tc.args },
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: crypto.randomUUID(),
+          type: 'tool_succeeded' as const,
+          message: `Tool ${tc.toolName} executed successfully`,
+          payload: { toolName: tc.toolName, args: tc.args, result: tc.result },
+          createdAt: new Date().toISOString()
+        }
+      ])
+  })
+
+  // Simulate agentContext:update (only if we have source_ingest result)
+  const sourceIngestCall = toolCalls.find(tc => tc.toolName === 'source_ingest' && tc.result)
+  if (sourceIngestCall?.result) {
+    await simulateEvent('agentContext:update', {
+      readySources: [
+        {
+          id: sourceIngestCall.result.sourceContentId,
+          title: sourceIngestCall.result.sourceContent?.title || 'Introduction to AI Agents',
+          sourceType: sourceIngestCall.result.sourceType || 'youtube',
+          ingestStatus: 'ingested',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      ingestFailures: [],
+      lastAction: toolCalls[toolCalls.length - 1]?.toolName || null,
+      toolHistory: toolCalls
+        .filter(tc => !tc.error)
+        .map(tc => ({
+          toolName: tc.toolName,
+          invocation: { name: tc.toolName, arguments: tc.args },
+          result: { success: true, result: tc.result }
+        })),
+      intentSnapshot: null
+    })
+  }
+
+  // Simulate conversation:final
+  await simulateEvent('conversation:final', {
+    conversationId: mockConversationId.value
+  })
+
+  // Simulate done
+  await simulateEvent('done', {})
 }
 
 const simulateAgentTurn = async (messageText: string) => {
@@ -284,16 +592,7 @@ const simulateAgentTurn = async (messageText: string) => {
   mockStreamingToolCalls.value.clear()
 
   // Add user message
-  const userMessage: ChatMessage = {
-    id: crypto.randomUUID(),
-    role: 'user',
-    parts: [{ type: 'text', text }],
-    createdAt: new Date()
-  }
-  mockMessages.value.push(userMessage)
-
-  // Clear prompt after submitting
-  prompt.value = ''
+  addUserMessage(text)
 
   await delay(500)
   mockStatus.value = 'streaming'
@@ -302,79 +601,19 @@ const simulateAgentTurn = async (messageText: string) => {
   mockConversationId.value = crypto.randomUUID()
   await simulateEvent('conversation:update', { conversationId: mockConversationId.value })
 
-  // Simulate tool:preparing
+  // Simulate first tool execution (source_ingest)
   const toolCallId1 = crypto.randomUUID()
-  mockStreamingToolCalls.value.set(toolCallId1, {
-    toolCallId: toolCallId1,
-    toolName: 'source_ingest',
-    status: 'preparing'
-  })
-  await simulateEvent('tool:preparing', {
-    toolCallId: toolCallId1,
-    toolName: 'source_ingest',
-    timestamp: new Date().toISOString()
-  })
-
-  await delay(800)
-
-  // Simulate tool:start
-  const tool1 = mockStreamingToolCalls.value.get(toolCallId1)
-  if (tool1) {
-    tool1.status = 'running'
-    tool1.args = {
-      sourceType: 'youtube',
-      youtubeUrl: 'https://youtube.com/watch?v=example'
-    }
+  const tool1Args = {
+    sourceType: 'youtube',
+    youtubeUrl: 'https://youtube.com/watch?v=example'
   }
-  await simulateEvent('tool:start', {
-    toolCallId: toolCallId1,
-    toolName: 'source_ingest',
-    timestamp: new Date().toISOString()
-  })
-
-  // Simulate realistic progress updates for source_ingest
-  const progressSteps1 = 4
-  for (let i = 0; i < progressSteps1; i++) {
-    const progressMsg = getProgressMessages('source_ingest', i)
-    if (tool1) {
-      tool1.progressMessage = progressMsg
-    }
-    await simulateEvent('tool:progress', {
-      toolCallId: toolCallId1,
-      message: progressMsg,
-      timestamp: new Date().toISOString()
-    })
-    await delay(shouldSimulateError && i === 2 ? 500 : 2000) // Simulate error on step 3 if error scenario
-  }
-
-  // Simulate tool:complete (with error if scenario requires it)
-  const tool1Result = shouldSimulateError
-    ? null
-    : {
-        sourceContentId: crypto.randomUUID(),
-        sourceType: 'youtube',
-        ingestStatus: 'ingested',
-        sourceContent: {
-          id: crypto.randomUUID(),
-          title: 'Introduction to AI Agents',
-          ingestStatus: 'ingested'
-        }
-      }
-
-  if (tool1) {
-    tool1.status = shouldSimulateError ? 'error' : 'success'
-    tool1.result = tool1Result
-    tool1.error = shouldSimulateError ? 'Failed to fetch YouTube transcript: Video not found or private' : undefined
-  }
-
-  await simulateEvent('tool:complete', {
-    toolCallId: toolCallId1,
-    toolName: 'source_ingest',
-    success: !shouldSimulateError,
-    result: tool1Result,
-    error: shouldSimulateError ? 'Failed to fetch YouTube transcript: Video not found or private' : undefined,
-    timestamp: new Date().toISOString()
-  })
+  const tool1Execution = await simulateToolExecution(
+    toolCallId1,
+    'source_ingest',
+    tool1Args,
+    4,
+    shouldSimulateError
+  )
 
   // If error scenario, stop here and show error message
   if (shouldSimulateError) {
@@ -411,152 +650,52 @@ const simulateAgentTurn = async (messageText: string) => {
 
   await delay(500)
 
-  // Simulate second tool:preparing
+  // Simulate second tool execution (content_write)
   const toolCallId2 = crypto.randomUUID()
-  mockStreamingToolCalls.value.set(toolCallId2, {
-    toolCallId: toolCallId2,
-    toolName: 'content_write',
-    status: 'preparing'
-  })
-  await simulateEvent('tool:preparing', {
-    toolCallId: toolCallId2,
-    toolName: 'content_write',
-    timestamp: new Date().toISOString()
-  })
-
-  await delay(600)
-
-  // Simulate tool:start
-  const tool2 = mockStreamingToolCalls.value.get(toolCallId2)
-  if (tool2) {
-    tool2.status = 'running'
-    tool2.args = {
-      action: 'create',
-      sourceContentId: tool1Result.sourceContentId
-    }
+  const tool2Args = {
+    action: 'create',
+    sourceContentId: tool1Execution.result.sourceContentId
   }
-  await simulateEvent('tool:start', {
-    toolCallId: toolCallId2,
-    toolName: 'content_write',
-    timestamp: new Date().toISOString()
-  })
-
-  // Simulate realistic progress updates for content_write (longer operation)
-  const progressSteps2 = 6
-  for (let i = 0; i < progressSteps2; i++) {
-    const progressMsg = getProgressMessages('content_write', i)
-    if (tool2) {
-      tool2.progressMessage = progressMsg
-    }
-    await simulateEvent('tool:progress', {
-      toolCallId: toolCallId2,
-      message: progressMsg,
-      timestamp: new Date().toISOString()
-    })
-    await delay(3000) // Longer delays for content generation
-  }
-
-  // Simulate tool:complete
-  const tool2Result = {
-    contentId: crypto.randomUUID(),
-    versionId: crypto.randomUUID(),
-    content: {
-      id: crypto.randomUUID(),
-      title: 'Introduction to AI Agents',
-      slug: 'introduction-to-ai-agents'
-    }
-  }
-  if (tool2) {
-    tool2.status = 'success'
-    tool2.result = tool2Result
-  }
-  await simulateEvent('tool:complete', {
-    toolCallId: toolCallId2,
-    toolName: 'content_write',
-    success: true,
-    result: tool2Result,
-    error: undefined,
-    timestamp: new Date().toISOString()
-  })
+  const tool2Execution = await simulateToolExecution(
+    toolCallId2,
+    'content_write',
+    tool2Args,
+    6,
+    false
+  )
 
   await delay(500)
 
-  // Simulate message chunks
+  // Simulate streaming assistant message
   const assistantMessageId = crypto.randomUUID()
-  let currentAssistantMessageText = ''
-
-  // Create temporary assistant message for streaming
-  const tempAssistantMessage: ChatMessage = {
-    id: assistantMessageId,
-    role: 'assistant',
-    parts: [{ type: 'text', text: '' }],
-    createdAt: new Date()
-  }
-  mockMessages.value.push(tempAssistantMessage)
-
   const assistantText = 'I\'ve successfully created content from the YouTube video. The content includes a comprehensive introduction to AI agents with sections covering key concepts, use cases, and implementation strategies.'
-
-  for (let i = 0; i < assistantText.length; i += 3) {
-    const chunk = assistantText.slice(i, i + 3)
-    currentAssistantMessageText += chunk
-
-    // Update the message in place
-    const msgIndex = mockMessages.value.findIndex(m => m.id === assistantMessageId)
-    if (msgIndex >= 0) {
-      const existingMessage = mockMessages.value[msgIndex]
-      if (existingMessage) {
-        mockMessages.value[msgIndex] = {
-          id: existingMessage.id,
-          role: existingMessage.role,
-          parts: [{ type: 'text', text: currentAssistantMessageText }],
-          createdAt: existingMessage.createdAt,
-          payload: existingMessage.payload
-        }
-      }
-    }
-
-    await simulateEvent('message:chunk', {
-      messageId: assistantMessageId,
-      chunk
-    })
-    await delay(30)
-  }
-
-  // Simulate message:complete
-  await simulateEvent('message:complete', {
-    messageId: assistantMessageId,
-    message: assistantText
-  })
+  await simulateStreamingAssistantMessage(assistantMessageId, assistantText)
 
   await delay(500)
 
-  // Simulate messages:complete (authoritative snapshot)
-  const finalAssistantMessage: ChatMessage = {
-    id: assistantMessageId,
-    role: 'assistant',
-    parts: [
-      { type: 'text', text: assistantText },
-      {
-        type: 'tool_call',
-        toolCallId: toolCallId1,
-        toolName: 'source_ingest',
-        status: 'success',
-        args: tool1?.args,
-        result: tool1Result,
-        timestamp: new Date().toISOString()
-      },
-      {
-        type: 'tool_call',
-        toolCallId: toolCallId2,
-        toolName: 'content_write',
-        status: 'success',
-        args: tool2?.args,
-        result: tool2Result,
-        timestamp: new Date().toISOString()
-      }
-    ],
-    createdAt: new Date()
-  }
+  // Build and replace with final message containing tool calls
+  const toolCalls = [
+    {
+      toolCallId: toolCallId1,
+      toolName: 'source_ingest',
+      status: 'success' as const,
+      args: tool1Args,
+      result: tool1Execution.result
+    },
+    {
+      toolCallId: toolCallId2,
+      toolName: 'content_write',
+      status: 'success' as const,
+      args: tool2Args,
+      result: tool2Execution.result
+    }
+  ]
+
+  const finalAssistantMessage = buildFinalMessageWithToolCalls(
+    assistantMessageId,
+    assistantText,
+    toolCalls
+  )
 
   // Replace temporary message with final message
   const msgIndex = mockMessages.value.findIndex(m => m.id === assistantMessageId)
@@ -564,134 +703,8 @@ const simulateAgentTurn = async (messageText: string) => {
     mockMessages.value[msgIndex] = finalAssistantMessage
   }
 
-  // Simulate log:entry events (tool_started, tool_succeeded)
-  await simulateEvent('log:entry', {
-    id: crypto.randomUUID(),
-    type: 'tool_started',
-    message: 'Tool source_ingest started',
-    payload: {
-      toolName: 'source_ingest',
-      args: tool1?.args
-    },
-    createdAt: new Date().toISOString()
-  })
-
-  await simulateEvent('log:entry', {
-    id: crypto.randomUUID(),
-    type: 'tool_succeeded',
-    message: 'Tool source_ingest executed successfully',
-    payload: {
-      toolName: 'source_ingest',
-      args: tool1?.args,
-      result: tool1Result
-    },
-    createdAt: new Date().toISOString()
-  })
-
-  await simulateEvent('log:entry', {
-    id: crypto.randomUUID(),
-    type: 'tool_started',
-    message: 'Tool content_write started',
-    payload: {
-      toolName: 'content_write',
-      args: tool2?.args
-    },
-    createdAt: new Date().toISOString()
-  })
-
-  await simulateEvent('log:entry', {
-    id: crypto.randomUUID(),
-    type: 'tool_succeeded',
-    message: 'Tool content_write executed successfully',
-    payload: {
-      toolName: 'content_write',
-      args: tool2?.args,
-      result: tool2Result
-    },
-    createdAt: new Date().toISOString()
-  })
-
-  // Simulate messages:complete (authoritative snapshot - matches real API structure)
-  await simulateEvent('messages:complete', {
-    messages: mockMessages.value.map(msg => ({
-      id: msg.id,
-      role: msg.role,
-      content: msg.parts.find(p => p.type === 'text')?.text || '',
-      createdAt: msg.createdAt,
-      payload: msg.payload
-    }))
-  })
-
-  // Simulate logs:complete (authoritative log snapshot)
-  await simulateEvent('logs:complete', {
-    logs: [
-      {
-        id: crypto.randomUUID(),
-        type: 'tool_started',
-        message: 'Tool source_ingest started',
-        payload: { toolName: 'source_ingest', args: tool1?.args },
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: crypto.randomUUID(),
-        type: 'tool_succeeded',
-        message: 'Tool source_ingest executed successfully',
-        payload: { toolName: 'source_ingest', args: tool1?.args, result: tool1Result },
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: crypto.randomUUID(),
-        type: 'tool_started',
-        message: 'Tool content_write started',
-        payload: { toolName: 'content_write', args: tool2?.args },
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: crypto.randomUUID(),
-        type: 'tool_succeeded',
-        message: 'Tool content_write executed successfully',
-        payload: { toolName: 'content_write', args: tool2?.args, result: tool2Result },
-        createdAt: new Date().toISOString()
-      }
-    ]
-  })
-
-  // Simulate agentContext:update
-  await simulateEvent('agentContext:update', {
-    readySources: [
-      {
-        id: tool1Result.sourceContentId,
-        title: tool1Result.sourceContent?.title || 'Introduction to AI Agents',
-        sourceType: 'youtube',
-        ingestStatus: 'ingested',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-    ],
-    ingestFailures: [],
-    lastAction: 'content_write',
-    toolHistory: [
-      {
-        toolName: 'source_ingest',
-        invocation: { name: 'source_ingest', arguments: tool1?.args },
-        result: { success: true, result: tool1Result }
-      },
-      {
-        toolName: 'content_write',
-        invocation: { name: 'content_write', arguments: tool2?.args },
-        result: { success: true, result: tool2Result }
-      }
-    ],
-    intentSnapshot: null
-  })
-
-  // Simulate conversation:final
-  await simulateEvent('conversation:final', {
-    conversationId: mockConversationId.value
-  })
-
-  // Simulate done
-  await simulateEvent('done', {})
+  // Emit all completion events
+  await emitCompletionEvents(toolCalls)
 
   mockStatus.value = 'ready'
   promptSubmitting.value = false

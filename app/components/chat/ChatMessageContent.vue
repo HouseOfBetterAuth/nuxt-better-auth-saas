@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage } from '#shared/utils/types'
+import type { ChatMessage, MessagePart } from '#shared/utils/types'
 import { computed } from 'vue'
 import AgentStatus from './AgentStatus.vue'
 import AgentProgressTracker from './progress/AgentProgressTracker.vue'
@@ -21,7 +21,7 @@ const { currentActivity, currentToolName } = useConversation()
 const toolCalls = computed(() => props.message.parts.filter(p => p.type === 'tool_call'))
 const hasMultipleToolCalls = computed(() => toolCalls.value.length > 1)
 const hasSingleToolCall = computed(() => toolCalls.value.length === 1)
-const textParts = computed(() => props.message.parts.filter(p => p.type === 'text' && p.text.trim()))
+const textParts = computed(() => props.message.parts.filter((p): p is Extract<MessagePart, { type: 'text' }> => p.type === 'text' && !!p.text?.trim()))
 
 const ALLOWED_EMBED_DOMAINS = [
   'youtube.com',

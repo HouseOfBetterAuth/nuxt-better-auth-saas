@@ -9,14 +9,12 @@ interface Props {
   showControls?: boolean
   defaultCollapsed?: boolean
   currentActivity?: 'thinking' | 'streaming' | null
-  currentToolName?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showControls: true,
   defaultCollapsed: false,
-  currentActivity: null,
-  currentToolName: null
+  currentActivity: null
 })
 
 // Extract all tool calls and organize them as numbered steps
@@ -59,8 +57,12 @@ const isStepCollapsed = (toolCallId: string) => {
 
 const toggleStep = (toolCallId: string) => {
   if (allCollapsed.value) {
-    // When allCollapsed is true, individual toggles should override global state
+    // Transition to individual mode: populate with all steps except the one being toggled
     allCollapsed.value = false
+    individualCollapsed.value = progressSteps.value
+      .map(s => s.toolCallId)
+      .filter(id => id !== toolCallId)
+    return
   }
 
   if (individualCollapsed.value.includes(toolCallId)) {

@@ -13,9 +13,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Calculate thinking time from timestamps
 const thinkingTime = computed(() => {
-  // If we're currently thinking, show "Thinking..."
+  // If we're currently thinking, return empty string (template will handle "Thinking..." display)
   if (props.currentActivity === 'thinking' && (props.step.status === 'preparing' || props.step.status === 'running')) {
-    return 'Thinking...'
+    return ''
   }
 
   if (!props.step.timestamp) {
@@ -58,7 +58,12 @@ const thinkingContent = computed(() => {
         :class="step.status === 'preparing' || step.status === 'running' ? 'animate-pulse' : ''"
       />
       <span class="font-medium text-muted-700 dark:text-muted-300">
-        Thought for {{ thinkingTime }}
+        <template v-if="currentActivity === 'thinking' && (step.status === 'preparing' || step.status === 'running')">
+          Thinking...
+        </template>
+        <template v-else-if="thinkingTime">
+          Thought for {{ thinkingTime }}
+        </template>
       </span>
     </div>
 

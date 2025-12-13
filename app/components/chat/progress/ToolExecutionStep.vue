@@ -8,17 +8,74 @@ interface Props {
 
 const props = defineProps<Props>()
 
+// Sensitive field names to redact (case-insensitive)
+const SENSITIVE_FIELDS = [
+  'apiKey',
+  'apikey',
+  'api_key',
+  'password',
+  'passwd',
+  'token',
+  'accessToken',
+  'access_token',
+  'refreshToken',
+  'refresh_token',
+  'secret',
+  'secretKey',
+  'secret_key',
+  'auth',
+  'authorization',
+  'credential',
+  'credentials',
+  'privateKey',
+  'private_key',
+  'sessionId',
+  'session_id'
+]
+
+// Recursively redact sensitive data from an object
+function redactSensitiveData(obj: unknown): unknown {
+  if (obj === null || obj === undefined) {
+    return obj
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(redactSensitiveData)
+  }
+  if (typeof obj === 'object') {
+    const redacted: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(obj)) {
+      const keyLower = key.toLowerCase()
+      const isSensitive = SENSITIVE_FIELDS.some(field => keyLower.includes(field.toLowerCase()))
+      if (isSensitive && typeof value === 'string') {
+        redacted[key] = value.length > 0 ? '***REDACTED***' : value
+      } else if (isSensitive && value !== null && value !== undefined) {
+        redacted[key] = '***REDACTED***'
+      } else {
+        redacted[key] = redactSensitiveData(value)
+      }
+    }
+    return redacted
+  }
+  return obj
+}
+
 // Format tool arguments for display (truncate long values)
 const formattedArgs = computed(() => {
   if (!props.step.args) {
     return null
   }
-  const formatted = JSON.stringify(props.step.args, null, 2)
-  // Truncate if too long
-  if (formatted.length > 200) {
-    return `${formatted.slice(0, 200)}...`
+  try {
+    // Redact sensitive data before stringifying
+    const sanitized = redactSensitiveData(props.step.args)
+    const formatted = JSON.stringify(sanitized, null, 2)
+    // Truncate if too long
+    if (formatted.length > 200) {
+      return `${formatted.slice(0, 200)}...`
+    }
+    return formatted
+  } catch {
+    return '[Unable to display arguments]'
   }
-  return formatted
 })
 
 // Format tool result for display
@@ -29,7 +86,14 @@ const formattedResult = computed(() => {
   if (typeof props.step.result === 'string') {
     return props.step.result
   }
-  const formatted = JSON.stringify(props.step.result, null, 2)
+  let formatted: string
+  try {
+    formatted = JSON.stringify(props.step.result, null, 2)
+  } catch (error) {
+    // Fallback for unserializable results (e.g., circular references)
+    const errorInfo = error instanceof Error ? ` (${error.message})` : ''
+    formatted = `[Unserializable result]${errorInfo}: ${String(props.step.result)}`
+  }
   // Truncate if too long
   if (formatted.length > 500) {
     return `${formatted.slice(0, 500)}...`
@@ -37,7 +101,7 @@ const formattedResult = computed(() => {
   return formatted
 })
 
-const showArgs = computed(() => formattedArgs.value && formattedArgs.value.length < 200)
+const showArgs = computed(() => !!formattedArgs.value)
 const showResult = computed(() => props.step.status === 'success' && formattedResult.value)
 </script>
 
