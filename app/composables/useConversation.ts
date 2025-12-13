@@ -2,7 +2,7 @@ import type { ConversationIntentSnapshot, IntentGap, IntentOrchestratorAction } 
 import type { ChatMessage, MessagePart, NonEmptyArray } from '#shared/utils/types'
 import { useState } from '#app'
 import { useLocalStorage } from '@vueuse/core'
-import { computed } from 'vue'
+import { computed, toRaw } from 'vue'
 
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
@@ -168,6 +168,21 @@ export function useConversation() {
   // Client-side message cache for instant navigation
   // Maps conversationId -> { messages, timestamp }
   const messageCache = useState<Map<string, { messages: ChatMessage[], timestamp: number }>>('chat/message-cache', () => new Map())
+
+  const cloneMessages = (input: ChatMessage[]) => {
+    const raw = toRaw(input)
+    try {
+      return structuredClone(raw)
+    } catch (error) {
+      console.warn('[useConversation] structuredClone failed, using JSON fallback', error)
+      try {
+        return JSON.parse(JSON.stringify(raw)) as ChatMessage[]
+      } catch (jsonError) {
+        console.error('[useConversation] JSON fallback clone failed, returning shallow copy', jsonError)
+        return raw.slice()
+      }
+    }
+  }
   const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
   const isBusy = computed(() => status.value === 'submitted' || status.value === 'streaming')
@@ -206,7 +221,7 @@ export function useConversation() {
     // Cache messages for instant future navigation (unless explicitly skipped)
     if (!options?.skipCache) {
       messageCache.value.set(id, {
-        messages: structuredClone(msgs),
+        messages: cloneMessages(msgs),
         timestamp: Date.now()
       })
     }
@@ -222,7 +237,7 @@ export function useConversation() {
     const isStale = age > CACHE_TTL_MS
 
     return {
-      messages: structuredClone(cached.messages),
+      messages: cloneMessages(cached.messages),
       isStale,
       age
     }

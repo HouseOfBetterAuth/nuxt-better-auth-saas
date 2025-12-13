@@ -59,7 +59,6 @@ const conversationList = useConversationList({ pageSize: 40 })
 const chatContainerRef = ref<HTMLElement | null>(null)
 const chatVisible = useElementVisibility(chatContainerRef)
 const pendingConversationLoad = ref<string | null>(null)
-const archivingConversationId = ref<string | null>(null)
 const conversationLoadToken = ref(0)
 conversationList.loadInitial().catch(() => {})
 
@@ -152,42 +151,6 @@ const clearNewConversationFlag = () => {
   const nextQuery = { ...route.query }
   delete nextQuery.new
   router.replace({ path: route.path, query: nextQuery }).catch(() => {})
-}
-
-const archiveActiveConversation = async () => {
-  const targetId = conversationId.value
-  if (!targetId || archivingConversationId.value === targetId)
-    return
-
-  archivingConversationId.value = targetId
-  try {
-    await $fetch(`/api/conversations/${targetId}`, { method: 'DELETE' })
-    conversationList.remove(targetId)
-
-    if (activeConversationId.value === targetId) {
-      activeConversationId.value = null
-      pendingConversationLoad.value = null
-      resetConversation()
-      router.push(localePath('/conversations'))
-    }
-
-    await conversationList.refresh().catch(() => {})
-    toast.add({
-      title: 'Conversation archived',
-      description: 'The conversation has been moved to your archive.',
-      icon: 'i-lucide-archive',
-      color: 'neutral'
-    })
-  } catch (error: any) {
-    console.error('Failed to archive conversation', error)
-    toast.add({
-      title: 'Failed to archive',
-      description: error?.data?.statusMessage || error?.message || 'Unable to archive this conversation.',
-      color: 'error'
-    })
-  } finally {
-    archivingConversationId.value = null
-  }
 }
 
 const isValidUUID = (id: string | null): boolean => {
@@ -471,108 +434,11 @@ if (import.meta.client) {
             @send-again="handleSendAgain"
             @share="handleShare"
           />
-
-          <div class="w-full max-w-2xl mx-auto px-0 sm:px-4">
-            <PromptComposer
-              v-model="prompt"
-              placeholder="Paste a transcript or describe what you need..."
-              :disabled="isBusy || promptSubmitting"
-              :status="promptSubmitting ? 'submitted' : uiStatus"
-              @submit="handlePromptSubmit"
-            >
-              <template #footer>
-                <component
-                  :is="!loggedIn ? 'UTooltip' : 'div'"
-                  v-bind="!loggedIn ? { text: 'Sign in to unlock agent mode' } : {}"
-                >
-                  <UInputMenu
-                    v-model="mode"
-                    :items="modeItems"
-                    value-key="value"
-                    label-key="label"
-                    variant="ghost"
-                    size="sm"
-                    ignore-filter
-                    readonly
-                    open-on-click
-                  >
-                    <template #leading>
-                      <UIcon
-                        :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
-                        class="w-4 h-4"
-                        :class="{ 'opacity-50': mode === 'agent' && !loggedIn }"
-                      />
-                    </template>
-                  </UInputMenu>
-                </component>
-              </template>
-            </PromptComposer>
-
-            <i18n-t
-              v-if="!loggedIn"
-              keypath="global.legal.chatDisclaimer"
-              tag="p"
-              class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2"
-            >
-              <template #terms>
-                <NuxtLink
-                  :to="localePath('/terms')"
-                  class="underline hover:text-primary-600 dark:hover:text-primary-400"
-                >
-                  {{ $t('global.legal.terms') }}
-                </NuxtLink>
-              </template>
-              <template #privacy>
-                <NuxtLink
-                  :to="localePath('/privacy')"
-                  class="underline hover:text-primary-600 dark:hover:text-primary-400"
-                >
-                  {{ $t('global.legal.privacyPolicy') }}
-                </NuxtLink>
-              </template>
-            </i18n-t>
-          </div>
-        </div>
-      </div>
-    </template>
-    <template v-else>
-      <div class="w-full flex-1 flex flex-col justify-end lg:justify-start">
-        <div
-          v-if="conversationId"
-          class="flex justify-end mb-4"
-        >
-          <UButton
-            color="neutral"
-            variant="ghost"
-            size="xs"
-            icon="i-lucide-archive"
-            :loading="archivingConversationId === conversationId"
-            :disabled="isBusy || promptSubmitting || archivingConversationId === conversationId"
-            @click="archiveActiveConversation"
-          >
-            Archive
-          </UButton>
-        </div>
-        <div class="space-y-8 w-full max-w-3xl mx-auto">
-          <ChatConversationMessages
-            :messages="messages"
-            :display-messages="displayMessages"
-            :conversation-id="conversationId"
-            :status="status"
-            :ui-status="uiStatus"
-            :error-message="errorMessage"
-            :is-busy="isBusy"
-            :prompt-submitting="promptSubmitting"
-            @copy="handleCopy"
-            @regenerate="handleRegenerate"
-            @send-again="handleSendAgain"
-            @share="handleShare"
-          />
         </div>
       </div>
 
-      <div class="w-full flex flex-col justify-center mt-8 lg:mt-4 fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 pb-safe lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none lg:pb-0">
-        <div class="w-full max-w-3xl mx-auto px-4 py-4 lg:py-0">
+      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6">
+        <div class="w-full max-w-3xl mx-auto">
           <PromptComposer
             v-model="prompt"
             placeholder="Paste a transcript or describe what you need..."
@@ -612,7 +478,90 @@ if (import.meta.client) {
             v-if="!loggedIn"
             keypath="global.legal.chatDisclaimer"
             tag="p"
-            class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2 lg:hidden"
+            class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2"
+          >
+            <template #terms>
+              <NuxtLink
+                :to="localePath('/terms')"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                {{ $t('global.legal.terms') }}
+              </NuxtLink>
+            </template>
+            <template #privacy>
+              <NuxtLink
+                :to="localePath('/privacy')"
+                class="underline hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                {{ $t('global.legal.privacyPolicy') }}
+              </NuxtLink>
+            </template>
+          </i18n-t>
+        </div>
+      </div>
+    </template>
+    <template v-else>
+      <div class="w-full flex-1 flex flex-col justify-end lg:justify-start">
+        <div class="space-y-8 w-full max-w-3xl mx-auto">
+          <ChatConversationMessages
+            :messages="messages"
+            :display-messages="displayMessages"
+            :conversation-id="conversationId"
+            :status="status"
+            :ui-status="uiStatus"
+            :error-message="errorMessage"
+            :is-busy="isBusy"
+            :prompt-submitting="promptSubmitting"
+            @copy="handleCopy"
+            @regenerate="handleRegenerate"
+            @send-again="handleSendAgain"
+            @share="handleShare"
+          />
+        </div>
+      </div>
+
+      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6">
+        <div class="w-full max-w-3xl mx-auto">
+          <PromptComposer
+            v-model="prompt"
+            placeholder="Paste a transcript or describe what you need..."
+            :disabled="isBusy || promptSubmitting"
+            :status="promptSubmitting ? 'submitted' : uiStatus"
+            @submit="handlePromptSubmit"
+          >
+            <template #footer>
+              <component
+                :is="!loggedIn ? 'UTooltip' : 'div'"
+                v-bind="!loggedIn ? { text: 'Sign in to unlock agent mode' } : {}"
+              >
+                <UInputMenu
+                  v-model="mode"
+                  :items="modeItems"
+                  value-key="value"
+                  label-key="label"
+                  variant="ghost"
+                  size="sm"
+                  ignore-filter
+                  readonly
+                  open-on-click
+                >
+                  <template #leading>
+                    <UIcon
+                      :name="mode === 'agent' ? 'i-lucide-bot' : 'i-lucide-message-circle'"
+                      class="w-4 h-4"
+                      :class="{ 'opacity-50': mode === 'agent' && !loggedIn }"
+                    />
+                  </template>
+                </UInputMenu>
+              </component>
+            </template>
+          </PromptComposer>
+
+          <i18n-t
+            v-if="!loggedIn"
+            keypath="global.legal.chatDisclaimer"
+            tag="p"
+            class="text-xs text-muted-600 dark:text-muted-400 text-center mt-2"
           >
             <template #terms>
               <NuxtLink

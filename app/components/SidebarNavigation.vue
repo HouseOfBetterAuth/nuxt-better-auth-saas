@@ -2,6 +2,7 @@
 const router = useRouter()
 const route = useRoute()
 const localePath = useLocalePath()
+const toast = useToast()
 
 const {
   items,
@@ -10,7 +11,9 @@ const {
   hasMore,
   initialized,
   loadInitial,
-  loadMore
+  loadMore,
+  remove,
+  refresh
 } = useConversationList({ pageSize: 40 })
 
 const initialize = async () => {
@@ -50,6 +53,44 @@ const createConversation = () => {
     query: { new: '1' }
   })
 }
+
+const archivingConversationId = ref<string | null>(null)
+
+const archiveConversation = async (conversationId: string, event?: Event) => {
+  if (event) {
+    event.stopPropagation()
+  }
+
+  if (!conversationId || archivingConversationId.value === conversationId)
+    return
+
+  archivingConversationId.value = conversationId
+  try {
+    await $fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' })
+    remove(conversationId)
+
+    if (activeConversationId.value === conversationId) {
+      router.push(localePath('/conversations'))
+    }
+
+    await refresh().catch(() => {})
+    toast.add({
+      title: 'Conversation archived',
+      description: 'The conversation has been moved to your archive.',
+      icon: 'i-lucide-archive',
+      color: 'neutral'
+    })
+  } catch (error: any) {
+    console.error('Failed to archive conversation', error)
+    toast.add({
+      title: 'Failed to archive',
+      description: error?.data?.statusMessage || error?.message || 'Unable to archive this conversation.',
+      color: 'error'
+    })
+  } finally {
+    archivingConversationId.value = null
+  }
+}
 </script>
 
 <template>
@@ -71,23 +112,38 @@ const createConversation = () => {
 
       <div class="space-y-1">
         <template v-if="initialized && items.length > 0">
-          <button
+          <div
             v-for="conversation in items"
             :key="conversation.id"
-            type="button"
-            class="w-full text-left rounded-md px-3 py-2 border border-transparent transition-colors"
+            class="group relative w-full rounded-md border border-transparent transition-colors"
             :class="isConversationActive(conversation.id)
               ? 'bg-neutral-100/80 dark:bg-neutral-800/60'
               : 'hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40'"
-            @click="openConversation(conversation.id)"
           >
-            <p class="text-sm font-medium truncate">
-              {{ conversation.displayLabel }}
-            </p>
-            <p class="text-xs text-muted-foreground">
-              {{ conversation.updatedAgo }}
-            </p>
-          </button>
+            <button
+              type="button"
+              class="w-full text-left rounded-md px-3 py-2"
+              @click="openConversation(conversation.id)"
+            >
+              <p class="text-sm font-medium truncate pr-8">
+                {{ conversation.displayLabel }}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {{ conversation.updatedAgo }}
+              </p>
+            </button>
+            <UButton
+              icon="i-lucide-archive"
+              size="2xs"
+              color="neutral"
+              variant="ghost"
+              :loading="archivingConversationId === conversation.id"
+              :disabled="archivingConversationId === conversation.id"
+              class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Archive conversation"
+              @click="archiveConversation(conversation.id, $event)"
+            />
+          </div>
         </template>
 
         <template v-else-if="pending && !initialized">
