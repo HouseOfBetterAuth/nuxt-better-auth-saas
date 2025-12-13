@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onErrorCaptured } from 'vue'
+
+const emit = defineEmits<{
+  (e: 'loading'): void
+  (e: 'ready'): void
+  (e: 'error'): void
+}>()
 
 const ChatShell = defineAsyncComponent({
   loader: () => import('./ChatShell.vue'),
@@ -19,6 +25,7 @@ const ChatShell = defineAsyncComponent({
 const chatWidgetStatus = useState<'loading' | 'ready' | 'error'>('chat-widget-status', () => 'loading')
 const setWidgetStatus = (status: 'loading' | 'ready' | 'error') => {
   chatWidgetStatus.value = status
+  emit(status)
 }
 const handleShellReady = () => {
   setWidgetStatus('ready')
@@ -36,6 +43,11 @@ onBeforeUnmount(() => {
   setWidgetStatus('loading')
 })
 
+onErrorCaptured(() => {
+  setWidgetStatus('error')
+  return false
+})
+
 const reloadPage = () => {
   if (typeof window !== 'undefined')
     window.location.reload()
@@ -46,7 +58,6 @@ const reloadPage = () => {
   <ClientOnly>
     <NuxtErrorBoundary>
       <template #error="{ error, resetError }">
-        <div v-if="(setWidgetStatus('error'), false)" />
         <div class="flex flex-col items-center gap-3 rounded-md border border-neutral-200/70 dark:border-neutral-800/60 p-4 text-center">
           <p class="text-sm text-muted-foreground">
             Failed to load the chat experience. {{ error?.message || 'Please try again.' }}
@@ -75,7 +86,6 @@ const reloadPage = () => {
         @resolve="handleShellReady"
       >
         <template #fallback>
-          <div v-if="(setWidgetStatus('loading'), false)" />
           <div class="text-sm text-muted-foreground">
             Loading chat...
           </div>

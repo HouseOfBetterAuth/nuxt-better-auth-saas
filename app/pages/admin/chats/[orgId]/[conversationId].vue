@@ -89,12 +89,10 @@ const triggerDetailFetch = async (options?: { force?: boolean }) => {
   if (fetchingDetail.value)
     return
 
-  const previousData = data.value
   fetchingDetail.value = true
   try {
     await refresh()
     if (detailKey.value !== currentKey) {
-      data.value = previousData
       return
     }
     lastFetchedKey.value = currentKey

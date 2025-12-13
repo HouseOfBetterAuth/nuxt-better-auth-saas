@@ -69,6 +69,8 @@ const isRouteMatch = (pattern: string) => {
 
 // Determine if we should show chat interface - only on conversation routes
 const shouldShowChat = computed(() => {
+  if (route.meta?.renderChatWidget === false)
+    return false
   return isRouteMatch('/conversations')
 })
 
@@ -160,7 +162,7 @@ const primaryActionColor = computed(() => {
         collapsible
         resizable
         :ui="{
-          root: 'bg-neutral-50 dark:bg-neutral-900/80 border-r border-neutral-200/70 dark:border-neutral-800/60'
+          root: 'bg-neutral-100 dark:bg-neutral-950 border-r border-neutral-200/70 dark:border-neutral-800/60'
         }"
       >
         <template #header="{ collapsed }">
@@ -175,6 +177,7 @@ const primaryActionColor = computed(() => {
             v-else
             :to="localePath('/')"
             class="flex items-center justify-center hover:opacity-80 transition-opacity"
+            aria-label="Home"
           >
             <UIcon
               name="i-simple-icons-nuxtdotjs"
