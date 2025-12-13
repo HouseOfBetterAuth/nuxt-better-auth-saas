@@ -82,15 +82,7 @@ export default defineEventHandler(async (event) => {
     event.context.user = user
   }
 
-  // If user is anonymous (from session), return fast path
-  if (user.isAnonymous) {
-    return {
-      conversations: [],
-      conversationQuota: buildAnonymousQuotaPayload()
-    }
-  }
-
-  // 3. Signed-in user path - should be fast and direct
+  // 3. Signed-in or anonymous user path - should be fast and direct
   const db = getDB()
   const query = getQuery(event)
 
@@ -265,7 +257,7 @@ export default defineEventHandler(async (event) => {
         state.hasLatestArtifact = true
         const artifact = preview.latestArtifact as Record<string, any> | null
         const title = artifact?.title
-        state.latestArtifactTitle = typeof title === 'string' ? title : (title ?? null)
+        state.latestArtifactTitle = title == null ? null : String(title)
       }
 
       if (typeof preview.artifactCount === 'number') {
@@ -362,11 +354,12 @@ export default defineEventHandler(async (event) => {
       if (!state) {
         continue
       }
-      state.latestArtifactTitle = artifact?.title ?? null
+      const artifactTitle = artifact?.title
+      state.latestArtifactTitle = artifactTitle == null ? null : String(artifactTitle)
       state.hasLatestArtifact = true
       const patch = getPendingPreviewPatch(conversationId)
       patch.latestArtifact = {
-        title: artifact?.title ?? null,
+        title: artifactTitle == null ? null : String(artifactTitle),
         updatedAt: artifact?.updatedAt ?? null
       }
     }

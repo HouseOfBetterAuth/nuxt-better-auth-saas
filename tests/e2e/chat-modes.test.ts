@@ -46,6 +46,17 @@ describe('chat Modes E2E', async () => {
     await archiveAllConversations()
   })
 
+  describe('anonymous conversations API', () => {
+    it('returns quota details for anonymous users', async () => {
+      const response = await $fetch('/api/conversations', {
+        method: 'GET'
+      }) as any
+
+      expect(Array.isArray(response?.conversations)).toBe(true)
+      expect(response?.conversationQuota?.profile).toBe('anonymous')
+    })
+  })
+
   describe('chat Mode (Read-Only)', () => {
     it('should allow read operations in chat mode', async () => {
       // This test verifies that chat mode can use read tools
