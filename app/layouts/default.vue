@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { WorkspaceHeaderState } from '~/components/chat/workspaceHeader'
 import type { ConversationQuotaUsagePayload } from '~/types/conversation'
+import AuthModal from '~/components/AuthModal.vue'
 import QuillioWidget from '~/components/chat/QuillioWidget.vue'
 import Logo from '~/components/Logo.vue'
 import OnboardingModal from '~/components/OnboardingModal.vue'
@@ -14,6 +15,15 @@ const { loggedIn } = useAuth()
 
 const i18nHead = useLocaleHead()
 const route = useRoute()
+
+const authModalOpen = ref(false)
+const authModalMode = ref<'signin' | 'signup'>('signin')
+
+function openSignInModal(event?: MouseEvent) {
+  event?.preventDefault()
+  authModalMode.value = 'signin'
+  authModalOpen.value = true
+}
 
 useHead(() => ({
   link: [...(i18nHead.value.link || [])]
@@ -144,7 +154,7 @@ const quotaDisplay = computed(() => {
           </UBadge>
 
           <!-- User Navigation -->
-          <UserNavigation />
+          <UserNavigation @sign-in="openSignInModal" />
         </div>
       </div>
     </header>
@@ -167,7 +177,7 @@ const quotaDisplay = computed(() => {
             <SidebarNavigation />
           </div>
           <div class="px-4 pb-4 border-t border-neutral-200/70 dark:border-neutral-800/60">
-            <UserNavigation />
+            <UserNavigation @sign-in="openSignInModal" />
           </div>
         </div>
       </template>
@@ -175,7 +185,7 @@ const quotaDisplay = computed(() => {
 
     <UDashboardGroup
       storage-key="dashboard-sidebar"
-      storage="localStorage"
+      storage="local"
     >
       <!-- Sidebar with tabs for conversations and content -->
       <UDashboardSidebar
@@ -219,7 +229,7 @@ const quotaDisplay = computed(() => {
             v-if="!collapsed"
             class="w-full"
           >
-            <UserNavigation />
+            <UserNavigation @sign-in="openSignInModal" />
           </div>
         </template>
       </UDashboardSidebar>
@@ -367,7 +377,10 @@ const quotaDisplay = computed(() => {
             </template>
 
             <template #right>
-              <UserNavigation v-if="!shouldShowSidebar" />
+              <UserNavigation
+                v-if="!shouldShowSidebar"
+                @sign-in="openSignInModal"
+              />
             </template>
           </UDashboardNavbar>
         </template>
@@ -419,5 +432,9 @@ const quotaDisplay = computed(() => {
       </UDashboardPanel>
     </UDashboardGroup>
     <OnboardingModal />
+    <AuthModal
+      v-model:open="authModalOpen"
+      v-model:mode="authModalMode"
+    />
   </div>
 </template>

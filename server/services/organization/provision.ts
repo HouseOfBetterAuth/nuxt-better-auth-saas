@@ -1,5 +1,5 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '../../db/schema'
 import { getDB } from '../../utils/db'
@@ -31,6 +31,48 @@ const buildDefaultName = (user: MinimalUserInfo) => {
   const capitalized = base.charAt(0).toUpperCase() + base.slice(1)
   const suffix = capitalized.toLowerCase().includes('team') ? '' : ' Team'
   return `${capitalized}${suffix || ''}`
+}
+
+const ADJECTIVES = [
+  'fuzzy',
+  'curious',
+  'brave',
+  'gentle',
+  'sparkly',
+  'swift',
+  'quiet',
+  'bright',
+  'mighty',
+  'clever'
+] as const
+
+const ANIMALS = [
+  'penguin',
+  'leopard',
+  'otter',
+  'fox',
+  'tiger',
+  'panda',
+  'eagle',
+  'whale',
+  'koala',
+  'lynx'
+] as const
+
+const pick = <T>(arr: readonly T[]) => arr[Math.floor(Math.random() * arr.length)]
+
+const titleCase = (value: string) => value
+  .split(/\s+/g)
+  .filter(Boolean)
+  .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+  .join(' ')
+
+const buildRandomOrgNameAndSlugSeed = () => {
+  const adjective = pick(ADJECTIVES)
+  const animal = pick(ANIMALS)
+  const slugSeed = `${adjective}-${animal}`
+  const name = titleCase(`${adjective} ${animal}`)
+  return { name, slugSeed }
 }
 
 const generateUniqueSlug = async (db: DbInstance, seed: string) => {
@@ -90,19 +132,35 @@ export const ensureDefaultOrganizationForUser = async (
   let result: { id: string, created: boolean } | null = null
 
   await db.transaction(async (tx) => {
-    const [existing] = await tx
+    const [existingNonAnonymous] = await tx
       .select({ organizationId: schema.member.organizationId })
       .from(schema.member)
-      .where(eq(schema.member.userId, user.id))
+      .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+      .where(and(
+        eq(schema.member.userId, user.id),
+        sql`${schema.organization.slug} NOT LIKE 'anonymous-%'`
+      ))
       .limit(1)
 
-    if (existing?.organizationId) {
-      result = { id: existing.organizationId, created: false }
+    if (existingNonAnonymous?.organizationId) {
+      result = { id: existingNonAnonymous.organizationId, created: false }
       return
     }
 
-    const name = buildDefaultName(user)
-    const slug = await generateUniqueSlug(tx, name)
+    // If the user only has an anonymous org (created while they were anonymous), create a real org.
+    const [anonymousOrg] = await tx
+      .select({ organizationId: schema.member.organizationId })
+      .from(schema.member)
+      .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+      .where(and(
+        eq(schema.member.userId, user.id),
+        sql`${schema.organization.slug} LIKE 'anonymous-%'`
+      ))
+      .limit(1)
+
+    const random = buildRandomOrgNameAndSlugSeed()
+    const name = random.name || buildDefaultName(user)
+    const slug = await generateUniqueSlug(tx, random.slugSeed || name)
     const now = new Date()
     const orgId = uuidv7()
 
@@ -113,7 +171,7 @@ export const ensureDefaultOrganizationForUser = async (
         name,
         slug,
         createdAt: now,
-        metadata: JSON.stringify({ autoProvisioned: true })
+        metadata: JSON.stringify({ autoProvisioned: true, source: 'anon-upgrade' })
       })
 
     await tx.insert(schema.member).values({
@@ -123,6 +181,24 @@ export const ensureDefaultOrganizationForUser = async (
       role: 'owner',
       createdAt: now
     })
+
+    // Migrate anonymous conversations to the newly created org so the user's existing work carries over.
+    if (anonymousOrg?.organizationId) {
+      await tx
+        .update(schema.conversation)
+        .set({ organizationId: orgId })
+        .where(eq(schema.conversation.organizationId, anonymousOrg.organizationId))
+
+      await tx
+        .update(schema.conversationMessage)
+        .set({ organizationId: orgId })
+        .where(eq(schema.conversationMessage.organizationId, anonymousOrg.organizationId))
+
+      await tx
+        .update(schema.conversationLog)
+        .set({ organizationId: orgId })
+        .where(eq(schema.conversationLog.organizationId, anonymousOrg.organizationId))
+    }
 
     result = { id: orgId, created: true }
   })

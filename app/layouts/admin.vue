@@ -157,7 +157,7 @@ const clickSignOut = () => {
               variant="ghost"
             />
             <template #content>
-              <div class="w-[60vw] h-full flex flex-col p-4">
+              <div class="w-[60vw] h-full flex flex-col p-4 bg-white dark:bg-neutral-900 border-r border-neutral-200/70 dark:border-neutral-800/60 overflow-y-auto">
                 <!-- Logo and App Name -->
                 <div class="flex items-center gap-2 mb-4">
                   <Logo class="h-6 w-6" />

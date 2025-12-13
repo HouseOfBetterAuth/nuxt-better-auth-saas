@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
 
+const emit = defineEmits<{
+  signIn: [event: MouseEvent]
+}>()
 const localePath = useLocalePath()
 const { t } = useI18n()
 const { loggedIn, signOut, user, activeStripeSubscription } = useAuth()
@@ -60,6 +63,7 @@ const tierBadgeLabel = computed(() => {
   <template v-else>
     <UButton
       :to="localePath('/signin')"
+      @click="emit('signIn', $event)"
     >
       {{ t('global.auth.signIn') }}
     </UButton>

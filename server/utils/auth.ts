@@ -630,6 +630,68 @@ export const createBetterAuth = () => betterAuth({
       )
 
       if (shouldEnsureOrganization) {
+        // If the user was previously an anonymous user in this browser/session and is now
+        // a real user (new session), transfer their anonymous organization membership to the
+        // new user so that conversation migration can occur.
+        const previousSessionUser = ctx.context.session?.user
+        const newSessionUser = ctx.context.newSession?.user
+        const isAnonymousUpgrade = Boolean(previousSessionUser?.id)
+          && Boolean(newSessionUser?.id)
+          && Boolean(previousSessionUser?.isAnonymous)
+          && !newSessionUser?.isAnonymous
+          && previousSessionUser?.id !== newSessionUser?.id
+
+        if (isAnonymousUpgrade) {
+          const db = getDB()
+          try {
+            await db.transaction(async (tx) => {
+              const previousUserId = previousSessionUser!.id
+              const newUserId = newSessionUser!.id
+
+              // Find anonymous org memberships on the previous anonymous user.
+              const anonMemberships = await tx
+                .select({ organizationId: schema.member.organizationId })
+                .from(schema.member)
+                .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+                .where(and(
+                  eq(schema.member.userId, previousUserId),
+                  sql`${schema.organization.slug} LIKE 'anonymous-%'`
+                ))
+
+              const anonOrgIds = Array.from(
+                new Set(anonMemberships.map(m => m.organizationId).filter(Boolean))
+              )
+
+              if (anonOrgIds.length === 0) {
+                return
+              }
+
+              // Avoid unique constraint collisions (member_unique_idx on orgId+userId)
+              // by removing any existing memberships for the new user on these orgs.
+              await tx
+                .delete(schema.member)
+                .where(and(
+                  eq(schema.member.userId, newUserId),
+                  inArray(schema.member.organizationId, anonOrgIds)
+                ))
+
+              // Transfer the anon memberships to the new user.
+              await tx
+                .update(schema.member)
+                .set({ userId: newUserId })
+                .where(and(
+                  eq(schema.member.userId, previousUserId),
+                  inArray(schema.member.organizationId, anonOrgIds)
+                ))
+
+              // Set active org to the first anonymous org (best-effort).
+              await setUserActiveOrganization(newUserId, anonOrgIds[0])
+            })
+          } catch (error) {
+            console.error('[Auth] Failed to transfer anonymous org membership during upgrade:', error)
+          }
+        }
+
         await ensureDefaultOrganizationForUser(sessionUser)
       }
     })
