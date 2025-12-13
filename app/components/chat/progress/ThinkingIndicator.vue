@@ -16,21 +16,54 @@ const elapsedSeconds = ref(0)
 let intervalId: ReturnType<typeof setInterval> | null = null
 
 const startTimer = () => {
-  if (intervalId) {
-    clearInterval(intervalId)
-  }
+  // Always clear any existing interval before creating a new one
+  stopTimer()
 
   if (!props.step.timestamp) {
     elapsedSeconds.value = 0
     return
   }
 
+  // Defensively parse and validate the timestamp
+  let date: Date
+  try {
+    date = new Date(props.step.timestamp)
+    // Check if the date is valid
+    if (!Number.isFinite(date.getTime())) {
+      // Invalid timestamp, bail out
+      elapsedSeconds.value = 0
+      return
+    }
+  } catch {
+    // Parsing failed, bail out
+    elapsedSeconds.value = 0
+    return
+  }
+
+  // Initialize elapsed time immediately
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000)
+  elapsedSeconds.value = Math.max(0, diff)
+
+  // Set up interval to update every second
   intervalId = setInterval(() => {
+    // Re-validate timestamp on each tick in case it changed
+    if (!props.step.timestamp) {
+      stopTimer()
+      elapsedSeconds.value = 0
+      return
+    }
+
     try {
-      const timestamp = new Date(props.step.timestamp!)
-      const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
+      const currentDate = new Date(props.step.timestamp)
+      if (!Number.isFinite(currentDate.getTime())) {
+        stopTimer()
+        elapsedSeconds.value = 0
+        return
+      }
+      const diff = Math.floor((Date.now() - currentDate.getTime()) / 1000)
       elapsedSeconds.value = Math.max(0, diff)
     } catch {
+      stopTimer()
       elapsedSeconds.value = 0
     }
   }, 1000)
@@ -43,23 +76,19 @@ const stopTimer = () => {
   }
 }
 
-// Calculate thinking time from timestamps
+// Calculate thinking time from timestamps - only returns formatted duration, never placeholder text
 const thinkingTime = computed(() => {
   // If we're currently thinking, return empty string (template will handle "Thinking..." display)
   if (props.currentActivity === 'thinking' && (props.step.status === 'preparing' || props.step.status === 'running')) {
     return ''
   }
 
-  if (!props.step.timestamp) {
-    return 'Processing...'
+  if (!props.step.timestamp || elapsedSeconds.value < 0) {
+    return ''
   }
 
   try {
     const diffSeconds = elapsedSeconds.value
-
-    if (diffSeconds < 0) {
-      return 'Processing...'
-    }
 
     if (diffSeconds < 60) {
       return `${diffSeconds}s`
@@ -69,8 +98,13 @@ const thinkingTime = computed(() => {
     const seconds = diffSeconds % 60
     return `${minutes}m ${seconds}s`
   } catch {
-    return 'Processing...'
+    return ''
   }
+})
+
+// Separate computed for processing state
+const isProcessing = computed(() => {
+  return (props.step.status === 'preparing' || props.step.status === 'running') && !props.step.timestamp
 })
 
 // Watch for status changes to start/stop timer
@@ -79,27 +113,29 @@ watch(
   () => {
     if (props.step.status === 'preparing' || props.step.status === 'running') {
       if (props.step.timestamp) {
-        // Initialize elapsed time immediately
-        try {
-          const timestamp = new Date(props.step.timestamp)
-          const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
-          elapsedSeconds.value = Math.max(0, diff)
-        } catch {
-          elapsedSeconds.value = 0
-        }
         startTimer()
+      } else {
+        // Timestamp is falsy, clear interval
+        stopTimer()
+        elapsedSeconds.value = 0
       }
     } else {
       stopTimer()
       // Calculate final elapsed time
       if (props.step.timestamp) {
         try {
-          const timestamp = new Date(props.step.timestamp)
-          const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
-          elapsedSeconds.value = Math.max(0, diff)
+          const date = new Date(props.step.timestamp)
+          if (Number.isFinite(date.getTime())) {
+            const diff = Math.floor((Date.now() - date.getTime()) / 1000)
+            elapsedSeconds.value = Math.max(0, diff)
+          } else {
+            elapsedSeconds.value = 0
+          }
         } catch {
           elapsedSeconds.value = 0
         }
+      } else {
+        elapsedSeconds.value = 0
       }
     }
   },
@@ -138,6 +174,9 @@ const thinkingContent = computed(() => {
         </template>
         <template v-else-if="thinkingTime">
           Thought for {{ thinkingTime }}
+        </template>
+        <template v-else-if="isProcessing">
+          Processing...
         </template>
       </span>
     </div>
