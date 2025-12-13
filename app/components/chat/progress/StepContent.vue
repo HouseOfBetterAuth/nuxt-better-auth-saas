@@ -8,17 +8,21 @@ import ToolExecutionStep from './ToolExecutionStep.vue'
 interface Props {
   step: Step
   stepType: 'file_edit' | 'analysis' | 'search' | 'tool_execution' | 'thinking'
+  currentActivity?: 'thinking' | 'streaming' | null
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  currentActivity: null
+})
 </script>
 
 <template>
-  <div class="step-content px-4 pb-3 pt-2 space-y-2">
+  <div class="step-content px-4 pb-3 pt-2 space-y-2 transition-all duration-200">
     <!-- Thinking Indicator -->
     <ThinkingIndicator
       v-if="stepType === 'thinking'"
       :step="step"
+      :current-activity="currentActivity"
     />
 
     <!-- File Edit Display -->

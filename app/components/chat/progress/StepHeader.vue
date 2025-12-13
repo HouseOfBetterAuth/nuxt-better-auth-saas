@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { toolDisplayNames } from './constants/toolNames'
 
 interface Props {
   stepNumber: number
@@ -12,20 +13,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (event: 'toggle'): void
 }>()
-
-// Tool display names (reuse from AgentStatus.vue)
-const toolDisplayNames: Record<string, string> = {
-  source_ingest: 'Ingest Source',
-  content_write: 'Write Content',
-  edit_section: 'Edit Section',
-  edit_metadata: 'Update Metadata',
-  read_content: 'Read Content',
-  read_section: 'Read Section',
-  read_source: 'Read Source',
-  read_content_list: 'List Content',
-  read_source_list: 'List Sources',
-  read_workspace_summary: 'Workspace Summary'
-}
 
 const displayName = computed(() =>
   toolDisplayNames[props.toolName] || props.toolName
@@ -63,8 +50,11 @@ const statusColor = computed(() => {
 </script>
 
 <template>
-  <div
-    class="step-header flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 dark:hover:bg-muted-700/50 transition-colors"
+  <button
+    type="button"
+    class="step-header flex items-center gap-3 px-4 py-3 w-full text-left cursor-pointer hover:bg-muted/50 dark:hover:bg-muted-700/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+    :aria-expanded="!collapsed"
+    aria-label="Toggle step details"
     @click="emit('toggle')"
   >
     <!-- Step Number Badge -->
@@ -96,8 +86,18 @@ const statusColor = computed(() => {
       :color="statusColor"
       variant="soft"
       size="xs"
+      class="font-medium"
     >
       {{ status === 'preparing' ? 'Preparing...' : status === 'running' ? 'Running...' : 'Failed' }}
+    </UBadge>
+    <UBadge
+      v-else
+      color="success"
+      variant="soft"
+      size="xs"
+      class="font-medium"
+    >
+      Complete
     </UBadge>
 
     <!-- Collapse/Expand Icon -->
@@ -105,5 +105,5 @@ const statusColor = computed(() => {
       :name="collapsed ? 'i-lucide-chevron-down' : 'i-lucide-chevron-up'"
       class="h-4 w-4 text-muted-500 flex-shrink-0"
     />
-  </div>
+  </button>
 </template>

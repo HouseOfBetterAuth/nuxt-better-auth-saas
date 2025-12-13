@@ -8,11 +8,15 @@ interface Props {
   message: ChatMessage
   showControls?: boolean
   defaultCollapsed?: boolean
+  currentActivity?: 'thinking' | 'streaming' | null
+  currentToolName?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showControls: true,
-  defaultCollapsed: false
+  defaultCollapsed: false,
+  currentActivity: null,
+  currentToolName: null
 })
 
 // Extract all tool calls and organize them as numbered steps
@@ -37,27 +41,32 @@ const hasSteps = computed(() => progressSteps.value.length > 0)
 
 // Global collapse state
 const allCollapsed = ref(props.defaultCollapsed)
-const individualCollapsed = ref<Set<string>>(new Set())
+const individualCollapsed = ref<string[]>([])
 
 const handleCollapseAll = () => {
   allCollapsed.value = true
-  individualCollapsed.value = new Set(progressSteps.value.map(s => s.toolCallId))
+  individualCollapsed.value = progressSteps.value.map(s => s.toolCallId)
 }
 
 const handleExpandAll = () => {
   allCollapsed.value = false
-  individualCollapsed.value.clear()
+  individualCollapsed.value = []
 }
 
 const isStepCollapsed = (toolCallId: string) => {
-  return allCollapsed.value || individualCollapsed.value.has(toolCallId)
+  return allCollapsed.value || individualCollapsed.value.includes(toolCallId)
 }
 
 const toggleStep = (toolCallId: string) => {
-  if (individualCollapsed.value.has(toolCallId)) {
-    individualCollapsed.value.delete(toolCallId)
+  if (allCollapsed.value) {
+    // When allCollapsed is true, individual toggles should override global state
+    allCollapsed.value = false
+  }
+
+  if (individualCollapsed.value.includes(toolCallId)) {
+    individualCollapsed.value = individualCollapsed.value.filter(id => id !== toolCallId)
   } else {
-    individualCollapsed.value.add(toolCallId)
+    individualCollapsed.value = [...individualCollapsed.value, toolCallId]
   }
 }
 </script>
@@ -65,7 +74,7 @@ const toggleStep = (toolCallId: string) => {
 <template>
   <div
     v-if="hasSteps"
-    class="agent-progress-tracker space-y-2"
+    class="agent-progress-tracker space-y-2 my-2"
   >
     <ProgressControls
       v-if="showControls && progressSteps.length > 1"
@@ -80,6 +89,7 @@ const toggleStep = (toolCallId: string) => {
         :key="step.toolCallId"
         :step="step"
         :collapsed="isStepCollapsed(step.toolCallId)"
+        :current-activity="currentActivity"
         @toggle="toggleStep(step.toolCallId)"
       />
     </div>

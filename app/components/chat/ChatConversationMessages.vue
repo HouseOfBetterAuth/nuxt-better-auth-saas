@@ -156,7 +156,10 @@ function getMessageText(message: ChatMessage | null) {
   if (!message) {
     return ''
   }
-  return message.parts[0]?.text || ''
+  return message.parts
+    .filter(part => part.type === 'text' && part.text)
+    .map(part => part.text)
+    .join(' ')
 }
 
 function emitActionSheetAction(type: 'copy' | 'share') {

@@ -12,7 +12,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="progress-controls flex items-center justify-between py-2 border-b border-muted-200 dark:border-muted-800">
+  <div class="progress-controls flex items-center justify-between py-2.5 px-1 mb-2 border-b border-muted-200 dark:border-muted-800">
     <h3 class="text-sm font-semibold text-muted-700 dark:text-muted-300">
       Progress Updates
     </h3>

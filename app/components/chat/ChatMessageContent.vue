@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
+import { computed } from 'vue'
 import AgentStatus from './AgentStatus.vue'
+import AgentProgressTracker from './progress/AgentProgressTracker.vue'
 import WorkspaceFilesAccordion from './WorkspaceFilesAccordion.vue'
 
 const props = withDefaults(defineProps<{
@@ -13,6 +15,13 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+const { currentActivity, currentToolName } = useConversation()
+
+// Determine if we should use the new tracker or simple AgentStatus
+const toolCalls = computed(() => props.message.parts.filter(p => p.type === 'tool_call'))
+const hasMultipleToolCalls = computed(() => toolCalls.value.length > 1)
+const hasSingleToolCall = computed(() => toolCalls.value.length === 1)
+const textParts = computed(() => props.message.parts.filter(p => p.type === 'text' && p.text.trim()))
 
 const ALLOWED_EMBED_DOMAINS = [
   'youtube.com',
@@ -143,21 +152,33 @@ function toSummaryBullets(summary: string | null | undefined) {
       </p>
     </div>
 
-    <!-- Render all message parts in sequence -->
-    <template
-      v-for="(part, index) in message.parts"
-      :key="index"
-    >
-      <AgentStatus
-        v-if="part.type === 'tool_call'"
-        :part="part"
-      />
+    <!-- Text parts (shown first if present) -->
+    <template v-if="textParts.length > 0">
       <p
-        v-else-if="part.type === 'text' && part.text.trim()"
+        v-for="(part, index) in textParts"
+        :key="`${message.id}-text-${index}`"
         class="whitespace-pre-line"
       >
         {{ part.text }}
       </p>
+    </template>
+
+    <!-- Multiple tool calls: Use AgentProgressTracker -->
+    <template v-if="hasMultipleToolCalls">
+      <AgentProgressTracker
+        :message="message"
+        :current-activity="currentActivity"
+        :current-tool-name="currentToolName"
+      />
+    </template>
+
+    <!-- Single tool call: Use simple AgentStatus (backward compat) -->
+    <template v-else-if="hasSingleToolCall">
+      <AgentStatus
+        v-for="part in toolCalls"
+        :key="part.toolCallId"
+        :part="part"
+      />
     </template>
   </div>
 </template>

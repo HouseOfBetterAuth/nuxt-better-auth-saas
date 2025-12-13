@@ -8,73 +8,70 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// Tool display names (reuse from AgentStatus.vue)
-const toolDisplayNames: Record<string, string> = {
-  source_ingest: 'Ingest Source',
-  content_write: 'Write Content',
-  edit_section: 'Edit Section',
-  edit_metadata: 'Update Metadata',
-  read_content: 'Read Content',
-  read_section: 'Read Section',
-  read_source: 'Read Source',
-  read_content_list: 'List Content',
-  read_source_list: 'List Sources',
-  read_workspace_summary: 'Workspace Summary'
-}
-
-const _displayName = computed(() =>
-  toolDisplayNames[props.step.toolName] || props.step.toolName
-)
-
-// TODO: Format tool arguments for display
+// Format tool arguments for display (truncate long values)
 const formattedArgs = computed(() => {
   if (!props.step.args) {
     return null
   }
-  // Format args for display (truncate long values, etc.)
-  return JSON.stringify(props.step.args, null, 2)
+  const formatted = JSON.stringify(props.step.args, null, 2)
+  // Truncate if too long
+  if (formatted.length > 200) {
+    return `${formatted.slice(0, 200)}...`
+  }
+  return formatted
 })
 
-// TODO: Format tool result for display
+// Format tool result for display
 const formattedResult = computed(() => {
   if (!props.step.result) {
     return null
   }
-  // Format result for display
   if (typeof props.step.result === 'string') {
     return props.step.result
   }
-  return JSON.stringify(props.step.result, null, 2)
+  const formatted = JSON.stringify(props.step.result, null, 2)
+  // Truncate if too long
+  if (formatted.length > 500) {
+    return `${formatted.slice(0, 500)}...`
+  }
+  return formatted
 })
+
+const showArgs = computed(() => formattedArgs.value && formattedArgs.value.length < 200)
+const showResult = computed(() => props.step.status === 'success' && formattedResult.value)
 </script>
 
 <template>
   <div class="tool-execution-step space-y-2">
-    <!-- Tool Arguments (if available and not too long) -->
-    <div
-      v-if="formattedArgs && formattedArgs.length < 200"
-      class="text-xs"
-    >
-      <span class="text-muted-600 dark:text-muted-400">Arguments:</span>
-      <pre class="mt-1 p-2 rounded bg-muted/30 dark:bg-muted-700/30 font-mono text-xs overflow-x-auto">{{ formattedArgs }}</pre>
-    </div>
-
     <!-- Progress Message -->
     <div
-      v-if="step.progressMessage"
-      class="text-xs text-muted-500 italic"
+      v-if="step.progressMessage && (step.status === 'running' || step.status === 'preparing')"
+      class="text-xs text-muted-600 dark:text-muted-400 italic"
     >
       {{ step.progressMessage }}
     </div>
 
-    <!-- Success Result -->
-    <div
-      v-if="step.status === 'success' && formattedResult"
+    <!-- Tool Arguments (if available and not too long) -->
+    <details
+      v-if="showArgs"
       class="text-xs"
     >
-      <span class="text-muted-600 dark:text-muted-400">Result:</span>
-      <pre class="mt-1 p-2 rounded bg-muted/30 dark:bg-muted-700/30 font-mono text-xs overflow-x-auto max-h-32 overflow-y-auto">{{ formattedResult }}</pre>
-    </div>
+      <summary class="cursor-pointer text-muted-600 dark:text-muted-400 hover:text-muted-900 dark:hover:text-muted-100">
+        Arguments
+      </summary>
+      <pre class="mt-1 p-2 rounded bg-muted/30 dark:bg-muted-700/30 font-mono text-xs overflow-x-auto">{{ formattedArgs }}</pre>
+    </details>
+
+    <!-- Success Result -->
+    <details
+      v-if="showResult"
+      class="text-xs"
+    >
+      <summary class="cursor-pointer text-success-600 dark:text-success-400 hover:text-success-900 dark:hover:text-success-100">
+        Result
+      </summary>
+      <pre class="mt-1 p-2 rounded bg-success-50 dark:bg-success-900/20 font-mono text-xs overflow-x-auto max-h-32 overflow-y-auto">{{ formattedResult }}</pre>
+    </details>
 
     <!-- Error Display -->
     <div

@@ -18,9 +18,13 @@ export interface Step {
 interface Props {
   step: Step
   collapsed?: boolean
+  currentActivity?: 'thinking' | 'streaming' | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  collapsed: false,
+  currentActivity: null
+})
 const emit = defineEmits<{
   (event: 'toggle', toolCallId: string): void
 }>()
@@ -29,23 +33,31 @@ const isCollapsed = ref(props.collapsed ?? false)
 
 // Determine step type from toolName and result
 const stepType = computed(() => {
-  // TODO: Implement logic to determine step type
-  // Examples:
-  // - If toolName includes 'edit' or result has fileEdits → 'file_edit'
-  // - If toolName includes 'read' or 'analyze' → 'analysis'
-  // - If toolName includes 'search' → 'search'
-  // - If result has thinking content → 'thinking'
-  // - Default → 'tool_execution'
+  // Check for thinking step first (preparing status with thinking content or currentActivity)
+  if (
+    (props.step.status === 'preparing' && props.currentActivity === 'thinking') ||
+    props.step.result?.thinking ||
+    props.step.args?.thinking
+  ) {
+    return 'thinking'
+  }
 
+  // File edit steps
   if (props.step.result?.fileEdits || props.step.toolName.includes('edit')) {
     return 'file_edit'
   }
-  if (props.step.toolName.includes('read') || props.step.toolName.includes('analyze')) {
-    return 'analysis'
-  }
+
+  // Search steps
   if (props.step.toolName.includes('search')) {
     return 'search'
   }
+
+  // Analysis/read steps
+  if (props.step.toolName.includes('read') || props.step.toolName.includes('analyze')) {
+    return 'analysis'
+  }
+
+  // Default to tool execution
   return 'tool_execution'
 })
 
@@ -63,7 +75,7 @@ watch(() => props.collapsed, (newVal) => {
 </script>
 
 <template>
-  <div class="progress-step rounded-lg border border-muted-200 dark:border-muted-800 bg-muted/30 dark:bg-muted-800/50 overflow-hidden">
+  <div class="progress-step rounded-lg border border-muted-200 dark:border-muted-800 bg-muted/30 dark:bg-muted-800/50 overflow-hidden my-2">
     <StepHeader
       :step-number="step.stepNumber"
       :tool-name="step.toolName"
@@ -74,11 +86,12 @@ watch(() => props.collapsed, (newVal) => {
 
     <div
       v-if="!isCollapsed"
-      class="step-content-wrapper"
+      class="step-content-wrapper transition-all duration-200 ease-in-out"
     >
       <StepContent
         :step="step"
         :step-type="stepType"
+        :current-activity="currentActivity"
       />
     </div>
   </div>

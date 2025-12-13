@@ -9,16 +9,16 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// TODO: Extract analysis/search information from step.result
-const analysisData = computed(() => {
-  // Expected structure (to be confirmed):
-  // step.result = {
-  //   query?: string,
-  //   results?: number,
-  //   items?: Array<{ path: string, lines?: string }>,
-  //   content?: string
-  // }
-  return props.step.result || {}
+interface AnalysisResult {
+  query?: string
+  results?: number
+  items?: Array<{ path: string, lines?: string }>
+  content?: string
+}
+
+// Extract analysis/search information from step.result
+const analysisData = computed<AnalysisResult>(() => {
+  return (props.step.result || {}) as AnalysisResult
 })
 
 const hasResults = computed(() => {
@@ -65,7 +65,7 @@ const hasResults = computed(() => {
       <div
         v-for="(item, index) in analysisData.items.slice(0, 5)"
         :key="index"
-        class="text-xs font-mono text-muted-600 dark:text-muted-400 p-1 rounded bg-muted/30"
+        class="text-xs font-mono text-muted-600 dark:text-muted-400 p-1.5 rounded bg-muted/30 dark:bg-muted-800/30 border border-muted-200 dark:border-muted-800 hover:bg-muted/40 dark:hover:bg-muted-800/40 transition-colors"
       >
         {{ item.path }}{{ item.lines ? `#L${item.lines}` : '' }}
       </div>

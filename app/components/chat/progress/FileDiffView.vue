@@ -19,6 +19,12 @@ const fileEdits = computed(() => {
 })
 
 const hasFileEdits = computed(() => fileEdits.value.length > 0)
+
+function openDiff(url: string) {
+  if (import.meta.client && typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
 </script>
 
 <template>
@@ -30,7 +36,7 @@ const hasFileEdits = computed(() => fileEdits.value.length > 0)
       <div
         v-for="(edit, index) in fileEdits"
         :key="index"
-        class="file-edit-item p-2 rounded border border-muted-200 dark:border-muted-800"
+        class="file-edit-item p-2 rounded border border-muted-200 dark:border-muted-800 bg-muted/20 dark:bg-muted-800/30 hover:bg-muted/30 dark:hover:bg-muted-800/40 transition-colors"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -63,7 +69,7 @@ const hasFileEdits = computed(() => fileEdits.value.length > 0)
               variant="ghost"
               size="xs"
               icon="i-lucide-external-link"
-              @click="() => window.open(edit.diffUrl, '_blank')"
+              @click="openDiff(edit.diffUrl)"
             >
               Open diff
             </UButton>
