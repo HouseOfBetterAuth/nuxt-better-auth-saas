@@ -55,8 +55,6 @@ export async function logAuditEvent(data: {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Failed to log audit event:', errorMessage)
 
-    let queuedSuccessfully = false
-
     // Queue for retry if enabled
     if (queueOnFailure) {
       try {
@@ -75,15 +73,14 @@ export async function logAuditEvent(data: {
           retryCount: 0,
           createdAt: new Date()
         })
-        queuedSuccessfully = true
       } catch (queueError) {
         // If queueing also fails, log but don't throw - we've done our best
         console.error('[Audit] Failed to queue audit event for retry:', queueError)
       }
     }
 
-    // Re-throw if caller needs to handle failure (or if queuing failed)
-    if (throwOnFailure || !queuedSuccessfully) {
+    // Re-throw if caller needs to handle failure
+    if (throwOnFailure) {
       throw error
     }
   }

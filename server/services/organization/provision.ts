@@ -129,6 +129,10 @@ export const setUserActiveOrganization = async (
 
 /**
  * Queue a failed organization provisioning attempt for retry.
+ *
+ * Note: retryCount is only incremented by the background retry job (retryQueuedOrgProvisioning).
+ * This function only updates the error message when an existing entry is found, ensuring
+ * retryCount accurately represents the number of background retry attempts.
  */
 const queueOrgProvisioningRetry = async (userId: string, error: Error) => {
   try {
@@ -145,17 +149,20 @@ const queueOrgProvisioningRetry = async (userId: string, error: Error) => {
         .limit(1)
 
       if (existing) {
-        // Update existing entry
+        // Update existing entry with latest error, but don't increment retryCount
+        // retryCount is only incremented by the background retry job
         await tx
           .update(orgProvisioningQueue)
           .set({
-            error: error.message,
-            lastRetryAt: new Date(),
-            retryCount: (existing.retryCount ?? 0) + 1
+            error: error.message
+            // Note: We don't update lastRetryAt here since this isn't a retry attempt,
+            // it's just updating the error message for an existing queued entry
           })
           .where(eq(orgProvisioningQueue.id, existing.id))
       } else {
         // Create new entry
+        // The unique constraint on (userId) WHERE completedAt IS NULL will prevent
+        // concurrent duplicate inserts
         await tx.insert(orgProvisioningQueue).values({
           userId,
           error: error.message,
@@ -165,7 +172,13 @@ const queueOrgProvisioningRetry = async (userId: string, error: Error) => {
       }
     })
   } catch (queueError) {
-    console.error('[OrgProvisioning] Failed to queue provisioning retry:', queueError)
+    // If the unique constraint violation occurs (shouldn't happen with transaction,
+    // but handle gracefully), log and continue
+    if (queueError instanceof Error && queueError.message.includes('unique')) {
+      console.warn('[OrgProvisioning] Duplicate queue entry prevented by unique constraint:', userId)
+    } else {
+      console.error('[OrgProvisioning] Failed to queue provisioning retry:', queueError)
+    }
   }
 }
 
@@ -278,6 +291,9 @@ export const ensureDefaultOrganizationForUser = async (
 /**
  * Retry queued organization provisioning attempts.
  * Should be called periodically by a background job.
+ *
+ * Note: retryCount represents the number of background retry attempts, not total failures.
+ * Initial provisioning failures are queued without incrementing retryCount.
  */
 export async function retryQueuedOrgProvisioning(maxRetries: number = 5, batchSize: number = 50) {
   const db = getDB()
