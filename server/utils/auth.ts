@@ -539,16 +539,25 @@ export const createBetterAuth = () => betterAuth({
       }
     }
   },
-  socialProviders: {
-    github: {
-      clientId: runtimeConfig.githubClientId!,
-      clientSecret: runtimeConfig.githubClientSecret!
-    },
-    google: {
-      clientId: runtimeConfig.googleClientId!,
-      clientSecret: runtimeConfig.googleClientSecret!
+  socialProviders: (() => {
+    const providers: Record<string, { clientId: string, clientSecret: string }> = {}
+
+    if (runtimeConfig.githubClientId && runtimeConfig.githubClientSecret) {
+      providers.github = {
+        clientId: runtimeConfig.githubClientId,
+        clientSecret: runtimeConfig.githubClientSecret
+      }
     }
-  },
+
+    if (runtimeConfig.googleClientId && runtimeConfig.googleClientSecret) {
+      providers.google = {
+        clientId: runtimeConfig.googleClientId,
+        clientSecret: runtimeConfig.googleClientSecret
+      }
+    }
+
+    return providers
+  })(),
   account: {
     accountLinking: {
       enabled: true,
@@ -579,30 +588,72 @@ export const createBetterAuth = () => betterAuth({
         const userId = ctx.context.newSession?.user.id
         if (ctx.path == '/callback/:id' && returned.status == 'FOUND' && userId) {
           const provider = ctx.params.id
-          await logAuditEvent({
-            userId,
-            category: 'auth',
-            action: ctx.path.replace(':id', provider),
-            targetType,
-            targetId,
-            ipAddress,
-            userAgent,
-            status: 'success'
-          })
+          try {
+            await logAuditEvent({
+              userId,
+              category: 'auth',
+              action: ctx.path.replace(':id', provider),
+              targetType,
+              targetId,
+              ipAddress,
+              userAgent,
+              status: 'success'
+            }, {
+              timeout: 2000,
+              queueOnFailure: true,
+              throwOnFailure: false // Don't throw - queue for retry instead
+            })
+          } catch (error) {
+            // Log error but don't block response - event is queued for retry
+            console.error('[Auth] Audit log failed (queued for retry):', error)
+          }
         } else {
-          await logAuditEvent({
-            userId: ctx.context.session?.user.id,
-            category: 'auth',
-            action: ctx.path,
-            targetType,
-            targetId,
-            ipAddress,
-            userAgent,
-            status: 'failure',
-            details: returned.body?.message
-          })
+          try {
+            await logAuditEvent({
+              userId: ctx.context.session?.user.id,
+              category: 'auth',
+              action: ctx.path,
+              targetType,
+              targetId,
+              ipAddress,
+              userAgent,
+              status: 'failure',
+              details: returned.body?.message
+            }, {
+              timeout: 2000,
+              queueOnFailure: true,
+              throwOnFailure: false // Don't throw - queue for retry instead
+            })
+          } catch (error) {
+            // Log error but don't block response - event is queued for retry
+            console.error('[Auth] Audit log failed (queued for retry):', error)
+          }
         }
       } else {
+        // Handle successful social sign-in callbacks
+        if (ctx.path.startsWith('/callback/') && ctx.context.newSession?.user?.id) {
+          const provider = ctx.path.replace('/callback/', '')
+          try {
+            await logAuditEvent({
+              userId: ctx.context.newSession.user.id,
+              category: 'auth',
+              action: `/callback/${provider}`,
+              targetType: 'user',
+              targetId: ctx.context.newSession.user.id,
+              ipAddress,
+              userAgent,
+              status: 'success'
+            }, {
+              timeout: 2000,
+              queueOnFailure: true,
+              throwOnFailure: false // Don't throw - queue for retry instead
+            })
+          } catch (error) {
+            // Log error but don't block response - event is queued for retry
+            console.error('[Auth] Audit log failed (queued for retry):', error)
+          }
+        }
+
         if (['/sign-in/email', '/sign-up/email', '/forget-password', '/reset-password'].includes(ctx.path)) {
           let userId: string | undefined
           if (['/sign-in/email', '/sign-up/email'].includes(ctx.path)) {
@@ -629,7 +680,8 @@ export const createBetterAuth = () => betterAuth({
               status: 'success'
             }, {
               timeout: isCriticalAuthEvent ? 2000 : 5000, // Shorter timeout for critical events
-              queueOnFailure: true // Automatically queue failures for retry
+              queueOnFailure: true, // Automatically queue failures for retry
+              throwOnFailure: false // Don't throw - queue for retry instead
             })
           } catch (error) {
             // Log error but don't block response - event is queued for retry
