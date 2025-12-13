@@ -38,3 +38,8 @@ uploads/
 *.cookie
 cookies.txt
 cookie.txt
+
+# Debug and analysis artifacts (contain sensitive data like timestamps, headers, body content)
+debug-endpoint-analysis.json
+*-endpoint-analysis.json
+*debug*.json
