@@ -21,8 +21,15 @@ const MAX_CURSOR_LENGTH = 2048
 // Use Web APIs that work in both Node.js and Cloudflare Workers
 const encodeCursor = (payload: CursorPayload) => {
   const json = JSON.stringify(payload)
-  // Use btoa for base64 encoding (works in both environments)
-  const base64 = btoa(unescape(encodeURIComponent(json)))
+  // Use TextEncoder for UTF-8 encoding, then convert to base64
+  const encoder = new TextEncoder()
+  const bytes = encoder.encode(json)
+  // Convert bytes to base64 using btoa on the binary string
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  const base64 = btoa(binary)
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '')
 }
 
@@ -39,8 +46,14 @@ const decodeCursor = (cursor: string): CursorPayload => {
     const base64 = cursor.replace(/-/g, '+').replace(/_/g, '/')
     const paddingNeeded = (4 - (base64.length % 4 || 4)) % 4
     const padded = `${base64}${'='.repeat(paddingNeeded)}`
-    // Use atob for base64 decoding (works in both environments)
-    const json = decodeURIComponent(escape(atob(padded)))
+    // Use atob to decode base64, then TextDecoder for UTF-8
+    const binary = atob(padded)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    const decoder = new TextDecoder()
+    const json = decoder.decode(bytes)
     const parsed = JSON.parse(json) as CursorPayload
     if (!parsed?.id || !parsed?.updatedAt) {
       throw new Error('Invalid payload')
