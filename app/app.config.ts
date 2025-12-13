@@ -11,5 +11,8 @@ export default defineAppConfig({
         // color: 'neutral'
       }
     }
+  },
+  site: {
+    termsLastUpdated: '2024-01-01'
   }
 })

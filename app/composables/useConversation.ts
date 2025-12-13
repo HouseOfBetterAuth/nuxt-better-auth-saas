@@ -176,10 +176,15 @@ export function useConversation() {
     } catch (error) {
       console.warn('[useConversation] structuredClone failed, using JSON fallback', error)
       try {
-        return JSON.parse(JSON.stringify(raw)) as ChatMessage[]
+        const parsed = JSON.parse(JSON.stringify(raw)) as ChatMessage[]
+        for (const msg of parsed) {
+          if (msg.createdAt && !(msg.createdAt instanceof Date))
+            msg.createdAt = new Date(msg.createdAt)
+        }
+        return parsed
       } catch (jsonError) {
-        console.error('[useConversation] JSON fallback clone failed, returning shallow copy', jsonError)
-        return raw.slice()
+        console.error('[useConversation] All clone strategies failed', jsonError)
+        throw new Error('Failed to clone messages for cache')
       }
     }
   }

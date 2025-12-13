@@ -19,7 +19,7 @@ useHead({
             Privacy Policy
           </h2>
           <p class="text-muted-foreground mb-4">
-            Last updated: {{ new Date().toLocaleDateString() }}
+            Last updated: January 1, 2025
           </p>
           <p class="mb-4">
             This Privacy Policy describes how we collect, use, and protect your personal information when you use our service.

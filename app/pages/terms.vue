@@ -1,5 +1,12 @@
 <script setup lang="ts">
 const { t } = useI18n()
+const appConfig = useAppConfig()
+
+// Format the date string for display
+const termsLastUpdated = computed(() => {
+  const date = new Date(appConfig.site.termsLastUpdated)
+  return date.toLocaleDateString()
+})
 
 useHead({
   title: t('global.legal.terms')
@@ -19,7 +26,7 @@ useHead({
             Terms of Service
           </h2>
           <p class="text-muted-foreground mb-4">
-            Last updated: {{ new Date().toLocaleDateString() }}
+            Last updated: {{ termsLastUpdated }}
           </p>
           <p class="mb-4">
             Please read these Terms of Service carefully before using our service.

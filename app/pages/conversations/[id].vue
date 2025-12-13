@@ -53,7 +53,7 @@ const handleError = () => {
       </p>
     </div>
     <ClientOnly>
-      <KeepAlive>
+      <KeepAlive :max="5">
         <QuillioWidget
           :conversation-id="conversationId"
           @loading="handleLoading"

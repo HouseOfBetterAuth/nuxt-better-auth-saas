@@ -45,7 +45,6 @@ onBeforeUnmount(() => {
 
 onErrorCaptured(() => {
   setWidgetStatus('error')
-  return false
 })
 
 const reloadPage = () => {
