@@ -149,6 +149,17 @@ const clearActiveToolActivities = () => {
   activeToolActivitiesState.value = new Map()
 }
 
+let cancelResetHandle: ReturnType<typeof setTimeout> | null = null
+let cancelResetToken = 0
+
+const finishCancelled = () => {
+  clearActiveToolActivities()
+  currentActivityState.value = null
+  currentToolNameState.value = null
+  mockStatus.value = 'ready'
+  promptSubmitting.value = false
+}
+
 const ensureAssistantMessage = (messageId: string) => {
   const index = mockMessages.value.findIndex(message => message.id === messageId)
   if (index >= 0) {
@@ -393,8 +404,16 @@ const resetConversation = () => {
   prompt.value = ''
   clearDebugEvents()
   // Reset cancellation flag after a brief delay to allow operations to check it
-  setTimeout(() => {
-    isCancelled.value = false
+  cancelResetToken += 1
+  const token = cancelResetToken
+  if (cancelResetHandle) {
+    clearTimeout(cancelResetHandle)
+  }
+  cancelResetHandle = setTimeout(() => {
+    if (cancelResetToken === token) {
+      isCancelled.value = false
+      cancelResetHandle = null
+    }
   }, 100)
 }
 
@@ -755,8 +774,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled
   if (isCancelled.value) {
-    mockStatus.value = 'ready'
-    promptSubmitting.value = false
+    finishCancelled()
     return
   }
 
@@ -781,8 +799,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
   for (let i = 0; i < toolsToRun.length; i++) {
     // Check if cancelled before processing each tool
     if (isCancelled.value) {
-      mockStatus.value = 'ready'
-      promptSubmitting.value = false
+      finishCancelled()
       return
     }
 
@@ -828,8 +845,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
     // Check if cancelled after tool execution
     if (isCancelled.value) {
-      mockStatus.value = 'ready'
-      promptSubmitting.value = false
+      finishCancelled()
       return
     }
 
@@ -861,8 +877,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
       currentToolNameState.value = null
 
       await simulateEvent('done', {})
-      mockStatus.value = 'ready'
-      promptSubmitting.value = false
+      finishCancelled()
       return
     }
 
@@ -883,8 +898,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
       await delay(500)
       // Check if cancelled after delay between tools
       if (isCancelled.value) {
-        mockStatus.value = 'ready'
-        promptSubmitting.value = false
+        finishCancelled()
         return
       }
     }
@@ -892,8 +906,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before finalizing
   if (isCancelled.value) {
-    mockStatus.value = 'ready'
-    promptSubmitting.value = false
+    finishCancelled()
     return
   }
 
@@ -907,8 +920,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before generating assistant message
   if (isCancelled.value) {
-    mockStatus.value = 'ready'
-    promptSubmitting.value = false
+    finishCancelled()
     return
   }
 
@@ -931,8 +943,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled after streaming
   if (isCancelled.value) {
-    mockStatus.value = 'ready'
-    promptSubmitting.value = false
+    finishCancelled()
     return
   }
 
@@ -940,8 +951,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before finalizing
   if (isCancelled.value) {
-    mockStatus.value = 'ready'
-    promptSubmitting.value = false
+    finishCancelled()
     return
   }
 

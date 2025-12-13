@@ -18,11 +18,18 @@ const { currentActivity, activeToolActivities } = useConversation()
 
 const liveToolActivities = computed(() => {
   const activities = activeToolActivities.value ?? []
+  const getTimestamp = (value?: string) => {
+    if (!value) {
+      return Number.POSITIVE_INFINITY
+    }
+    const parsed = new Date(value).getTime()
+    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+  }
   return activities
     .filter(activity => activity.messageId === props.message.id)
     .sort((a, b) => {
-      const aTime = new Date(a.startedAt).getTime()
-      const bTime = new Date(b.startedAt).getTime()
+      const aTime = getTimestamp(a.startedAt)
+      const bTime = getTimestamp(b.startedAt)
       return aTime - bTime
     })
 })

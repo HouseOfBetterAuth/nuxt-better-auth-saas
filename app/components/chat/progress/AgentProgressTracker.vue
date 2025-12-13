@@ -60,10 +60,18 @@ const progressSteps = computed(() => {
       timestamp: activity.startedAt
     }))
 
+  const getTimestamp = (value?: string | null) => {
+    if (!value) {
+      return Number.MAX_SAFE_INTEGER
+    }
+    const parsed = new Date(value).getTime()
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER
+  }
+
   return [...liveSteps, ...completedSteps]
     .sort((a, b) => {
-      const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0
-      const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0
+      const aTime = getTimestamp(a.timestamp)
+      const bTime = getTimestamp(b.timestamp)
       return aTime - bTime
     })
     .map((step, index) => ({

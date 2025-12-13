@@ -380,6 +380,27 @@ export function useConversation() {
       let currentAssistantMessageId: string | null = runtimeOptions?.optimisticAssistantId ?? null
       let currentAssistantMessageText = ''
       let pendingEventType: string | null = null
+      const ensureAssistantMessageEntry = (messageId: string) => {
+        if (!messageId) {
+          return
+        }
+        const existingIndex = messages.value.findIndex(message => message.id === messageId)
+        if (existingIndex === -1) {
+          messages.value.push({
+            id: messageId,
+            role: 'assistant' as const,
+            parts: [{ type: 'text' as const, text: '' }] as NonEmptyArray<MessagePart>,
+            createdAt: new Date()
+          })
+        }
+      }
+      const getToolCallIdOrWarn = (value: unknown, context: string): string | null => {
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return value
+        }
+        console.warn(`[useConversation] ${context} missing toolCallId, skipping`)
+        return null
+      }
 
       try {
         while (true) {
@@ -498,6 +519,10 @@ export function useConversation() {
                   case 'tool:preparing': {
                     currentActivity.value = 'thinking'
                     currentToolName.value = eventData.toolName || null
+                    const toolCallId = getToolCallIdOrWarn(eventData.toolCallId, 'tool:preparing')
+                    if (!toolCallId) {
+                      break
+                    }
 
                     // Ensure we have an assistant message
                     if (!currentAssistantMessageId) {
@@ -521,7 +546,7 @@ export function useConversation() {
                     const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
                     const message = messageIndex >= 0 ? messages.value[messageIndex] : null
                     if (message) {
-                      upsertToolActivity(eventData.toolCallId, {
+                      upsertToolActivity(toolCallId, {
                         messageId: message.id,
                         toolName: eventData.toolName ?? 'Tool',
                         status: 'preparing',
@@ -535,6 +560,10 @@ export function useConversation() {
                   case 'tool:start': {
                     currentActivity.value = 'thinking'
                     currentToolName.value = eventData.toolName || null
+                    const toolCallId = getToolCallIdOrWarn(eventData.toolCallId, 'tool:start')
+                    if (!toolCallId) {
+                      break
+                    }
 
                     // Ensure we have an assistant message
                     if (!currentAssistantMessageId) {
@@ -558,7 +587,7 @@ export function useConversation() {
                     const messageIndex = messages.value.findIndex(m => m.id === currentAssistantMessageId)
                     const message = messageIndex >= 0 ? messages.value[messageIndex] : null
                     if (message) {
-                      upsertToolActivity(eventData.toolCallId, {
+                      upsertToolActivity(toolCallId, {
                         messageId: message.id,
                         toolName: eventData.toolName ?? 'Tool',
                         status: 'running',
@@ -570,8 +599,12 @@ export function useConversation() {
 
                   case 'tool:complete': {
                     currentToolName.value = null
+                    const toolCallId = getToolCallIdOrWarn(eventData.toolCallId, 'tool:complete')
+                    if (!toolCallId) {
+                      break
+                    }
 
-                    const { removed: activity } = removeToolActivity(eventData.toolCallId)
+                    const { removed: activity } = removeToolActivity(toolCallId)
                     const targetMessageId = eventData.messageId || activity?.messageId || currentAssistantMessageId
                     if (targetMessageId) {
                       const messageIndex = messages.value.findIndex(m => m.id === targetMessageId)
@@ -580,7 +613,7 @@ export function useConversation() {
                       if (message) {
                         const toolPart: MessagePart = {
                           type: 'tool_call',
-                          toolCallId: eventData.toolCallId,
+                          toolCallId,
                           toolName: eventData.toolName ?? activity?.toolName ?? 'Tool',
                           status: eventData.success ? 'success' : 'error',
                           args: activity?.args ?? eventData.args,
@@ -600,7 +633,25 @@ export function useConversation() {
                   }
 
                   case 'tool:progress': {
-                    upsertToolActivity(eventData.toolCallId, {
+                    const toolCallId = getToolCallIdOrWarn(eventData.toolCallId, 'tool:progress')
+                    if (!toolCallId) {
+                      break
+                    }
+                    let targetMessageId = eventData.messageId
+                    if (!targetMessageId) {
+                      const active = activeToolActivities.value.get(toolCallId)
+                      targetMessageId = active?.messageId || currentAssistantMessageId || null
+                    }
+                    if (!targetMessageId) {
+                      targetMessageId = createId()
+                      currentAssistantMessageId = targetMessageId
+                      currentAssistantMessageText = ''
+                      ensureAssistantMessageEntry(targetMessageId)
+                    } else {
+                      ensureAssistantMessageEntry(targetMessageId)
+                    }
+                    upsertToolActivity(toolCallId, {
+                      messageId: targetMessageId,
                       progressMessage: eventData.message
                     })
                     break
