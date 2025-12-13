@@ -152,7 +152,7 @@ const clearActiveToolActivities = () => {
 let cancelResetHandle: ReturnType<typeof setTimeout> | null = null
 let cancelResetToken = 0
 
-const finishCancelled = () => {
+const resetToReady = () => {
   clearActiveToolActivities()
   currentActivityState.value = null
   currentToolNameState.value = null
@@ -774,7 +774,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled
   if (isCancelled.value) {
-    finishCancelled()
+    resetToReady()
     return
   }
 
@@ -799,7 +799,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
   for (let i = 0; i < toolsToRun.length; i++) {
     // Check if cancelled before processing each tool
     if (isCancelled.value) {
-      finishCancelled()
+      resetToReady()
       return
     }
 
@@ -845,7 +845,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
     // Check if cancelled after tool execution
     if (isCancelled.value) {
-      finishCancelled()
+      resetToReady()
       return
     }
 
@@ -877,7 +877,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
       currentToolNameState.value = null
 
       await simulateEvent('done', {})
-      finishCancelled()
+      resetToReady()
       return
     }
 
@@ -898,7 +898,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
       await delay(500)
       // Check if cancelled after delay between tools
       if (isCancelled.value) {
-        finishCancelled()
+        resetToReady()
         return
       }
     }
@@ -906,7 +906,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before finalizing
   if (isCancelled.value) {
-    finishCancelled()
+    resetToReady()
     return
   }
 
@@ -920,7 +920,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before generating assistant message
   if (isCancelled.value) {
-    finishCancelled()
+    resetToReady()
     return
   }
 
@@ -943,7 +943,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled after streaming
   if (isCancelled.value) {
-    finishCancelled()
+    resetToReady()
     return
   }
 
@@ -951,7 +951,7 @@ const simulateAgentTurn = async (messageText: string, state: ScenarioState = 'co
 
   // Check if cancelled before finalizing
   if (isCancelled.value) {
-    finishCancelled()
+    resetToReady()
     return
   }
 
