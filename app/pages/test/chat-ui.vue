@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage } from '#shared/utils/types'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ChatConversationMessages from '~/components/chat/ChatConversationMessages.vue'
 import PromptComposer from '~/components/chat/PromptComposer.vue'
 
@@ -13,16 +13,18 @@ definePageMeta({
 const runtimeConfig = useRuntimeConfig()
 const isDevelopment = computed(() => runtimeConfig.public.appEnv === 'development')
 
-// Redirect if not in development
-if (!isDevelopment.value && import.meta.client) {
-  navigateTo('/')
-}
+// Redirect if not in development - use onMounted to avoid hydration mismatch
+onMounted(() => {
+  if (!isDevelopment.value) {
+    navigateTo('/')
+  }
+})
 
 // Mode (mock only, but still need it for scenarios)
 const mode = ref<'chat' | 'agent'>('agent')
 
 // UI state
-const debugEvents = ref<Array<{ type: string, data: any, timestamp: Date }>>([])
+const debugEvents = ref<Array<{ id: string, type: string, data: any, timestamp: Date }>>([])
 const promptSubmitting = ref(false)
 
 // Timing control - adjust simulation speed
@@ -60,6 +62,7 @@ const prompt = ref('')
 // Watch for status changes to track debug events
 watch(mockStatus, (newStatus) => {
   debugEvents.value.push({
+    id: crypto.randomUUID(),
     type: 'status:change',
     data: { status: newStatus },
     timestamp: new Date()
@@ -214,6 +217,7 @@ const scenarios = [
 const simulateEvent = async (eventType: string, data: any) => {
   console.log(`[Mock SSE] ${eventType}:`, data)
   debugEvents.value.push({
+    id: crypto.randomUUID(),
     type: `sse:${eventType}`,
     data,
     timestamp: new Date()
@@ -969,8 +973,8 @@ const handleShare = (message: ChatMessage) => {
         </div>
         <div class="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
           <div
-            v-for="(event, idx) in debugEvents.slice().reverse()"
-            :key="idx"
+            v-for="event in debugEvents.slice().reverse()"
+            :key="event.id"
             class="p-2 rounded bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
           >
             <div class="flex items-start justify-between gap-2">

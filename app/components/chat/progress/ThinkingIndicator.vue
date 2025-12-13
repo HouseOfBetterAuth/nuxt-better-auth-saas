@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Step } from './ProgressStep.vue'
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 interface Props {
   step: Step
@@ -10,6 +10,38 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   currentActivity: null
 })
+
+// Reactive elapsed seconds for real-time updates
+const elapsedSeconds = ref(0)
+let intervalId: ReturnType<typeof setInterval> | null = null
+
+const startTimer = () => {
+  if (intervalId) {
+    clearInterval(intervalId)
+  }
+
+  if (!props.step.timestamp) {
+    elapsedSeconds.value = 0
+    return
+  }
+
+  intervalId = setInterval(() => {
+    try {
+      const timestamp = new Date(props.step.timestamp!)
+      const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
+      elapsedSeconds.value = Math.max(0, diff)
+    } catch {
+      elapsedSeconds.value = 0
+    }
+  }, 1000)
+}
+
+const stopTimer = () => {
+  if (intervalId) {
+    clearInterval(intervalId)
+    intervalId = null
+  }
+}
 
 // Calculate thinking time from timestamps
 const thinkingTime = computed(() => {
@@ -23,9 +55,7 @@ const thinkingTime = computed(() => {
   }
 
   try {
-    const timestamp = new Date(props.step.timestamp)
-    const now = new Date()
-    const diffSeconds = Math.floor((now.getTime() - timestamp.getTime()) / 1000)
+    const diffSeconds = elapsedSeconds.value
 
     if (diffSeconds < 0) {
       return 'Processing...'
@@ -41,6 +71,51 @@ const thinkingTime = computed(() => {
   } catch {
     return 'Processing...'
   }
+})
+
+// Watch for status changes to start/stop timer
+watch(
+  () => [props.step.status, props.step.timestamp, props.currentActivity],
+  () => {
+    if (props.step.status === 'preparing' || props.step.status === 'running') {
+      if (props.step.timestamp) {
+        // Initialize elapsed time immediately
+        try {
+          const timestamp = new Date(props.step.timestamp)
+          const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
+          elapsedSeconds.value = Math.max(0, diff)
+        } catch {
+          elapsedSeconds.value = 0
+        }
+        startTimer()
+      }
+    } else {
+      stopTimer()
+      // Calculate final elapsed time
+      if (props.step.timestamp) {
+        try {
+          const timestamp = new Date(props.step.timestamp)
+          const diff = Math.floor((Date.now() - timestamp.getTime()) / 1000)
+          elapsedSeconds.value = Math.max(0, diff)
+        } catch {
+          elapsedSeconds.value = 0
+        }
+      }
+    }
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  if (props.step.status === 'preparing' || props.step.status === 'running') {
+    if (props.step.timestamp) {
+      startTimer()
+    }
+  }
+})
+
+onUnmounted(() => {
+  stopTimer()
 })
 
 // Get thinking content from step.result or step.args

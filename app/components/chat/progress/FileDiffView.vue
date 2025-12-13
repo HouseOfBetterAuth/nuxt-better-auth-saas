@@ -21,8 +21,37 @@ const fileEdits = computed(() => {
 const hasFileEdits = computed(() => fileEdits.value.length > 0)
 
 function openDiff(url: string) {
-  if (import.meta.client && typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer')
+  if (!import.meta.client || typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    // Parse and validate URL
+    const parsedUrl = new URL(url)
+
+    // Only allow http: and https: schemes
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      console.error('Invalid URL scheme:', parsedUrl.protocol)
+      return
+    }
+
+    // Ensure hostname is not empty
+    if (!parsedUrl.hostname || parsedUrl.hostname.trim() === '') {
+      console.error('Invalid URL: empty hostname')
+      return
+    }
+
+    // Block data: and javascript: schemes (shouldn't reach here due to protocol check, but extra safety)
+    if (parsedUrl.href.startsWith('data:') || parsedUrl.href.startsWith('javascript:')) {
+      console.error('Invalid URL: blocked scheme')
+      return
+    }
+
+    // URL is valid, open it
+    window.open(parsedUrl.href, '_blank', 'noopener,noreferrer')
+  } catch (error) {
+    // URL parsing failed - invalid URL
+    console.error('Invalid URL:', error)
   }
 }
 </script>

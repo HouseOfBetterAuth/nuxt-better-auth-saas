@@ -2,7 +2,7 @@
 
 This directory contains feature-flagged test pages that are only visible in development mode.
 
-## Agent Mode UI Mock (`/test/agent-mode-ui`)
+## Agent Mode UI Mock (`/test/chat-ui`)
 
 This page provides a mock implementation of the agent mode conversation UI with tool usage visualization. It simulates the SSE (Server-Sent Events) stream that the real chat API would send, allowing us to:
 
@@ -36,7 +36,7 @@ This page provides a mock implementation of the agent mode conversation UI with 
 
 ### Usage
 
-1. Navigate to `/test/agent-mode-ui` in development mode
+1. Navigate to `/test/chat-ui` in development mode
 2. Click "Simulate Agent Turn" to see a mock conversation
 3. Observe the tool calls, progress messages, and final message
 4. Use this as a reference when implementing the real API integration
