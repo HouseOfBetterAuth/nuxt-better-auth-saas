@@ -9,14 +9,31 @@ const getDatabaseUrl = () => {
   // @ts-expect-error globalThis.__env__ is not defined
   const hyperdrive = (process.env.HYPERDRIVE || globalThis.__env__?.HYPERDRIVE || globalThis.HYPERDRIVE) as Hyperdrive | undefined
   // Use Hyperdrive if available (prod Cloudflare), otherwise DATABASE_URL
-  return hyperdrive?.connectionString || runtimeConfig.databaseUrl
+  const url = hyperdrive?.connectionString || runtimeConfig.databaseUrl
+  if (!url) {
+    console.error('[DB] No database URL available - Hyperdrive:', !!hyperdrive, 'DATABASE_URL:', !!runtimeConfig.databaseUrl)
+    throw new Error('Database connection string is not available')
+  }
+  // Log connection source (but not the actual URL for security)
+  if (hyperdrive?.connectionString) {
+    console.log('[DB] Using Hyperdrive connection')
+  } else {
+    console.log('[DB] Using DATABASE_URL connection')
+  }
+  return url
 }
 
-const createPgPool = () => new pg.Pool({
-  connectionString: getDatabaseUrl(),
-  max: 90,
-  idleTimeoutMillis: 30000
-})
+const createPgPool = () => {
+  const connectionString = getDatabaseUrl()
+  console.log('[DB] Creating PostgreSQL pool with timeout settings')
+  return new pg.Pool({
+    connectionString,
+    max: 90,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000, // 10 second timeout to prevent hanging in Cloudflare Workers
+    statement_timeout: 30000 // 30 second query timeout
+  })
+}
 
 const PG_POOL_KEY = '__quillio_pgPool'
 type GlobalWithPool = typeof globalThis & { [PG_POOL_KEY]?: pg.Pool }
