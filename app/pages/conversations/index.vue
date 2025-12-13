@@ -10,14 +10,15 @@ useHead({
   title: 'Conversations'
 })
 
-// This page will show the conversation list in the sidebar
-// The main content area will show a welcome message or empty state
+// The default layout detects /conversations routes and mounts QuillioWidget.
+// This page exists solely to provide metadata and header context.
 </script>
 
 <template>
-  <div class="w-full h-full">
-    <ClientOnly>
-      <QuillioWidget />
-    </ClientOnly>
+  <div
+    class="sr-only"
+    aria-hidden="true"
+  >
+    Conversations
   </div>
 </template>

@@ -4,31 +4,21 @@ definePageMeta({
   ssr: false // Client-side only for instant navigation
 })
 
-const route = useRoute()
-const conversationId = computed(() => {
-  const id = route.params.id
-  return Array.isArray(id) ? id[0] : id
-})
-
 const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
-setHeaderTitle?.(null) // Will be set by QuillioWidget based on conversation
+setHeaderTitle?.(null)
 
 useHead({
   title: 'Conversation'
 })
 
-// QuillioWidget will be rendered here and will handle loading the conversation
-// based on the route param
+// The default layout handles rendering the chat experience for /conversations routes.
 </script>
 
 <template>
-  <div class="w-full">
-    <ClientOnly>
-      <!-- KeepAlive prevents component remount on navigation (saves 250ms) -->
-      <!-- QuillioWidget watches :conversation-id prop and handles changes reactively -->
-      <KeepAlive>
-        <QuillioWidget :conversation-id="conversationId" />
-      </KeepAlive>
-    </ClientOnly>
+  <div
+    class="sr-only"
+    aria-hidden="true"
+  >
+    Conversation
   </div>
 </template>

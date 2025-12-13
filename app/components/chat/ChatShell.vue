@@ -59,6 +59,7 @@ const conversationList = useConversationList({ pageSize: 40 })
 const chatContainerRef = ref<HTMLElement | null>(null)
 const chatVisible = useElementVisibility(chatContainerRef)
 const pendingConversationLoad = ref<string | null>(null)
+const archivingConversationId = ref<string | null>(null)
 conversationList.loadInitial().catch(() => {})
 
 const uiStatus = computed(() => status.value)
@@ -117,6 +118,42 @@ const routeConversationId = computed(() => {
 const conversationId = computed(() => {
   return props.conversationId || routeConversationId.value || activeConversationId.value
 })
+
+const archiveActiveConversation = async () => {
+  const targetId = conversationId.value
+  if (!targetId || archivingConversationId.value === targetId)
+    return
+
+  archivingConversationId.value = targetId
+  try {
+    await $fetch(`/api/conversations/${targetId}`, { method: 'DELETE' })
+    conversationList.remove(targetId)
+
+    if (activeConversationId.value === targetId) {
+      activeConversationId.value = null
+      pendingConversationLoad.value = null
+      resetConversation()
+      router.push(localePath('/conversations'))
+    }
+
+    await conversationList.refresh().catch(() => {})
+    toast.add({
+      title: 'Conversation archived',
+      description: 'The conversation has been moved to your archive.',
+      icon: 'i-lucide-archive',
+      color: 'neutral'
+    })
+  } catch (error: any) {
+    console.error('Failed to archive conversation', error)
+    toast.add({
+      title: 'Failed to archive',
+      description: error?.data?.statusMessage || error?.message || 'Unable to archive this conversation.',
+      color: 'error'
+    })
+  } finally {
+    archivingConversationId.value = null
+  }
+}
 
 const isValidUUID = (id: string | null): boolean => {
   if (!id)
@@ -372,6 +409,22 @@ if (import.meta.client) {
     class="w-full h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4"
   >
     <div class="w-full flex-1 flex flex-col justify-end lg:justify-start">
+      <div
+        v-if="conversationId"
+        class="flex justify-end mb-4"
+      >
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          icon="i-lucide-archive"
+          :loading="archivingConversationId === conversationId"
+          :disabled="isBusy || promptSubmitting || archivingConversationId === conversationId"
+          @click="archiveActiveConversation"
+        >
+          Archive
+        </UButton>
+      </div>
       <div class="space-y-8 w-full max-w-3xl mx-auto">
         <ChatConversationMessages
           :messages="messages"
