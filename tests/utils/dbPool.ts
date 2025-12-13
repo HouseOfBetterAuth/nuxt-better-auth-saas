@@ -24,7 +24,8 @@ export function getSharedDbPool(): pg.Pool {
       connectionString: databaseUrl,
       max: 5, // Allow multiple connections for parallel tests
       connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 30000,
+      idleTimeoutMillis: 60000,
+      statement_timeout: 30000, // Prevent queries from hanging indefinitely
       // Keep pool alive longer for test reuse
       keepAlive: true
     })
@@ -38,7 +39,10 @@ export function getSharedDbPool(): pg.Pool {
  */
 export async function closeSharedDbPool(): Promise<void> {
   if (sharedPool) {
-    await sharedPool.end()
-    sharedPool = null
+    try {
+      await sharedPool.end()
+    } finally {
+      sharedPool = null
+    }
   }
 }

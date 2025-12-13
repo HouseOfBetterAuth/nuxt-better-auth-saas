@@ -58,8 +58,8 @@ const QUOTA_USAGE_THRESHOLDS = [0.5, 0.8, 1] as const
 const CONVERSATION_QUOTAS_DISABLED = process.env.NUXT_ENABLE_CONVERSATION_QUOTAS !== 'true'
 export const areConversationQuotasDisabled = () => CONVERSATION_QUOTAS_DISABLED
 
-const _getQuotaAdvisoryLockKeys = (_organizationId: string): [number, number] => {
-  const hash = createHash('sha256').update(`quota:${_organizationId}`).digest()
+const _getQuotaAdvisoryLockKeys = (organizationId: string): [number, number] => {
+  const hash = createHash('sha256').update(`quota:${organizationId}`).digest()
   return [hash.readInt32BE(0), hash.readInt32BE(4)]
 }
 

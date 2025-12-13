@@ -213,6 +213,14 @@ const normalizePreviewText = (content: string) => {
   return `${normalized.slice(0, PREVIEW_MESSAGE_MAX_LENGTH - 3).trimEnd()}...`
 }
 
+const toISOStringOrNull = (value: Date | string | null | undefined): string | null => {
+  if (!value) {
+    return null
+  }
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
 export interface ConversationPreviewMetadataPatch {
   latestMessage?: {
     role: 'user' | 'assistant' | 'system' | 'function'
@@ -237,7 +245,7 @@ export const patchConversationPreviewMetadata = async (
 
   if (updates.latestMessage) {
     hasUpdates = true
-    const createdAt = new Date(updates.latestMessage.createdAt).toISOString()
+    const createdAt = toISOStringOrNull(updates.latestMessage.createdAt) ?? new Date().toISOString()
     const previewMessage = normalizePreviewText(updates.latestMessage.content)
     patch = sql`${patch} || jsonb_build_object(
       'latestMessage',
@@ -251,14 +259,12 @@ export const patchConversationPreviewMetadata = async (
 
   if (updates.latestArtifact) {
     hasUpdates = true
-    const updatedAt = updates.latestArtifact.updatedAt
-      ? new Date(updates.latestArtifact.updatedAt).toISOString()
-      : null
+    const updatedAt = toISOStringOrNull(updates.latestArtifact.updatedAt)
     patch = sql`${patch} || jsonb_build_object(
       'latestArtifact',
       jsonb_build_object(
         'title', ${updates.latestArtifact.title ?? null}::text,
-        'updatedAt', ${updatedAt}::text
+        'updatedAt', ${updatedAt ?? null}::text
       )
     )`
   }

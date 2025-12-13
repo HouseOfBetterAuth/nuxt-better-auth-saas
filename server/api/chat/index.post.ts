@@ -1435,7 +1435,7 @@ export default defineEventHandler(async (event) => {
           const result = await requireActiveOrganization(event, user.id, { isAnonymousUser: true })
           organizationId = result.organizationId
         } catch {
-          throw createValidationError('Please create an account to use the chat feature. Anonymous users need an organization to continue.')
+          throw createValidationError('Unable to initialize anonymous session. Please try again or create an account to continue.')
         }
       }
 
@@ -1703,9 +1703,6 @@ export default defineEventHandler(async (event) => {
         // Both save and context operations share the same loadMessagesPromise
         // ============================================================================
         const saveUserMessagePromise = (async () => {
-          // Delay start to prevent CPU/DB contention during initial stream
-          await new Promise(resolve => setTimeout(resolve, 500))
-
           try {
             const previousMessages = await loadMessagesPromise
 
