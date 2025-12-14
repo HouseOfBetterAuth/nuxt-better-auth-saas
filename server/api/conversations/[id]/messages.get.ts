@@ -3,7 +3,7 @@ import { createError, getQuery, getRouterParams } from 'h3'
 import * as schema from '~~/server/db/schema'
 import { getConversationById } from '~~/server/services/conversation'
 import { requireAuth } from '~~/server/utils/auth'
-import { getDB } from '~~/server/utils/db'
+import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { createPaginatedResponse } from '~~/server/utils/responses'
 import { validateNumber, validateUUID } from '~~/server/utils/validation'
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   try {
     const user = await requireAuth(event)
     const { organizationId } = await requireActiveOrganization(event, user.id)
-    const db = getDB()
+    const db = await useDB(event)
 
     const { id } = getRouterParams(event)
     const conversationId = validateUUID(id, 'id')
