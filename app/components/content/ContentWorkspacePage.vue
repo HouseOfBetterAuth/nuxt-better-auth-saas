@@ -269,8 +269,8 @@ watchEffect(() => {
           <template #description>
             <ul class="list-disc list-inside space-y-1 text-sm">
               <li
-                v-for="issue in schemaErrors"
-                :key="`schema-error-${issue}`"
+                v-for="(issue, index) in schemaErrors"
+                :key="`schema-error-${index}-${issue}`"
               >
                 {{ issue }}
               </li>
@@ -287,8 +287,8 @@ watchEffect(() => {
           <template #description>
             <ul class="list-disc list-inside space-y-1 text-sm">
               <li
-                v-for="issue in schemaWarnings"
-                :key="`schema-warning-${issue}`"
+                v-for="(issue, index) in schemaWarnings"
+                :key="`schema-warning-${index}-${issue}`"
               >
                 {{ issue }}
               </li>

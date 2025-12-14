@@ -214,11 +214,23 @@ const loadConversationMessages = async (conversationId: string, options?: { forc
 }
 
 const requestConversationMessages = async (conversationId: string, options?: { force?: boolean }) => {
+  // Always try to hydrate from cache immediately, even if not visible
+  // This ensures the UI updates right away when navigating
+  const cached = getCachedMessagesMeta(conversationId)
+  if (cached && !cached.isStale) {
+    hydrateConversation({ conversationId, messages: cached.messages }, { skipCache: true })
+  }
+
   if (!chatVisible.value) {
     // Only update if not already pending or if it's a different conversation
     if (!pendingConversationLoad.value || pendingConversationLoad.value !== conversationId) {
       pendingConversationLoad.value = conversationId
     }
+    // If we have fresh cached messages, we're done
+    if (cached && !cached.isStale) {
+      return
+    }
+    // Otherwise, we'll fetch when visible
     return
   }
   pendingConversationLoad.value = null
@@ -230,6 +242,9 @@ watch([() => props.conversationId, routeConversationId], async ([propId, routeId
 
   if (targetId && targetId !== activeConversationId.value) {
     if (isValidUUID(targetId)) {
+      // Reset conversation state immediately when switching to a new conversation
+      // This clears any "thinking" state from the previous conversation
+      resetConversation()
       activeConversationId.value = targetId
       try {
         await requestConversationMessages(targetId)
