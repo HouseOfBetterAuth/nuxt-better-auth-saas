@@ -46,7 +46,7 @@ const buildRecipeStructuredData = (params: {
   if (recipeMeta?.calories) {
     data.nutrition = {
       '@type': 'NutritionInformation',
-      calories: recipeMeta.calories
+      'calories': recipeMeta.calories
     }
   }
   if (recipeMeta?.cuisine) {
@@ -95,7 +95,7 @@ const buildHowToStructuredData = (params: {
   if (howToMeta?.estimatedCost) {
     data.estimatedCost = {
       '@type': 'MonetaryAmount',
-      value: howToMeta.estimatedCost
+      'value': howToMeta.estimatedCost
     }
   }
   if (howToMeta?.totalTime) {
@@ -204,7 +204,7 @@ export const generateStructuredDataJsonLd = (params: {
     if (frontmatter.course?.providerName) {
       structuredData.provider = {
         '@type': 'Organization',
-        name: frontmatter.course.providerName,
+        'name': frontmatter.course.providerName,
         ...(frontmatter.course.providerUrl ? { sameAs: frontmatter.course.providerUrl } : {})
       }
     }

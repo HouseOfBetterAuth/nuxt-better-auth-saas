@@ -112,7 +112,7 @@ export const createFrontmatterFromOutline = (params: {
 
   return {
     title: resolvedTitle.trim(),
-    description: plan.seo.description || undefined,
+    description: plan.seo.description ?? undefined,
     slug: normalizedSlug,
     slugSuggestion: normalizedSlug,
     tags: Array.from(keywordSet),
@@ -122,7 +122,11 @@ export const createFrontmatterFromOutline = (params: {
     schemaTypes: resolvedSchemaTypes,
     primaryKeyword: resolvedPrimaryKeyword,
     targetLocale: overrides?.targetLocale ?? existingContent?.targetLocale ?? null,
-    sourceContentId: sourceContent?.id ?? existingContent?.sourceContentId ?? null
+    sourceContentId: sourceContent?.id ?? existingContent?.sourceContentId ?? null,
+    recipe: undefined,
+    howTo: undefined,
+    course: undefined,
+    faq: undefined
   }
 }
 
@@ -172,9 +176,13 @@ export const enrichFrontmatterWithMetadata = (params: {
     slugSuggestion: frontmatter.slugSuggestion || slug,
     tags: Array.from(keywordSet),
     keywords: Array.from(keywordSet),
-    description: frontmatter.description || plan.seo.description,
+    description: frontmatter.description ?? plan.seo.description ?? undefined,
     schemaTypes: resolvedSchemaTypes,
-    targetLocale: frontmatter.targetLocale || null
+    targetLocale: frontmatter.targetLocale ?? null,
+    recipe: frontmatter.recipe ?? undefined,
+    howTo: frontmatter.howTo ?? undefined,
+    course: frontmatter.course ?? undefined,
+    faq: frontmatter.faq ?? undefined
   }
 }
 
@@ -215,7 +223,7 @@ export const extractFrontmatterFromVersion = (params: {
 
   return {
     title: resolvedTitle.trim(),
-    description: versionFrontmatter.description || undefined,
+    description: versionFrontmatter.description ?? undefined,
     slug: slugifyTitle(slugInput.trim()),
     slugSuggestion: slugifyTitle(slugInput.trim()),
     tags: Array.isArray(versionFrontmatter.tags) ? normalizeContentKeywords(versionFrontmatter.tags) : undefined,
@@ -226,10 +234,10 @@ export const extractFrontmatterFromVersion = (params: {
     primaryKeyword: versionFrontmatter.primaryKeyword ?? params.content.primaryKeyword ?? null,
     targetLocale: versionFrontmatter.targetLocale ?? params.content.targetLocale ?? null,
     sourceContentId: versionFrontmatter.sourceContentId ?? params.content.sourceContentId ?? null,
-    recipe: versionFrontmatter.recipe || undefined,
-    howTo: versionFrontmatter.howTo || undefined,
-    course: versionFrontmatter.course || undefined,
-    faq: versionFrontmatter.faq || undefined
+    recipe: versionFrontmatter.recipe ?? undefined,
+    howTo: versionFrontmatter.howTo ?? undefined,
+    course: versionFrontmatter.course ?? undefined,
+    faq: versionFrontmatter.faq ?? undefined
   }
 }
 

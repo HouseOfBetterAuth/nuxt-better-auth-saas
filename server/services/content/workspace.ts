@@ -1,9 +1,9 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type { ContentFrontmatter, ContentSection } from './generation/types'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import * as schema from '~~/server/db/schema'
 import { getConversationById, getConversationLogs, getConversationMessages } from '../conversation'
-import type { ContentFrontmatter, ContentSection } from './generation/types'
 import { generateStructuredDataJsonLd } from './generation'
 import { buildWorkspaceSummary } from './workspaceSummary'
 

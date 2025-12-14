@@ -62,7 +62,8 @@ export default defineEventHandler(async (event) => {
     } else {
       const offsetRaw = getQueryValue(query.offset as string | string[] | undefined)
       const parsedOffset = Number.parseInt(offsetRaw ?? '0', 10)
-      offset = validateNumber(parsedOffset, 'offset', 0)
+      const parsedOffsetOrFallback = Number.isFinite(parsedOffset) ? parsedOffset : 0
+      offset = validateNumber(parsedOffsetOrFallback, 'offset', 0)
     }
 
     const rows = await db

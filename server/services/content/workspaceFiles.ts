@@ -1,7 +1,7 @@
 import type * as schema from '~~/server/db/schema'
+import type { ContentSection } from './generation/types'
 import { slugifyTitle } from '~~/server/utils/content'
 import { enrichMdxWithMetadata } from './generation'
-import type { ContentSection } from './generation/types'
 
 export interface WorkspaceFilePayload {
   id: string

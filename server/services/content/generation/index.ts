@@ -40,6 +40,7 @@ import {
 } from './frontmatter'
 import { createGenerationMetadata, createSectionUpdateMetadata } from './metadata'
 import { generateContentOutline } from './planning'
+import { deriveSchemaMetadata, validateSchemaMetadata } from './schemaMetadata'
 import {
   CONTENT_SECTION_UPDATE_SYSTEM_PROMPT,
   generateContentSectionsFromOutline,
@@ -50,7 +51,6 @@ import {
   isValidContentFrontmatter,
   parseAIResponseAsJSON
 } from './utils'
-import { deriveSchemaMetadata, validateSchemaMetadata } from './schemaMetadata'
 
 function formatIntentSummary(snapshot?: ConversationIntentSnapshot | null): string | null {
   if (!snapshot) {
@@ -1161,7 +1161,6 @@ export async function reEnrichContentVersion(
   const currentVersion = record.version
   const rawFrontmatter = currentVersion.frontmatter
   const frontmatter = isValidContentFrontmatter(rawFrontmatter) ? rawFrontmatter : null
-  const seoSnapshot = currentVersion.seoSnapshot as Record<string, any> | null
 
   if (!frontmatter) {
     safeError('[reEnrichContentVersion] Invalid or missing frontmatter', {

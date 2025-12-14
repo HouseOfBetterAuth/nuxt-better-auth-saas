@@ -17,9 +17,9 @@ export const normalizeListItems = (text: string | null | undefined) => {
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .map((line) => line
+    .map(line => line
       .replace(/^[*-]\s+/, '')
-      .replace(/^\d+[\.)]\s+/, '')
+      .replace(/^\d+[.)]\s+/, '')
       .trim())
     .filter(Boolean)
 }
@@ -71,12 +71,12 @@ export const buildStepEntries = (
       }
       return {
         '@type': 'HowToStep',
-        position: index + 1,
-        name: section.title || `Step ${index + 1}`,
-        text
+        'position': index + 1,
+        'name': section.title || `Step ${index + 1}`,
+        'text': text
       }
     })
-    .filter((step): step is { '@type': string, position: number, name: string, text: string } => Boolean(step))
+    .filter((step): step is { '@type': string, 'position': number, 'name': string, 'text': string } => Boolean(step))
 }
 
 export const buildFaqEntriesFromSections = (sections?: ContentSection[] | null) => {
@@ -93,14 +93,14 @@ export const buildFaqEntriesFromSections = (sections?: ContentSection[] | null) 
       }
       return {
         '@type': 'Question',
-        name: questionText,
-        acceptedAnswer: {
+        'name': questionText,
+        'acceptedAnswer': {
           '@type': 'Answer',
-          text: answerText
+          'text': answerText
         }
       }
     })
-    .filter((entry): entry is { '@type': 'Question', name: string, acceptedAnswer: { '@type': 'Answer', text: string } } => Boolean(entry))
+    .filter((entry): entry is { '@type': 'Question', 'name': string, 'acceptedAnswer': { '@type': 'Answer', 'text': string } } => Boolean(entry))
 }
 
 export const buildCourseInstancesFromSections = (sections?: ContentSection[] | null) => {
@@ -113,12 +113,11 @@ export const buildCourseInstancesFromSections = (sections?: ContentSection[] | n
       const description = (section.summary || section.body || '').trim()
       return {
         '@type': 'CourseInstance',
-        name: section.title || `Module ${index + 1}`,
-        description,
-        courseMode: resolvePlanType(section) || undefined
+        'name': section.title || `Module ${index + 1}`,
+        'description': description
       }
     })
-    .filter((instance) => Boolean(instance.description || instance.name))
+    .filter(instance => Boolean(instance.description || instance.name))
 }
 
 export const buildManualSteps = (entries: string[]) => {
@@ -130,12 +129,12 @@ export const buildManualSteps = (entries: string[]) => {
       }
       return {
         '@type': 'HowToStep',
-        position: index + 1,
-        name: `Step ${index + 1}`,
-        text: trimmed
+        'position': index + 1,
+        'name': `Step ${index + 1}`,
+        'text': trimmed
       }
     })
-    .filter((entry): entry is { '@type': string, position: number, name: string, text: string } => Boolean(entry))
+    .filter((entry): entry is { '@type': string, 'position': number, 'name': string, 'text': string } => Boolean(entry))
 }
 
 export const buildFaqEntriesFromMetadata = (entries?: unknown) => {
@@ -158,14 +157,14 @@ export const buildFaqEntriesFromMetadata = (entries?: unknown) => {
       }
       return {
         '@type': 'Question',
-        name: question,
-        acceptedAnswer: {
+        'name': question,
+        'acceptedAnswer': {
           '@type': 'Answer',
-          text: answer
+          'text': answer
         }
       }
     })
-    .filter((entry): entry is { '@type': 'Question', name: string, acceptedAnswer: { '@type': 'Answer', text: string } } => Boolean(entry))
+    .filter((entry): entry is { '@type': 'Question', 'name': string, 'acceptedAnswer': { '@type': 'Answer', 'text': string } } => Boolean(entry))
 }
 
 export const buildCourseInstancesFromMetadata = (modules?: unknown) => {
@@ -188,17 +187,17 @@ export const buildCourseInstancesFromMetadata = (modules?: unknown) => {
         : ''
       return {
         '@type': 'CourseInstance',
-        name: title || `Module ${index + 1}`,
-        description: description || undefined,
-        courseMode: mode || undefined
+        'name': title || `Module ${index + 1}`,
+        'description': description || undefined,
+        'courseMode': mode || undefined
       }
     })
-    .filter((instance) => Boolean(instance && (instance.name || instance.description))) as Array<{
-      '@type': string
-      name?: string
-      description?: string
-      courseMode?: string
-    }>
+    .filter(instance => Boolean(instance && (instance.name || instance.description))) as Array<{
+    '@type': string
+    'name'?: string
+    'description'?: string
+    'courseMode'?: string
+  }>
 }
 
 const extractStepTexts = (sections: ContentSection[] | null | undefined) => {
@@ -211,8 +210,11 @@ export const deriveSchemaMetadata = (
   frontmatter: ContentFrontmatter,
   sections: ContentSection[]
 ): ContentFrontmatter => {
-  const next: ContentFrontmatter = { ...frontmatter }
-  const hasType = (type: string) => next.schemaTypes.includes(type)
+  const next: ContentFrontmatter = {
+    ...frontmatter,
+    schemaTypes: Array.isArray(frontmatter.schemaTypes) ? frontmatter.schemaTypes : []
+  }
+  const hasType = (type: string) => Array.isArray(next.schemaTypes) && next.schemaTypes.includes(type)
 
   if (hasType('Recipe')) {
     const existingRecipe = next.recipe || {}
@@ -270,8 +272,7 @@ export const deriveSchemaMetadata = (
     if (!existingCourse.modules || existingCourse.modules.length === 0) {
       const derivedModules = buildCourseInstancesFromSections(sections).map(instance => ({
         title: instance.name,
-        description: instance.description || null,
-        mode: instance.courseMode || null
+        description: instance.description || null
       }))
       if (derivedModules.length) {
         existingCourse.modules = derivedModules
@@ -286,7 +287,7 @@ export const deriveSchemaMetadata = (
 export const validateSchemaMetadata = (frontmatter: ContentFrontmatter) => {
   const errors: string[] = []
   const warnings: string[] = []
-  const hasType = (type: string) => frontmatter.schemaTypes.includes(type)
+  const hasType = (type: string) => Array.isArray(frontmatter.schemaTypes) && frontmatter.schemaTypes.includes(type)
 
   if (hasType('Recipe')) {
     if (!frontmatter.recipe?.ingredients || frontmatter.recipe.ingredients.length === 0) {

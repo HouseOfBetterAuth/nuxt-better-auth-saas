@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest'
+import type { ContentFrontmatter, ContentSection } from '../../server/services/content/generation/types'
+import { describe, expect, it } from 'vitest'
 import { deriveSchemaMetadata, validateSchemaMetadata } from '../../server/services/content/generation/schemaMetadata'
 import { generateStructuredDataJsonLd } from '../../server/services/content/generation/structured-data'
-import type { ContentFrontmatter, ContentSection } from '../../server/services/content/generation/types'
 
 const baseFrontmatter: ContentFrontmatter = {
   title: 'Test Content',
