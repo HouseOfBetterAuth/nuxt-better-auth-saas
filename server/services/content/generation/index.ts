@@ -925,29 +925,65 @@ export const updateContentSectionWithAI = async (
   })
 
   // Calculate diff stats by comparing old vs new section body
+  // Uses a more accurate line-by-line comparison
   const calculateDiffStats = (oldText: string, newText: string): { additions: number, deletions: number } => {
     const oldLines = oldText.split('\n')
     const newLines = newText.split('\n')
 
-    // Simple line-based diff: count lines that appear in new but not old (additions)
-    // and lines that appear in old but not new (deletions)
-    const oldSet = new Set(oldLines.map(line => line.trim()))
-    const newSet = new Set(newLines.map(line => line.trim()))
+    // Use a simple longest common subsequence approach for better accuracy
+    // For now, use a simpler approach: compare line counts and unique content
+    const oldNonEmpty = oldLines.filter(line => line.trim().length > 0)
+    const newNonEmpty = newLines.filter(line => line.trim().length > 0)
+
+    // Count unique lines (ignoring order)
+    const oldUnique = new Map<string, number>()
+    const newUnique = new Map<string, number>()
+
+    for (const line of oldNonEmpty) {
+      const trimmed = line.trim()
+      oldUnique.set(trimmed, (oldUnique.get(trimmed) || 0) + 1)
+    }
+
+    for (const line of newNonEmpty) {
+      const trimmed = line.trim()
+      newUnique.set(trimmed, (newUnique.get(trimmed) || 0) + 1)
+    }
 
     let additions = 0
     let deletions = 0
 
-    // Count additions (lines in new but not in old)
-    for (const line of newLines) {
-      if (line.trim() && !oldSet.has(line.trim())) {
-        additions++
+    // Count additions: lines in new that aren't in old (or more instances than in old)
+    for (const [line, newCount] of newUnique.entries()) {
+      const oldCount = oldUnique.get(line) || 0
+      if (newCount > oldCount) {
+        additions += newCount - oldCount
       }
     }
 
-    // Count deletions (lines in old but not in new)
-    for (const line of oldLines) {
-      if (line.trim() && !newSet.has(line.trim())) {
-        deletions++
+    // Count deletions: lines in old that aren't in new (or fewer instances than in old)
+    for (const [line, oldCount] of oldUnique.entries()) {
+      const newCount = newUnique.get(line) || 0
+      if (oldCount > newCount) {
+        deletions += oldCount - newCount
+      }
+    }
+
+    // If texts are identical, ensure we return 0,0
+    if (oldText === newText) {
+      return { additions: 0, deletions: 0 }
+    }
+
+    // Fallback: if no unique differences found but texts differ, use line count diff
+    if (additions === 0 && deletions === 0 && oldText !== newText) {
+      const lineDiff = newNonEmpty.length - oldNonEmpty.length
+      if (lineDiff > 0) {
+        additions = lineDiff
+      } else if (lineDiff < 0) {
+        deletions = Math.abs(lineDiff)
+      } else {
+        // Same number of lines but content changed - estimate 1 addition and 1 deletion
+        additions = 1
+        deletions = 1
       }
     }
 
@@ -955,6 +991,14 @@ export const updateContentSectionWithAI = async (
   }
 
   const diffStats = calculateDiffStats(originalSectionBody, updatedBody)
+
+  safeLog('[updateContentSection] Calculated diff stats', {
+    originalLength: originalSectionBody.length,
+    updatedLength: updatedBody.length,
+    additions: diffStats.additions,
+    deletions: diffStats.deletions,
+    hasChanges: originalSectionBody !== updatedBody
+  })
 
   const slug = record.version.frontmatter?.slug || record.content.slug
   const previousSeoSnapshot = currentVersion.seoSnapshot ?? {}

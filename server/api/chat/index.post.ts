@@ -855,6 +855,20 @@ async function executeChatTool(
       const { resolveContentFilePath } = await import('~~/server/services/content/workspaceFiles')
       const filename = resolveContentFilePath(patchResult.content, patchResult.version)
 
+      // Always include fileEdits, even if diffStats are 0, so the UI can show the file was edited
+      const fileEdits = [{
+        filePath: filename,
+        additions: diffStats?.additions ?? 0,
+        deletions: diffStats?.deletions ?? 0
+      }]
+
+      safeLog('[edit_section] Returning result with fileEdits', {
+        hasDiffStats: !!diffStats,
+        additions: fileEdits[0].additions,
+        deletions: fileEdits[0].deletions,
+        filename
+      })
+
       return {
         success: true,
         result: {
@@ -866,13 +880,7 @@ async function executeChatTool(
             title: patchResult.content.title
           },
           // Add fileEdits for FileDiffView to display diff stats
-          fileEdits: diffStats
-            ? [{
-                filePath: filename,
-                additions: diffStats.additions ?? 0,
-                deletions: diffStats.deletions ?? 0
-              }]
-            : []
+          fileEdits
         },
         contentId: patchResult.content.id
       }
