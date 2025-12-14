@@ -1,5 +1,6 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type * as schema from '~~/server/db/schema'
+import { cacheClient } from '~~/server/utils/drivers'
 import { getContentWorkspacePayload } from './workspace'
 
 export type WorkspacePayload = Awaited<ReturnType<typeof getContentWorkspacePayload>>
@@ -10,6 +11,7 @@ interface CacheEntry {
 }
 
 const WORKSPACE_CACHE_TTL_MS = 30_000
+const WORKSPACE_CACHE_TTL_SECONDS = WORKSPACE_CACHE_TTL_MS / 1000
 const MAX_CACHE_SIZE = 500
 const workspaceCache = new Map<string, CacheEntry>()
 const inFlightRequests = new Map<string, Promise<WorkspacePayload>>()
@@ -30,11 +32,14 @@ function evictOldestIfNeeded() {
 
 export function clearWorkspaceCache() {
   workspaceCache.clear()
+  // Best-effort clear of distributed entries isn't practical without tracking keys
 }
 
 export function invalidateWorkspaceCache(organizationId: string, contentId: string) {
   workspaceCache.delete(cacheKey(organizationId, contentId, true))
   workspaceCache.delete(cacheKey(organizationId, contentId, false))
+  void cacheClient.delete(cacheKey(organizationId, contentId, true)).catch(() => {})
+  void cacheClient.delete(cacheKey(organizationId, contentId, false)).catch(() => {})
 }
 
 export async function getWorkspaceWithCache(
@@ -52,6 +57,20 @@ export async function getWorkspaceWithCache(
     return existing.payload
   }
 
+  try {
+    const distributed = await cacheClient.get(key)
+    if (distributed) {
+      const parsed = JSON.parse(distributed) as WorkspacePayload
+      workspaceCache.set(key, {
+        payload: parsed,
+        expiresAt: Date.now() + WORKSPACE_CACHE_TTL_MS
+      })
+      return parsed
+    }
+  } catch (error) {
+    console.warn('[workspaceCache] Failed to read distributed cache', { error })
+  }
+
   const pending = inFlightRequests.get(key)
   if (pending) {
     return pending
@@ -65,6 +84,11 @@ export async function getWorkspaceWithCache(
         payload,
         expiresAt: Date.now() + WORKSPACE_CACHE_TTL_MS
       })
+
+      void cacheClient.set(key, JSON.stringify(payload), WORKSPACE_CACHE_TTL_SECONDS).catch((error) => {
+        console.warn('[workspaceCache] Failed to persist distributed cache', { error })
+      })
+
       return payload
     })
     .finally(() => {
