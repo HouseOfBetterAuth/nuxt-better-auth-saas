@@ -14,34 +14,38 @@ export async function getContentWorkspacePayload(
   options?: { includeChat?: boolean }
 ) {
   const includeChat = options?.includeChat !== false
-  const rows = await db
-    .select({
-      content: schema.content,
-      sourceContent: schema.sourceContent
-    })
+  const [contentRow] = await db
+    .select()
     .from(schema.content)
-    .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
     .where(and(
       eq(schema.content.organizationId, organizationId),
       eq(schema.content.id, contentId)
     ))
     .limit(1)
 
-  const record = rows[0]
-
-  if (!record) {
+  if (!contentRow) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Content not found'
     })
   }
 
+  let sourceContent: typeof schema.sourceContent.$inferSelect | null = null
+  if (contentRow.sourceContentId) {
+    const [sourceRow] = await db
+      .select()
+      .from(schema.sourceContent)
+      .where(eq(schema.sourceContent.id, contentRow.sourceContentId))
+      .limit(1)
+    sourceContent = sourceRow ?? null
+  }
+
   let currentVersion: typeof schema.contentVersion.$inferSelect | null = null
-  if (record.content.currentVersionId) {
+  if (contentRow.currentVersionId) {
     const [versionRow] = await db
       .select()
       .from(schema.contentVersion)
-      .where(eq(schema.contentVersion.id, record.content.currentVersionId))
+      .where(eq(schema.contentVersion.id, contentRow.currentVersionId))
       .limit(1)
     currentVersion = versionRow ?? null
   }
@@ -64,9 +68,9 @@ export async function getContentWorkspacePayload(
   let conversation: typeof schema.conversation.$inferSelect | null = null
 
   // Get conversation via content.conversationId (proper relationship)
-  if (record.content.conversationId) {
+  if (contentRow.conversationId) {
     try {
-      conversation = await getConversationById(db, record.content.conversationId, organizationId)
+      conversation = await getConversationById(db, contentRow.conversationId, organizationId)
 
       if (conversation && includeChat) {
         const [messages, logs] = await Promise.all([
@@ -91,7 +95,7 @@ export async function getContentWorkspacePayload(
       }
     } catch (error) {
       console.error('Failed to load conversation', {
-        conversationId: record.content.conversationId,
+        conversationId: contentRow.conversationId,
         contentId,
         organizationId,
         error
@@ -100,9 +104,9 @@ export async function getContentWorkspacePayload(
   }
 
   const workspaceSummary = buildWorkspaceSummary({
-    content: record.content,
+    content: contentRow,
     currentVersion,
-    sourceContent: record.sourceContent
+    sourceContent
   })
 
   let structuredData: string | null = null
@@ -122,7 +126,8 @@ export async function getContentWorkspacePayload(
     : null
 
   return {
-    ...record,
+    content: contentRow,
+    sourceContent,
     currentVersion: currentVersionWithDerived,
     workspaceSummary,
     chatSession: conversation, // Legacy field name for backwards compatibility
