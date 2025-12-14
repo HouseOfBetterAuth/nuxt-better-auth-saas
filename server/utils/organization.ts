@@ -22,6 +22,9 @@ interface BetterAuthSession {
     }
   }
   activeOrganizationId?: string
+  user?: {
+    lastActiveOrganizationId?: string
+  }
 }
 
 interface RequireActiveOrganizationOptions {
@@ -159,6 +162,10 @@ export const requireActiveOrganization = async (
   const hadSessionOrganization = Boolean(sessionOrganizationId)
   let organizationId = sessionOrganizationId
   let membershipFromLookup: typeof schema.member.$inferSelect | null = null
+  const contextUser = event.context.user as { lastActiveOrganizationId?: string } | undefined
+  const lastActiveFromUser = contextUser?.lastActiveOrganizationId
+    ?? session?.user?.lastActiveOrganizationId
+    ?? null
 
   const eventCached = getEventCachedActiveOrg(event, userId, organizationId, options?.requireRoles)
   if (eventCached) {
@@ -177,16 +184,8 @@ export const requireActiveOrganization = async (
     }
   }
 
-  if (!organizationId) {
-    const [userRecord] = await db
-      .select({ lastActiveOrganizationId: schema.user.lastActiveOrganizationId })
-      .from(schema.user)
-      .where(eq(schema.user.id, userId))
-      .limit(1)
-
-    if (userRecord?.lastActiveOrganizationId) {
-      organizationId = userRecord.lastActiveOrganizationId
-    }
+  if (!organizationId && lastActiveFromUser) {
+    organizationId = lastActiveFromUser
   }
 
   // Anonymous users get an auto-provisioned org; fall back to it if not in session
