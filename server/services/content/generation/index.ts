@@ -863,6 +863,7 @@ export const updateContentSectionWithAI = async (
   safeLog('[updateContentSection] RAG search completed', {
     chunksFound: relevantChunks.length
   })
+  await emitProgress('Context search completed.')
 
   // Format context for the AI
   let contextBlock = 'No external context available.'
