@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { WorkspaceHeaderState } from '~/components/chat/workspaceHeader'
-import QuillioWidget from '~/components/chat/QuillioWidget.vue'
 
 const { formatDateRelative } = useDate()
 
@@ -85,24 +84,12 @@ const setShellHeader = () => {
 setShellHeader()
 
 // Fetch content data (client-side only for instant navigation)
-const { data: contentData, pending, error, refresh } = useFetch(() => `/api/content/${contentId.value}`, {
+const { data: contentData, pending, error } = useFetch(() => `/api/content/${contentId.value}`, {
   key: computed(() => `content-${contentId.value}`),
   lazy: true,
   server: false, // Client-side only - instant skeleton, no SSR blocking
   default: () => null
 })
-
-// Local editor content state (using HTML string for TipTap)
-const editorContent = ref('')
-const originalContent = ref('')
-const isSaving = ref(false)
-
-// Computed dirty state
-const isDirty = computed(() => editorContent.value !== originalContent.value)
-
-// Remote content change detection
-const showConflictModal = ref(false)
-const pendingRemoteContent = ref<string | null>(null)
 
 // Transform to ContentEntry format
 const contentEntry = computed<ContentEntry | null>(() => {
@@ -141,47 +128,6 @@ const contentEntry = computed<ContentEntry | null>(() => {
     bodyMdx: currentVersion?.bodyMdx || ''
   }
 })
-
-// Sync editor content with content - with dirty check to prevent overwriting edits
-watch(contentEntry, (entry) => {
-  if (entry && typeof entry.bodyMdx === 'string') {
-    // Use MDX content directly in textarea (UTextarea handles plain text/MDX)
-    const htmlContent = entry.bodyMdx
-
-    if (!isDirty.value) {
-      // No local changes - safe to update both editor and baseline
-      editorContent.value = htmlContent
-      originalContent.value = htmlContent
-    } else if (htmlContent === originalContent.value) {
-      // Local edits exist but remote hasn't changed - preserve local edits
-      // Do nothing
-    } else {
-      // Remote content changed while we have unsaved local edits - conflict
-      pendingRemoteContent.value = entry.bodyMdx
-      showConflictModal.value = true
-    }
-  }
-}, { immediate: true })
-
-// Handle conflict resolution
-const acceptRemoteChanges = () => {
-  if (pendingRemoteContent.value !== null) {
-    editorContent.value = pendingRemoteContent.value
-    originalContent.value = pendingRemoteContent.value
-    pendingRemoteContent.value = null
-  }
-  showConflictModal.value = false
-}
-
-const keepLocalChanges = () => {
-  // Update baseline to remote so we don't re-trigger conflict on same content
-  // User still has unsaved changes (isDirty remains true), but we acknowledge this remote version
-  if (pendingRemoteContent.value !== null) {
-    originalContent.value = pendingRemoteContent.value
-  }
-  pendingRemoteContent.value = null
-  showConflictModal.value = false
-}
 
 // Helper to set onBack callback (used after mount to avoid hydration mismatch)
 const setOnBackCallback = () => {
@@ -239,29 +185,6 @@ watchEffect(() => {
     workspaceHeaderLoading.value = pending.value
   }
 })
-
-// Save handler
-const handleSave = async () => {
-  if (!contentId.value || isSaving.value)
-    return
-
-  try {
-    isSaving.value = true
-    await $fetch(`/api/content/${contentId.value}`, {
-      method: 'PATCH',
-      body: {
-        bodyMdx: editorContent.value
-      }
-    })
-    // Update original content to match saved content
-    originalContent.value = editorContent.value
-    await refresh()
-  } catch (err) {
-    console.error('Failed to save content:', err)
-  } finally {
-    isSaving.value = false
-  }
-}
 </script>
 
 <template>
@@ -288,41 +211,17 @@ const handleSave = async () => {
           class="w-full"
         />
 
-        <!-- Content Editor -->
+        <!-- Content Display -->
         <template v-else-if="contentEntry">
-          <!-- Editor -->
           <div class="w-full">
             <UTextarea
-              v-model="editorContent"
-              placeholder="Start writing your content..."
+              :model-value="contentEntry.bodyMdx || ''"
+              placeholder="No content available"
+              readonly
               autoresize
               class="w-full min-h-96"
             />
           </div>
-
-          <!-- Save Button -->
-          <div class="flex justify-end">
-            <UButton
-              icon="i-lucide-save"
-              color="primary"
-              size="sm"
-              :loading="isSaving"
-              @click="handleSave"
-            >
-              Save
-            </UButton>
-          </div>
-
-          <!-- Chat Widget Below Editor -->
-          <ClientOnly>
-            <div class="w-full">
-              <QuillioWidget
-                :content-id="contentEntry.id"
-                :conversation-id="contentEntry.conversationId"
-                initial-mode="agent"
-              />
-            </div>
-          </ClientOnly>
         </template>
 
         <!-- Empty state -->
@@ -337,52 +236,5 @@ const handleSave = async () => {
         />
       </div>
     </div>
-
-    <!-- Conflict Resolution Modal -->
-    <UModal
-      v-model="showConflictModal"
-      :prevent-close="true"
-    >
-      <UCard>
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon
-              name="i-lucide-alert-triangle"
-              class="h-5 w-5 text-amber-500"
-            />
-            <h3 class="text-lg font-semibold">
-              Content Conflict Detected
-            </h3>
-          </div>
-        </template>
-
-        <div class="space-y-4">
-          <p class="text-sm text-gray-600 dark:text-gray-400">
-            The remote content has been updated while you have unsaved local changes.
-          </p>
-          <p class="text-sm font-medium">
-            What would you like to do?
-          </p>
-        </div>
-
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              color="gray"
-              variant="ghost"
-              @click="keepLocalChanges"
-            >
-              Keep My Changes
-            </UButton>
-            <UButton
-              color="primary"
-              @click="acceptRemoteChanges"
-            >
-              Accept Remote Changes
-            </UButton>
-          </div>
-        </template>
-      </UCard>
-    </UModal>
   </div>
 </template>
