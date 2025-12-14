@@ -211,7 +211,13 @@ export const requireActiveOrganization = async (
 
   if (!organizationId) {
     const [firstMembership] = await db
-      .select()
+      .select({
+        id: schema.member.id,
+        organizationId: schema.member.organizationId,
+        userId: schema.member.userId,
+        role: schema.member.role,
+        createdAt: schema.member.createdAt
+      })
       .from(schema.member)
       .where(eq(schema.member.userId, userId))
       .orderBy(asc(schema.member.createdAt))
@@ -220,11 +226,6 @@ export const requireActiveOrganization = async (
     if (firstMembership?.organizationId) {
       organizationId = firstMembership.organizationId
       membershipFromLookup = firstMembership
-      try {
-        await setUserActiveOrganization(userId, firstMembership.organizationId)
-      } catch (error) {
-        console.error('[requireActiveOrganization] Failed to set active organization in session:', error)
-      }
     }
   }
 
