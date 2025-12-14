@@ -4,6 +4,7 @@ import { callChatCompletionsStream } from '~~/server/utils/aiGateway'
 
 import type { ChatToolInvocation } from './tools'
 import { getChatToolDefinitions, getToolsByKind, parseChatToolCall } from './tools'
+import { generateContentDeeplink } from '../content/diff'
 
 export interface ChatAgentInput {
   conversationHistory: ChatCompletionMessage[]
@@ -99,10 +100,26 @@ function generateSummaryFromToolHistory(
           ? `section "${invocation.arguments.sectionTitle}"`
           : 'a section'
       const contentTitle = result.result.content?.title || 'content'
+      const contentId = result.result.contentId || result.result.content?.id
+
+      let summary = `Successfully edited ${sectionTitle} in "${contentTitle}"`
+
+      if (result.result.lineRange && contentId) {
+        try {
+          const { start, end } = result.result.lineRange
+          const deeplink = generateContentDeeplink(contentId, result.result.lineRange)
+          summary += ` ([lines ${start}-${end}](${deeplink}))`
+        } catch (error) {
+          console.error('[Agent] Failed to generate deeplink:', error)
+        }
+      }
+
       const instructions = invocation.arguments.instructions
         ? ` (${invocation.arguments.instructions.substring(0, 60)}${invocation.arguments.instructions.length > 60 ? '...' : ''})`
         : ''
-      summaries.push(`Successfully edited ${sectionTitle} in "${contentTitle}"${instructions}`)
+
+      summary += instructions
+      summaries.push(summary)
     } else if (toolName === 'content_write' && result.result) {
       if (invocation.arguments.action === 'create') {
         const title = result.result.content?.title || 'new content'

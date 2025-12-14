@@ -60,6 +60,8 @@ export interface SectionUpdateResult {
     title: string
     index: number
   }
+  lineRange?: { start: number, end: number } | null
+  diffStats?: { additions: number, deletions: number }
 }
 
 export interface ContentChunk {

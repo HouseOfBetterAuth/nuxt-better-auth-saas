@@ -861,9 +861,9 @@ async function executeChatTool(
         hasSectionId: !!patchResult.section?.id
       })
 
-      // Extract diff stats from version frontmatter for fileEdits display
+      // Extract diff stats and line range for fileEdits display
       const versionFrontmatter = patchResult.version.frontmatter as Record<string, any> | null
-      const diffStats = versionFrontmatter?.diffStats as { additions?: number, deletions?: number } | undefined
+      const diffStats = patchResult.diffStats ?? (versionFrontmatter?.diffStats as { additions?: number, deletions?: number } | undefined)
 
       // Get filename for the file edit display
       const { resolveContentFilePath } = await import('~~/server/services/content/workspaceFiles')
@@ -873,7 +873,8 @@ async function executeChatTool(
       const fileEdits = [{
         filePath: filename,
         additions: diffStats?.additions ?? 0,
-        deletions: diffStats?.deletions ?? 0
+        deletions: diffStats?.deletions ?? 0,
+        lineRange: patchResult.lineRange || null
       }]
 
       safeLog('[edit_section] Returning result with fileEdits', {
@@ -894,7 +895,8 @@ async function executeChatTool(
             title: patchResult.content.title
           },
           // Add fileEdits for FileDiffView to display diff stats
-          fileEdits
+          fileEdits,
+          lineRange: patchResult.lineRange || null
         },
         contentId: patchResult.content.id
       }

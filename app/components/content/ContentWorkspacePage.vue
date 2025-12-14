@@ -75,6 +75,13 @@ const contentListPath = computed(() => {
   return slug ? `/${slug}/content` : '/content'
 })
 
+const lineRange = computed(() => parseLinesQuery(route.query.lines))
+const contentLineRangeState = useState<{ start: number, end: number } | null>('content/highlightedLineRange', () => null)
+
+watch(lineRange, (range) => {
+  contentLineRangeState.value = range
+}, { immediate: true })
+
 // Set workspace header state
 const workspaceHeader = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () => true)
@@ -219,6 +226,31 @@ watchEffect(() => {
     workspaceHeaderLoading.value = pending.value
   }
 })
+
+function parseLinesQuery(lines: string | string[] | null | undefined): { start: number, end: number } | null {
+  if (!lines)
+    return null
+
+  const raw = Array.isArray(lines) ? lines[0] : lines
+  if (!raw)
+    return null
+
+  const match = raw.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/)
+  if (!match)
+    return null
+
+  const start = Number.parseInt(match[1], 10)
+  const end = Number.parseInt(match[2], 10)
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0)
+    return null
+
+  if (end < start) {
+    return { start: end, end: start }
+  }
+
+  return { start, end }
+}
 </script>
 
 <template>

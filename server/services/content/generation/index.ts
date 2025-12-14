@@ -21,6 +21,7 @@ import {
 } from '~~/server/utils/content'
 import { safeError, safeLog, safeWarn } from '~~/server/utils/safeLogger'
 import { validateEnum } from '~~/server/utils/validation'
+import { calculateDiffStats, findSectionLineRange } from '../diff'
 import {
   assembleMarkdownFromSections,
   extractMarkdownFromEnrichedMdx
@@ -863,6 +864,7 @@ export const updateContentSectionWithAI = async (
   safeLog('[updateContentSection] RAG search completed', {
     chunksFound: relevantChunks.length
   })
+  await emitProgress('Context search completed.')
 
   // Format context for the AI
   let contextBlock = 'No external context available.'
@@ -907,6 +909,7 @@ export const updateContentSectionWithAI = async (
   safeLog('[updateContentSection] AI call completed', {
     responseLength: raw?.length || 0
   })
+  await emitProgress('Section content generated.')
 
   const parsed = parseAIResponseAsJSON<{ body?: string, body_mdx?: string, summary?: string }>(raw, 'section patch')
   const updatedBody = (parsed.body ?? parsed.body_mdx ?? '').trim()
@@ -949,74 +952,14 @@ export const updateContentSectionWithAI = async (
     frontmatter,
     sections: updatedSections
   })
+  await emitProgress('Section assembled.')
+  const lineRange = findSectionLineRange(
+    assembled.markdown,
+    targetSection.id,
+    assembled.sections
+  )
 
   frontmatter = deriveSchemaMetadata(frontmatter, assembled.sections)
-
-  // Calculate diff stats by comparing old vs new section body
-  // Uses a more accurate line-by-line comparison
-  const calculateDiffStats = (oldText: string, newText: string): { additions: number, deletions: number } => {
-    const oldLines = oldText.split('\n')
-    const newLines = newText.split('\n')
-
-    // Use a simple longest common subsequence approach for better accuracy
-    // For now, use a simpler approach: compare line counts and unique content
-    const oldNonEmpty = oldLines.filter(line => line.trim().length > 0)
-    const newNonEmpty = newLines.filter(line => line.trim().length > 0)
-
-    // Count unique lines (ignoring order)
-    const oldUnique = new Map<string, number>()
-    const newUnique = new Map<string, number>()
-
-    for (const line of oldNonEmpty) {
-      const trimmed = line.trim()
-      oldUnique.set(trimmed, (oldUnique.get(trimmed) || 0) + 1)
-    }
-
-    for (const line of newNonEmpty) {
-      const trimmed = line.trim()
-      newUnique.set(trimmed, (newUnique.get(trimmed) || 0) + 1)
-    }
-
-    let additions = 0
-    let deletions = 0
-
-    // Count additions: lines in new that aren't in old (or more instances than in old)
-    for (const [line, newCount] of newUnique.entries()) {
-      const oldCount = oldUnique.get(line) || 0
-      if (newCount > oldCount) {
-        additions += newCount - oldCount
-      }
-    }
-
-    // Count deletions: lines in old that aren't in new (or fewer instances than in old)
-    for (const [line, oldCount] of oldUnique.entries()) {
-      const newCount = newUnique.get(line) || 0
-      if (oldCount > newCount) {
-        deletions += oldCount - newCount
-      }
-    }
-
-    // If texts are identical, ensure we return 0,0
-    if (oldText === newText) {
-      return { additions: 0, deletions: 0 }
-    }
-
-    // Fallback: if no unique differences found but texts differ, use line count diff
-    if (additions === 0 && deletions === 0 && oldText !== newText) {
-      const lineDiff = newNonEmpty.length - oldNonEmpty.length
-      if (lineDiff > 0) {
-        additions = lineDiff
-      } else if (lineDiff < 0) {
-        deletions = Math.abs(lineDiff)
-      } else {
-        // Same number of lines but content changed - estimate 1 addition and 1 deletion
-        additions = 1
-        deletions = 1
-      }
-    }
-
-    return { additions, deletions }
-  }
 
   const diffStats = calculateDiffStats(originalSectionBody, updatedBody)
 
@@ -1123,7 +1066,9 @@ export const updateContentSectionWithAI = async (
       id: targetSection.id,
       title: targetSection.title,
       index: targetSection.index
-    }
+    },
+    lineRange: lineRange || null,
+    diffStats
   }
 }
 
