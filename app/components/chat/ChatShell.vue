@@ -415,7 +415,7 @@ if (import.meta.client) {
 <template>
   <div
     ref="chatContainerRef"
-    class="w-full min-h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4"
+    class="w-full min-h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4 overflow-x-hidden"
   >
     <template v-if="isWelcomeState">
       <div class="w-full flex-1 flex flex-col justify-center">
@@ -437,7 +437,7 @@ if (import.meta.client) {
         </div>
       </div>
 
-      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6">
+      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6 overflow-x-hidden">
         <div class="w-full max-w-3xl mx-auto">
           <PromptComposer
             v-model="prompt"
@@ -520,7 +520,7 @@ if (import.meta.client) {
         </div>
       </div>
 
-      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6">
+      <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6 overflow-x-hidden">
         <div class="w-full max-w-3xl mx-auto">
           <PromptComposer
             v-model="prompt"

@@ -109,7 +109,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'content_write',
-        description: 'Write or enrich content. Use action="create" to create new content from source (saved source content, inline text, or conversation history). Use action="enrich" to refresh an existing content item\'s frontmatter and JSON-LD structured data. For editing existing content sections, use edit_section. For updating metadata fields, use edit_metadata.',
+        description: 'Write or enrich content metadata. IMPORTANT: Use action="create" to create NEW content from source. Use action="enrich" ONLY to refresh frontmatter and JSON-LD structured data metadata (NOT for editing content sections). To edit content sections, use edit_section instead. To update metadata fields (title, slug, status), use edit_metadata instead.',
         parameters: buildContentWriteParameters()
       }
     }
@@ -120,7 +120,7 @@ const chatToolDefinitions: Record<ChatToolName, ToolDefinition> = {
       type: 'function',
       function: {
         name: 'edit_section',
-        description: 'Edit a specific section of an existing content item using the user\'s instructions.',
+        description: 'Edit a specific section of an existing content item using the user\'s instructions. This is the PRIMARY tool for modifying content sections. Requires a valid UUID contentId (use read_content_list to find content IDs). You can specify either sectionId or sectionTitle to identify which section to edit.',
         parameters: buildEditSectionParameters()
       }
     }
@@ -222,7 +222,7 @@ function buildContentWriteParameters(): ParameterSchema {
       action: {
         type: 'string',
         enum: ['create', 'enrich'],
-        description: 'Action to perform: "create" to create new content from source, or "enrich" to refresh existing content\'s frontmatter and JSON-LD.'
+        description: 'Action to perform: "create" to create new content from source, or "enrich" to refresh existing content\'s frontmatter and JSON-LD metadata ONLY. Note: "enrich" does NOT edit content sections - use edit_section for that.'
       },
       // For action='create':
       sourceContentId: {
@@ -274,7 +274,7 @@ function buildContentWriteParameters(): ParameterSchema {
       // For action='enrich':
       contentId: {
         type: ['string', 'null'],
-        description: 'Content ID of the content item to re-enrich (required for action="enrich").'
+        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
       },
       baseUrl: {
         type: ['string', 'null'],
@@ -291,7 +291,7 @@ function buildEditSectionParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID containing the section that should be patched.'
+        description: 'Content ID (UUID format) of the content item to edit. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       sectionId: {
         type: ['string', 'null'],
@@ -351,7 +351,7 @@ function buildEditMetadataParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID of the content item to update.'
+        description: 'Content ID (UUID format) of the content item to update. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       title: {
         type: ['string', 'null'],
@@ -388,7 +388,7 @@ function buildReadContentParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'ID of the content to read.'
+        description: 'Content ID (UUID format) of the content item to read. Must be a valid UUID - use read_content_list to find content IDs.'
       }
     },
     required: ['contentId']
@@ -401,7 +401,7 @@ function buildReadSectionParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'ID of the content containing the section.'
+        description: 'Content ID (UUID format) of the content item to read. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       sectionId: {
         type: 'string',
@@ -505,7 +505,7 @@ function buildReadWorkspaceSummaryParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'ID of the content workspace to summarize.'
+        description: 'Content ID (UUID format) of the content item to summarize. Must be a valid UUID - use read_content_list to find content IDs.'
       }
     },
     required: ['contentId']

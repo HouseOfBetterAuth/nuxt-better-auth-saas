@@ -90,7 +90,7 @@ const primaryActionColor = computed(() => {
 </script>
 
 <template>
-  <div class="relative">
+  <div class="relative overflow-x-hidden">
     <!-- Mobile Header - only visible on mobile when sidebar should be shown -->
     <header
       v-if="shouldShowSidebar"
@@ -363,7 +363,7 @@ const primaryActionColor = computed(() => {
           </UDashboardNavbar>
         </template>
 
-        <div class="flex-1 overflow-y-auto min-h-0">
+        <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           <div
             class="w-full mx-auto"
             :class="shouldUseFullWidth ? '' : 'max-w-3xl px-4 py-6'"

@@ -28,6 +28,7 @@ import { useDB } from '~~/server/utils/db'
 import { createValidationError } from '~~/server/utils/errors'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import { safeError, safeLog, safeWarn } from '~~/server/utils/safeLogger'
 import { createSSEStream } from '~~/server/utils/streaming'
 import { validateEnum, validateNumber, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 import { DEFAULT_CONTENT_TYPE } from '~~/shared/constants/contentTypes'
@@ -509,6 +510,16 @@ async function executeChatTool(
     const args = toolInvocation.arguments as ChatToolInvocation<'content_write'>['arguments']
     const action = validateRequiredString(args.action, 'action') as 'create' | 'enrich'
 
+    safeLog('[content_write] Starting content_write tool', {
+      action,
+      hasContentId: !!args.contentId,
+      hasSourceContentId: !!args.sourceContentId,
+      hasSourceText: !!(args.sourceText || args.context),
+      mode: context.mode,
+      hasOrganizationId: !!organizationId,
+      hasUserId: !!userId
+    })
+
     if (action === 'create') {
       try {
         const intentSnapshot = getIntentSnapshotFromMetadata(conversationMetadata as Record<string, any> | null)
@@ -597,6 +608,11 @@ async function executeChatTool(
           temperature: sanitizedTemperature
         })
 
+        safeLog('[content_write] Successfully created content', {
+          hasContentId: !!generationResult.content.id,
+          hasVersionId: !!generationResult.version.id
+        })
+
         return {
           success: true,
           result: {
@@ -611,22 +627,52 @@ async function executeChatTool(
           contentId: generationResult.content.id
         }
       } catch (error: any) {
+        safeError('[content_write] Error during content creation', {
+          error: error?.message,
+          action,
+          hasSourceContentId: !!args.sourceContentId,
+          hasSourceText: !!(args.sourceText || args.context),
+          mode: context.mode,
+          hasOrganizationId: !!organizationId,
+          hasUserId: !!userId,
+          errorStatus: error?.statusCode,
+          errorStatusMessage: error?.statusMessage
+        })
         return {
           success: false,
-          error: error?.message || 'Failed to create content'
+          error: error?.message || error?.statusMessage || 'Failed to create content'
         }
       }
     } else if (action === 'enrich') {
-      const contentId = validateUUID(args.contentId, 'contentId')
-      const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
+      if (!args.contentId) {
+        safeError('[content_write] Missing contentId for enrich action')
+        return {
+          success: false,
+          error: 'contentId is required for action="enrich". Use read_content_list to get valid content IDs.'
+        }
+      }
 
       try {
+        const contentId = validateUUID(args.contentId, 'contentId')
+        const baseUrl = validateOptionalString(args.baseUrl, 'baseUrl')
+
+        safeLog('[content_write] Enriching content', {
+          hasContentId: !!contentId,
+          hasBaseUrl: !!baseUrl,
+          mode: context.mode
+        })
+
         const { refreshContentVersionMetadata } = await import('~~/server/services/content/generation')
         const result = await refreshContentVersionMetadata(db, {
           organizationId,
           userId,
           contentId,
           baseUrl: baseUrl ?? undefined
+        })
+
+        safeLog('[content_write] Successfully enriched content', {
+          hasContentId: !!result.content.id,
+          hasVersionId: !!result.version.id
         })
 
         return {
@@ -642,9 +688,28 @@ async function executeChatTool(
           contentId: result.content.id
         }
       } catch (error: any) {
+        safeError('[content_write] Error during content enrichment', {
+          error: error?.message,
+          hasContentId: !!args.contentId,
+          action,
+          mode: context.mode,
+          hasOrganizationId: !!organizationId,
+          hasUserId: !!userId,
+          errorStatus: error?.statusCode,
+          errorStatusMessage: error?.statusMessage
+        })
+
+        // If it's a validation error (like UUID format), provide helpful message
+        if (error?.statusMessage?.includes('UUID')) {
+          return {
+            success: false,
+            error: `${error.statusMessage}. Use read_content_list to get valid content IDs.`
+          }
+        }
+
         return {
           success: false,
-          error: error?.message || 'Failed to enrich content'
+          error: error?.message || error?.statusMessage || 'Failed to enrich content'
         }
       }
     } else {
@@ -659,14 +724,26 @@ async function executeChatTool(
     // TypeScript now knows this is edit_section
     const args = toolInvocation.arguments as ChatToolInvocation<'edit_section'>['arguments']
 
+    safeLog('[edit_section] Starting edit_section tool', {
+      hasContentId: !!args.contentId,
+      hasSectionId: !!args.sectionId,
+      hasSectionTitle: !!args.sectionTitle,
+      hasInstructions: !!args.instructions,
+      mode: context.mode,
+      hasOrganizationId: !!organizationId,
+      hasUserId: !!userId
+    })
+
     if (!args.contentId) {
+      safeError('[edit_section] Missing contentId')
       return {
         success: false,
-        error: 'contentId is required for edit_section'
+        error: 'contentId is required for edit_section. Use read_content_list to get valid content IDs.'
       }
     }
 
     if (!args.instructions) {
+      safeError('[edit_section] Missing instructions')
       return {
         success: false,
         error: 'instructions is required for edit_section'
@@ -674,6 +751,8 @@ async function executeChatTool(
     }
 
     try {
+      // Validate contentId is a valid UUID format
+      const contentId = validateUUID(args.contentId, 'contentId')
       let sanitizedTemperature = 1
       if (args.temperature !== undefined && args.temperature !== null) {
         sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
@@ -684,8 +763,14 @@ async function executeChatTool(
 
       if (args.sectionId) {
         resolvedSectionId = validateRequiredString(args.sectionId, 'sectionId')
+        safeLog('[edit_section] Using provided sectionId', {
+          hasSectionId: !!resolvedSectionId
+        })
       } else if (args.sectionTitle) {
         const sectionTitle = validateRequiredString(args.sectionTitle, 'sectionTitle')
+        safeLog('[edit_section] Resolving sectionId from title', {
+          hasSectionTitle: !!sectionTitle
+        })
 
         // Query content version to find section by title
         const [contentRecord] = await db
@@ -696,14 +781,15 @@ async function executeChatTool(
           .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
           .where(and(
             eq(schema.content.organizationId, organizationId),
-            eq(schema.content.id, args.contentId)
+            eq(schema.content.id, contentId)
           ))
           .limit(1)
 
         if (!contentRecord?.version) {
+          safeError('[edit_section] Content version not found', { hasContentId: !!contentId })
           return {
             success: false,
-            error: 'Content version not found'
+            error: `Content version not found for contentId: ${contentId}. Make sure the content exists and has a version.`
           }
         }
 
@@ -717,30 +803,70 @@ async function executeChatTool(
 
           if (matchingSection) {
             resolvedSectionId = matchingSection.id || matchingSection.section_id || null
+            safeLog('[edit_section] Found section by title', {
+              hasSectionId: !!resolvedSectionId
+            })
           }
         }
 
         if (!resolvedSectionId) {
+          safeError('[edit_section] Section not found by title', { hasSectionTitle: !!sectionTitle, hasContentId: !!contentId })
           return {
             success: false,
-            error: `Section with title "${sectionTitle}" not found in this content`
+            error: `Section with title "${sectionTitle}" not found in content ${contentId}. Use read_content to see available sections.`
           }
         }
       } else {
+        safeError('[edit_section] Missing both sectionId and sectionTitle')
         return {
           success: false,
           error: 'Either sectionId or sectionTitle is required for edit_section'
         }
       }
 
+      safeLog('[edit_section] Calling updateContentSection', {
+        hasContentId: !!contentId,
+        hasSectionId: !!resolvedSectionId,
+        mode: context.mode,
+        temperature: sanitizedTemperature
+      })
+
       const patchResult = await updateContentSection(db, {
         organizationId,
         userId,
-        contentId: args.contentId,
+        contentId,
         sectionId: resolvedSectionId,
         instructions: args.instructions,
         temperature: sanitizedTemperature,
         mode: context.mode
+      })
+
+      safeLog('[edit_section] Successfully updated section', {
+        hasContentId: !!patchResult.content.id,
+        hasVersionId: !!patchResult.version.id,
+        hasSectionId: !!patchResult.section?.id
+      })
+
+      // Extract diff stats from version frontmatter for fileEdits display
+      const versionFrontmatter = patchResult.version.frontmatter as Record<string, any> | null
+      const diffStats = versionFrontmatter?.diffStats as { additions?: number, deletions?: number } | undefined
+
+      // Get filename for the file edit display
+      const { resolveContentFilePath } = await import('~~/server/services/content/workspaceFiles')
+      const filename = resolveContentFilePath(patchResult.content, patchResult.version)
+
+      // Always include fileEdits, even if diffStats are 0, so the UI can show the file was edited
+      const fileEdits = [{
+        filePath: filename,
+        additions: diffStats?.additions ?? 0,
+        deletions: diffStats?.deletions ?? 0
+      }]
+
+      safeLog('[edit_section] Returning result with fileEdits', {
+        hasDiffStats: !!diffStats,
+        additions: fileEdits[0].additions,
+        deletions: fileEdits[0].deletions,
+        filename
       })
 
       return {
@@ -752,14 +878,36 @@ async function executeChatTool(
           content: {
             id: patchResult.content.id,
             title: patchResult.content.title
-          }
+          },
+          // Add fileEdits for FileDiffView to display diff stats
+          fileEdits
         },
         contentId: patchResult.content.id
       }
     } catch (error: any) {
+      safeError('[edit_section] Error during section edit', {
+        error: error?.message,
+        hasContentId: !!args.contentId,
+        hasSectionId: !!args.sectionId,
+        hasSectionTitle: !!args.sectionTitle,
+        mode: context.mode,
+        hasOrganizationId: !!organizationId,
+        hasUserId: !!userId,
+        errorStatus: error?.statusCode,
+        errorStatusMessage: error?.statusMessage
+      })
+
+      // If it's a validation error (like UUID format), provide helpful message
+      if (error?.statusMessage?.includes('UUID')) {
+        return {
+          success: false,
+          error: `${error.statusMessage}. Use read_content_list to get valid content IDs.`
+        }
+      }
+
       return {
         success: false,
-        error: error?.message || 'Failed to patch section'
+        error: error?.message || error?.statusMessage || 'Failed to patch section'
       }
     }
   }
@@ -1325,7 +1473,7 @@ export default defineEventHandler(async (event) => {
   // ============================================================================
 
   try {
-    console.log('[Chat API] Starting request')
+    safeLog('[Chat API] Starting request')
     // Check session first to avoid expensive anonymous user creation during streaming
     // Add timeout to prevent hanging in Cloudflare Workers
     const sessionPromise = getAuthSession(event)
@@ -1333,10 +1481,12 @@ export default defineEventHandler(async (event) => {
       setTimeout(() => reject(new Error('getAuthSession timeout after 5s')), 5000)
     })
     const session = await Promise.race([sessionPromise, timeoutPromise]).catch((error) => {
-      console.error('[Chat API] getAuthSession failed or timed out:', error)
+      safeError('[Chat API] getAuthSession failed or timed out:', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
       return null // Return null on timeout/error to allow anonymous fallback
     })
-    console.log('[Chat API] Session obtained:', { hasUser: !!session?.user, userId: session?.user?.id })
+    safeLog('[Chat API] Session obtained:', { hasUser: !!session?.user, hasUserId: !!session?.user?.id })
 
     // Validate mode early (before streaming) to support anonymous fast-paths
     const body = await readBody<ChatRequestBody>(event)
@@ -1396,12 +1546,12 @@ export default defineEventHandler(async (event) => {
     // Send initial ping immediately to keep connection alive
     // This prevents Cloudflare Workers from detecting the stream as hung
     // if async processing takes time to start
-    console.log('[Chat API] Sending initial ping')
+    safeLog('[Chat API] Sending initial ping')
     flushPing()
 
     // Start async processing (don't await - let it run in background)
     // Note: body, mode, and user are already validated/authenticated above
-    console.log('[Chat API] Starting async processing')
+    safeLog('[Chat API] Starting async processing')
     ;(async () => {
       try {
       // Send ping after reading body to show progress
@@ -1418,17 +1568,19 @@ export default defineEventHandler(async (event) => {
         if (!user.isAnonymous) {
         // STRATEGY 1: Signed-In User
         // Try session first (Fastest)
-          console.log('[Chat API] Getting auth session for organization lookup')
+          safeLog('[Chat API] Getting auth session for organization lookup')
           const authSessionPromise = getAuthSession(event)
           const authSessionTimeout = new Promise<null>((_, reject) => {
             setTimeout(() => reject(new Error('getAuthSession timeout after 5s (org lookup)')), 5000)
           })
           const authSession = await Promise.race([authSessionPromise, authSessionTimeout]).catch((error) => {
-            console.error('[Chat API] getAuthSession failed or timed out during org lookup:', error)
+            safeError('[Chat API] getAuthSession failed or timed out during org lookup:', {
+              error: error instanceof Error ? error.message : 'Unknown error'
+            })
             return null
           })
           const sessionOrgId = authSession ? (authSession?.session as any)?.activeOrganizationId : null
-          console.log('[Chat API] Session org ID:', sessionOrgId)
+          safeLog('[Chat API] Session org ID', { hasSessionOrgId: !!sessionOrgId })
 
           if (sessionOrgId) {
           // Verify existence (fast query by PK)
@@ -1446,36 +1598,46 @@ export default defineEventHandler(async (event) => {
           // Fallback to active organization requirement (Slower, DB intensive)
           if (!organizationId) {
           // Direct call - no try/catch wrapper needed for signed-in users
-            console.log('[Chat API] Falling back to requireActiveOrganization')
+            safeLog('[Chat API] Falling back to requireActiveOrganization')
             const orgPromise = requireActiveOrganization(event, user.id)
             const orgTimeout = new Promise<{ organizationId: string }>((_, reject) => {
               setTimeout(() => reject(new Error('requireActiveOrganization timeout after 10s')), 10000)
             })
             const result = await Promise.race([orgPromise, orgTimeout]).catch((error) => {
-              console.error('[Chat API] requireActiveOrganization failed or timed out:', error)
+              safeError('[Chat API] requireActiveOrganization failed or timed out:', {
+                error: error instanceof Error ? error.message : 'Unknown error'
+              })
               throw createValidationError('Unable to resolve organization. Please try again.')
             })
             organizationId = result.organizationId
-            console.log('[Chat API] Organization resolved via requireActiveOrganization:', organizationId)
+            safeLog('[Chat API] Organization resolved via requireActiveOrganization', {
+              hasOrganizationId: !!organizationId
+            })
           }
         } else {
         // STRATEGY 2: Anonymous User
         // They don't have a session with activeOrgId.
         // We rely on requireActiveOrganization to handle guest/anonymous context creation.
-          console.log('[Chat API] Resolving organization for anonymous user')
+          safeLog('[Chat API] Resolving organization for anonymous user')
           try {
             const orgPromise = requireActiveOrganization(event, user.id, { isAnonymousUser: true })
             const orgTimeout = new Promise<{ organizationId: string }>((_, reject) => {
               setTimeout(() => reject(new Error('requireActiveOrganization timeout after 10s (anonymous)')), 10000)
             })
             const result = await Promise.race([orgPromise, orgTimeout]).catch((error) => {
-              console.error('[Chat API] requireActiveOrganization failed or timed out for anonymous user:', error)
+              safeError('[Chat API] requireActiveOrganization failed or timed out for anonymous user:', {
+                error: error instanceof Error ? error.message : 'Unknown error'
+              })
               throw createValidationError('Unable to initialize anonymous session. Please try again or create an account to continue.')
             })
             organizationId = result.organizationId
-            console.log('[Chat API] Anonymous organization resolved:', organizationId)
+            safeLog('[Chat API] Anonymous organization resolved', {
+              hasOrganizationId: !!organizationId
+            })
           } catch (error) {
-            console.error('[Chat API] Error resolving anonymous organization:', error)
+            safeError('[Chat API] Error resolving anonymous organization:', {
+              error: error instanceof Error ? error.message : 'Unknown error'
+            })
             throw createValidationError('Unable to initialize anonymous session. Please try again or create an account to continue.')
           }
         }
@@ -1528,7 +1690,10 @@ export default defineEventHandler(async (event) => {
         if (requestConversationId) {
           conversation = await getConversationById(db, requestConversationId, organizationId)
           if (!conversation) {
-            console.warn(`Conversation ${requestConversationId} not found for organization ${organizationId}, creating new conversation`)
+            safeWarn('[Chat API] Conversation not found for organization, creating new conversation', {
+              hasConversationId: !!requestConversationId,
+              hasOrganizationId: !!organizationId
+            })
           }
         }
 
@@ -1708,10 +1873,14 @@ export default defineEventHandler(async (event) => {
                     contextBlocks.push(`Current content ID: ${linkedContentId}`)
                   }
                 } else {
-                  console.warn(`Content ${linkedContentId} not found`)
+                  safeWarn('[Chat API] Content not found', {
+                    hasContentId: !!linkedContentId
+                  })
                 }
               } catch (error) {
-                console.error('Failed to build workspace summary for context', error)
+                safeError('Failed to build workspace summary for context', {
+                  error: error instanceof Error ? error.message : 'Unknown error'
+                })
                 contextBlocks.push(`Current content ID: ${linkedContentId}`)
               }
             }
@@ -1791,12 +1960,16 @@ export default defineEventHandler(async (event) => {
 
               return { success: true }
             } catch (error) {
-              console.error('[chat] Failed to save user message:', error)
+              safeError('[chat] Failed to save user message:', {
+                error: error instanceof Error ? error.message : 'Unknown error'
+              })
               return { success: false, error }
             }
           })()
           const handleSaveUserMessageError = (err: unknown) => {
-            console.error('[Background] Failed to save user message:', err)
+            safeError('[Background] Failed to save user message:', {
+              error: err instanceof Error ? err.message : 'Unknown error'
+            })
           }
           if (typeof (event as any).waitUntil === 'function') {
             event.waitUntil(saveUserMessagePromise.catch(handleSaveUserMessageError))
@@ -1816,7 +1989,9 @@ export default defineEventHandler(async (event) => {
           const intentPromise = Promise.resolve()
 
           // Don't await intentPromise
-          intentPromise.catch(err => console.error('[Background] Intent promise error:', err))
+          intentPromise.catch(err => safeError('[Background] Intent promise error:', {
+            error: err instanceof Error ? err.message : 'Unknown error'
+          }))
 
           const shouldRunAgent = true
           // Note: We skip blocking 'clarify' checks for speed optimization
@@ -1829,11 +2004,11 @@ export default defineEventHandler(async (event) => {
               let _currentAssistantMessage = ''
 
               // Log request context before calling agent
-              console.log('[Chat API] Calling agent with context:', {
+              safeLog('[Chat API] Calling agent with context:', {
                 mode,
-                conversationId: activeConversation.id,
-                organizationId,
-                userId: user.id,
+                hasConversationId: !!activeConversation.id,
+                hasOrganizationId: !!organizationId,
+                hasUserId: !!user.id,
                 userMessageLength: trimmedMessage.length,
                 conversationHistoryLength: conversationHistory.length,
                 contextBlocksCount: contextBlocks.length,
@@ -2092,7 +2267,19 @@ export default defineEventHandler(async (event) => {
                 stack: isDev && error instanceof Error ? error.stack : undefined
               }
 
-              console.error('[Chat API] Agent turn failed with full context:', chatApiErrorContext)
+              safeError('[Chat API] Agent turn failed with full context:', {
+                mode: chatApiErrorContext.mode,
+                hasConversationId: !!chatApiErrorContext.conversationId,
+                hasOrganizationId: !!chatApiErrorContext.organizationId,
+                hasUserId: !!chatApiErrorContext.userId,
+                userMessageLength: chatApiErrorContext.userMessageLength,
+                conversationHistoryLength: chatApiErrorContext.conversationHistoryLength,
+                contextBlocksCount: chatApiErrorContext.contextBlocksCount,
+                readySourcesCount: chatApiErrorContext.readySourcesCount,
+                ingestionErrorsCount: chatApiErrorContext.ingestionErrorsCount,
+                message: chatApiErrorContext.message,
+                status: chatApiErrorContext.status
+              })
 
               // Include actual error details in dev mode, generic message in prod
               // Add helpful context about what failed
@@ -2181,7 +2368,9 @@ export default defineEventHandler(async (event) => {
                   }
                 }
               } catch (error) {
-                console.error('Failed to build completion messages', error)
+                safeError('Failed to build completion messages', {
+                  error: error instanceof Error ? error.message : 'Unknown error'
+                })
               }
             }
           }
@@ -2307,7 +2496,9 @@ export default defineEventHandler(async (event) => {
         sseWriter.close()
       } catch (error: any) {
         flushPing()
-        console.error('[Chat API] Error during streaming:', error)
+        safeError('[Chat API] Error during streaming:', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
         // Try to send error event before closing
         try {
           writeSSE('error', {
@@ -2323,7 +2514,7 @@ export default defineEventHandler(async (event) => {
     // Return the stream as a Response with SSE headers
     // IMPORTANT: Return immediately after starting async processing
     // Cloudflare Workers will detect the stream as active once data is written
-    console.log('[Chat API] Returning Response with stream')
+    safeLog('[Chat API] Returning Response with stream')
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -2333,11 +2524,10 @@ export default defineEventHandler(async (event) => {
       }
     })
   } catch (error) {
-    console.error('[Chat API] Error before streaming:', error)
-    if (error instanceof Error) {
-      console.error('[Chat API] Error stack:', error.stack)
-      console.error('[Chat API] Error name:', error.name)
-    }
+    safeError('[Chat API] Error before streaming:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      errorName: error instanceof Error ? error.name : undefined
+    })
     // Re-throw H3 errors as-is
     if (error && typeof error === 'object' && 'statusCode' in error) {
       throw error

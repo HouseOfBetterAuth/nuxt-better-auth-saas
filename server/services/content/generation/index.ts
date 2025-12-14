@@ -19,6 +19,7 @@ import {
   ensureUniqueContentSlug,
   resolveIngestMethodFromSourceContent
 } from '~~/server/utils/content'
+import { safeError, safeLog, safeWarn } from '~~/server/utils/safeLogger'
 import { validateEnum } from '~~/server/utils/validation'
 import {
   assembleMarkdownFromSections,
@@ -221,16 +222,14 @@ export const generateContentDraftFromSource = async (
     resolvedIngestMethod = resolveIngestMethodFromSourceContent(sourceContent)
 
     // Log for debugging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[generateContentDraftFromSource] Source content found:', {
-        id: sourceContent.id,
-        ingestStatus: sourceContent.ingestStatus,
-        sourceTextLength: resolvedSourceText?.length || 0,
-        hasSourceText: !!resolvedSourceText,
-        sourceType: sourceContent.sourceType,
-        externalId: sourceContent.externalId
-      })
-    }
+    safeLog('[generateContentDraftFromSource] Source content found:', {
+      hasId: !!sourceContent.id,
+      ingestStatus: sourceContent.ingestStatus,
+      sourceTextLength: resolvedSourceText?.length || 0,
+      hasSourceText: !!resolvedSourceText,
+      sourceType: sourceContent.sourceType,
+      hasExternalId: !!sourceContent.externalId
+    })
   }
 
   let existingContent: typeof schema.content.$inferSelect | null = null
@@ -271,11 +270,10 @@ export const generateContentDraftFromSource = async (
   }
 
   if (!resolvedSourceText) {
-    console.error('[generateContentDraftFromSource] Missing sourceText:', {
-      sourceContentId,
+    safeError('[generateContentDraftFromSource] Missing sourceText:', {
+      hasSourceContentId: !!sourceContentId,
       hasSourceContent: !!sourceContent,
       sourceTextLength: resolvedSourceText?.length || 0,
-      sourceTextPreview: resolvedSourceText?.substring(0, 100) || 'null/empty',
       ingestStatus: sourceContent?.ingestStatus,
       hasConversationHistory: !!conversationHistory,
       conversationHistoryLength: conversationHistory?.length || 0
@@ -318,7 +316,9 @@ export const generateContentDraftFromSource = async (
       try {
         await updateChunkingStatus(db, newSource.id, 'processing')
       } catch (err) {
-        console.error('[Content Generation] Failed to update chunking status to processing:', err)
+        safeError('[Content Generation] Failed to update chunking status to processing:', {
+          error: err instanceof Error ? err.message : 'Unknown error'
+        })
         throw createError({
           statusCode: 500,
           statusMessage: 'Failed to initialize chunking status'
@@ -329,7 +329,9 @@ export const generateContentDraftFromSource = async (
       const chunkingPromise = ensureSourceContentChunksExist(db, newSource, newSource.sourceText)
         .then(() => updateChunkingStatus(db, newSource.id, 'completed'))
         .catch(async (err) => {
-          console.error('[Content Generation] Background chunking failed:', err)
+          safeError('[Content Generation] Background chunking failed:', {
+            error: err instanceof Error ? err.message : 'Unknown error'
+          })
           await updateChunkingStatus(db, newSource.id, 'failed', err?.message || 'Unknown error')
         })
 
@@ -341,7 +343,9 @@ export const generateContentDraftFromSource = async (
       } else {
         // Fallback for Node.js/dev: fire-and-forget (tasks may not complete if server shuts down)
         chunkingPromise.catch((err) => {
-          console.error('[Content Generation] Fire-and-forget chunking failed:', err)
+          safeError('[Content Generation] Fire-and-forget chunking failed:', {
+            error: err instanceof Error ? err.message : 'Unknown error'
+          })
         })
       }
 
@@ -687,8 +691,18 @@ export const updateContentSectionWithAI = async (
     mode
   } = input
 
+  safeLog('[updateContentSection] Starting section update', {
+    hasContentId: !!contentId,
+    hasSectionId: !!sectionId,
+    mode,
+    hasOrganizationId: !!organizationId,
+    hasUserId: !!userId,
+    hasInstructions: !!instructions
+  })
+
   // Enforce agent mode for writes
   if (mode === 'chat') {
+    safeError('[updateContentSection] Mode check failed - chat mode not allowed for writes', { mode })
     throw createError({
       statusCode: 403,
       statusMessage: 'Writes are not allowed in chat mode'
@@ -698,6 +712,11 @@ export const updateContentSectionWithAI = async (
   const trimmedInstructions = instructions?.trim()
 
   if (!organizationId || !userId || !contentId) {
+    safeError('[updateContentSection] Missing required parameters', {
+      hasOrganizationId: !!organizationId,
+      hasUserId: !!userId,
+      hasContentId: !!contentId
+    })
     throw createError({
       statusCode: 400,
       statusMessage: 'organization, user, and content context are required'
@@ -705,12 +724,17 @@ export const updateContentSectionWithAI = async (
   }
 
   if (!trimmedInstructions) {
+    safeError('[updateContentSection] Missing instructions')
     throw createError({
       statusCode: 400,
       statusMessage: 'instructions are required to patch a section'
     })
   }
 
+  safeLog('[updateContentSection] Querying database for content', {
+    hasContentId: !!contentId,
+    hasOrganizationId: !!organizationId
+  })
   const [record] = await db
     .select({
       content: schema.content,
@@ -764,6 +788,9 @@ export const updateContentSectionWithAI = async (
     })
   }
 
+  // Store original section body for diff calculation
+  const originalSectionBody = targetSection.body || ''
+
   const frontmatter = extractFrontmatterFromVersion({
     content: recordContent,
     version: currentVersion
@@ -782,7 +809,9 @@ export const updateContentSectionWithAI = async (
 
       if (elapsedMinutes > 10) {
         // Job is stale/stuck (>10 mins). Mark as failed and proceed (on a best-effort basis)
-        console.warn(`[Content Update] Found stale chunking job for source ${record.sourceContent.id}, marking failed.`)
+        safeWarn('[Content Update] Found stale chunking job for source, marking failed.', {
+          hasSourceContentId: !!record.sourceContent.id
+        })
         await updateChunkingStatus(db, record.sourceContent.id, 'failed', 'Chunking timeout - auto-failed')
         // Proceed without throwing 503
       } else {
@@ -796,10 +825,17 @@ export const updateContentSectionWithAI = async (
   }
 
   // RAG: Search global context instead of partial source
+  safeLog('[updateContentSection] Starting RAG context search', {
+    hasSectionTitle: !!targetSection.title,
+    queryTextLength: `${targetSection.title} ${trimmedInstructions}`.length
+  })
   const relevantChunks = await findGlobalRelevantChunks({
     db,
     organizationId,
     queryText: `${targetSection.title} ${trimmedInstructions}`
+  })
+  safeLog('[updateContentSection] RAG search completed', {
+    chunksFound: relevantChunks.length
   })
 
   // Format context for the AI
@@ -829,6 +865,12 @@ export const updateContentSectionWithAI = async (
     'Respond with JSON {"body": string, "summary": string?}. Rewrite only this section content - do NOT include the section heading or title, as it will be added automatically.'
   ].join('\n\n')
 
+  safeLog('[updateContentSection] Calling AI for section generation', {
+    hasSectionTitle: !!targetSection.title,
+    promptLength: prompt.length,
+    temperature,
+    contextChunks: relevantChunks.length
+  })
   const raw = await callChatCompletions({
     messages: [
       { role: 'system', content: SECTION_PATCH_SYSTEM_PROMPT },
@@ -836,16 +878,28 @@ export const updateContentSectionWithAI = async (
     ],
     temperature
   })
+  safeLog('[updateContentSection] AI call completed', {
+    responseLength: raw?.length || 0
+  })
 
   const parsed = parseAIResponseAsJSON<{ body?: string, body_mdx?: string, summary?: string }>(raw, 'section patch')
   const updatedBody = (parsed.body ?? parsed.body_mdx ?? '').trim()
 
   if (!updatedBody) {
+    safeError('[updateContentSection] AI response parsing failed - no content returned', {
+      hasParsed: !!parsed,
+      rawLength: raw?.length || 0
+    })
     throw createError({
       statusCode: 502,
       statusMessage: 'AI section patch did not return any content'
     })
   }
+
+  safeLog('[updateContentSection] AI response parsed successfully', {
+    bodyLength: updatedBody.length,
+    hasSummary: !!parsed.summary
+  })
 
   const updatedSections = normalizedSections.map((section) => {
     if (section.id !== targetSection.id) {
@@ -868,6 +922,82 @@ export const updateContentSectionWithAI = async (
   const assembled = assembleMarkdownFromSections({
     frontmatter,
     sections: updatedSections
+  })
+
+  // Calculate diff stats by comparing old vs new section body
+  // Uses a more accurate line-by-line comparison
+  const calculateDiffStats = (oldText: string, newText: string): { additions: number, deletions: number } => {
+    const oldLines = oldText.split('\n')
+    const newLines = newText.split('\n')
+
+    // Use a simple longest common subsequence approach for better accuracy
+    // For now, use a simpler approach: compare line counts and unique content
+    const oldNonEmpty = oldLines.filter(line => line.trim().length > 0)
+    const newNonEmpty = newLines.filter(line => line.trim().length > 0)
+
+    // Count unique lines (ignoring order)
+    const oldUnique = new Map<string, number>()
+    const newUnique = new Map<string, number>()
+
+    for (const line of oldNonEmpty) {
+      const trimmed = line.trim()
+      oldUnique.set(trimmed, (oldUnique.get(trimmed) || 0) + 1)
+    }
+
+    for (const line of newNonEmpty) {
+      const trimmed = line.trim()
+      newUnique.set(trimmed, (newUnique.get(trimmed) || 0) + 1)
+    }
+
+    let additions = 0
+    let deletions = 0
+
+    // Count additions: lines in new that aren't in old (or more instances than in old)
+    for (const [line, newCount] of newUnique.entries()) {
+      const oldCount = oldUnique.get(line) || 0
+      if (newCount > oldCount) {
+        additions += newCount - oldCount
+      }
+    }
+
+    // Count deletions: lines in old that aren't in new (or fewer instances than in old)
+    for (const [line, oldCount] of oldUnique.entries()) {
+      const newCount = newUnique.get(line) || 0
+      if (oldCount > newCount) {
+        deletions += oldCount - newCount
+      }
+    }
+
+    // If texts are identical, ensure we return 0,0
+    if (oldText === newText) {
+      return { additions: 0, deletions: 0 }
+    }
+
+    // Fallback: if no unique differences found but texts differ, use line count diff
+    if (additions === 0 && deletions === 0 && oldText !== newText) {
+      const lineDiff = newNonEmpty.length - oldNonEmpty.length
+      if (lineDiff > 0) {
+        additions = lineDiff
+      } else if (lineDiff < 0) {
+        deletions = Math.abs(lineDiff)
+      } else {
+        // Same number of lines but content changed - estimate 1 addition and 1 deletion
+        additions = 1
+        deletions = 1
+      }
+    }
+
+    return { additions, deletions }
+  }
+
+  const diffStats = calculateDiffStats(originalSectionBody, updatedBody)
+
+  safeLog('[updateContentSection] Calculated diff stats', {
+    originalLength: originalSectionBody.length,
+    updatedLength: updatedBody.length,
+    additions: diffStats.additions,
+    deletions: diffStats.deletions,
+    hasChanges: originalSectionBody !== updatedBody
   })
 
   const slug = record.version.frontmatter?.slug || record.content.slug
@@ -918,7 +1048,11 @@ export const updateContentSectionWithAI = async (
           schemaTypes: frontmatter.schemaTypes,
           sourceContentId: frontmatter.sourceContentId,
           primaryKeyword: frontmatter.primaryKeyword,
-          targetLocale: frontmatter.targetLocale
+          targetLocale: frontmatter.targetLocale,
+          diffStats: {
+            additions: diffStats.additions,
+            deletions: diffStats.deletions
+          }
         },
         bodyMdx: enrichedMdx,
         bodyHtml: null,
@@ -1037,9 +1171,9 @@ export async function reEnrichContentVersion(
   const seoSnapshot = currentVersion.seoSnapshot as Record<string, any> | null
 
   if (!frontmatter) {
-    console.error('[reEnrichContentVersion] Invalid or missing frontmatter', {
-      contentId,
-      versionId: currentVersion.id
+    safeError('[reEnrichContentVersion] Invalid or missing frontmatter', {
+      hasContentId: !!contentId,
+      hasVersionId: !!currentVersion.id
     })
     throw createError({
       statusCode: 400,

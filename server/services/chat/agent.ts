@@ -70,6 +70,114 @@ const MAX_TOOL_ITERATIONS = 5
 const MAX_TOOL_RETRIES = 2
 
 /**
+ * Generates a human-readable summary from tool execution history
+ */
+function generateSummaryFromToolHistory(
+  toolHistory: MultiPassAgentResult['toolHistory'],
+  iteration: number
+): string {
+  const successfulTools = toolHistory.filter(entry => entry.result.success)
+  const failedTools = toolHistory.filter(entry => !entry.result.success)
+
+  if (successfulTools.length === 0) {
+    if (failedTools.length > 0) {
+      return 'I attempted several operations but encountered issues. Please try again or provide more specific instructions.'
+    }
+    return 'I didn\'t perform any operations; please provide instructions or try again.'
+  }
+
+  const summaries: string[] = []
+
+  // Generate specific summaries for each successful tool
+  for (const entry of successfulTools) {
+    const { toolName, result, invocation } = entry
+
+    if (toolName === 'edit_section' && result.result) {
+      const sectionTitle = result.result.sectionId
+        ? `section "${result.result.sectionId}"`
+        : invocation.arguments.sectionTitle
+          ? `section "${invocation.arguments.sectionTitle}"`
+          : 'a section'
+      const contentTitle = result.result.content?.title || 'content'
+      const instructions = invocation.arguments.instructions
+        ? ` (${invocation.arguments.instructions.substring(0, 60)}${invocation.arguments.instructions.length > 60 ? '...' : ''})`
+        : ''
+      summaries.push(`Successfully edited ${sectionTitle} in "${contentTitle}"${instructions}`)
+    } else if (toolName === 'content_write' && result.result) {
+      if (invocation.arguments.action === 'create') {
+        const title = result.result.content?.title || 'new content'
+        summaries.push(`Created new content: "${title}"`)
+      } else if (invocation.arguments.action === 'enrich') {
+        const title = result.result.content?.title || 'content'
+        summaries.push(`Refreshed metadata and structured data for "${title}"`)
+      }
+    } else if (toolName === 'edit_metadata' && result.result) {
+      const title = result.result.content?.title || 'content'
+      const changes: string[] = []
+      if (invocation.arguments.title)
+        changes.push('title')
+      if (invocation.arguments.slug)
+        changes.push('slug')
+      if (invocation.arguments.status)
+        changes.push('status')
+      if (invocation.arguments.primaryKeyword)
+        changes.push('primary keyword')
+      const changeText = changes.length > 0 ? changes.join(', ') : 'metadata'
+      summaries.push(`Updated ${changeText} for "${title}"`)
+    } else if (toolName === 'read_content' && result.result) {
+      const title = result.result.content?.title || 'content'
+      summaries.push(`Retrieved information for "${title}"`)
+    } else if (toolName === 'read_content_list' && result.result) {
+      const items = Array.isArray(result.result) ? result.result : []
+      const count = items.length
+      summaries.push(`Found ${count} content item${count !== 1 ? 's' : ''}`)
+    } else if (toolName === 'read_section' && result.result) {
+      summaries.push(`Retrieved section information`)
+    } else if (toolName === 'source_ingest' && result.result) {
+      const sourceType = invocation.arguments.sourceType === 'youtube' ? 'YouTube video' : 'source content'
+      summaries.push(`Ingested ${sourceType}`)
+    } else {
+      summaries.push(`Completed ${toolName.replace(/_/g, ' ')}`)
+    }
+  }
+
+  let message = `${summaries.join('. ')}.`
+
+  if (iteration >= MAX_TOOL_ITERATIONS) {
+    message += ' I reached the maximum number of tool calls, but the operations above were completed successfully.'
+  }
+
+  if (failedTools.length > 0 && successfulTools.length > 0) {
+    const failedToolNames = [...new Set(failedTools.map(t => t.toolName))].join(', ')
+    message += ` Note: Some operations (${failedToolNames}) encountered issues, but the successful ones are listed above.`
+  }
+
+  if (message.length > 500) {
+    // Truncate if too long, but keep the important parts
+    const truncatedSummaries = summaries.slice(0, 2).join('. ')
+    const remainingCount = summaries.length - 2
+    message = `${truncatedSummaries}.`
+    if (summaries.length > 2) {
+      message += ` (and ${remainingCount} more operation${remainingCount !== 1 ? 's' : ''})`
+    }
+    // Preserve failure information even in truncated version
+    if (failedTools.length > 0 && successfulTools.length > 0) {
+      const failedCount = [...new Set(failedTools.map(t => t.toolName))].length
+      message += ` Note: ${failedCount} operation${failedCount !== 1 ? 's' : ''} had issues.`
+    }
+    if (iteration >= MAX_TOOL_ITERATIONS) {
+      message += ' I reached the maximum number of tool calls.'
+    }
+    // Ensure we're actually under the limit
+    if (message.length > 500) {
+      message = `${message.substring(0, 450)}... (truncated)`
+    }
+  }
+
+  return message
+}
+
+/**
  * Runs the agent with multi-pass orchestration and streaming support.
  * Streams LLM responses as they arrive and emits tool execution events in real-time.
  */
@@ -489,7 +597,7 @@ export async function runChatAgentWithMultiPassStream({
   }
 
   // Max iterations reached
-  const finalMessage = 'I\'ve completed several operations, but reached the maximum number of tool calls. Is there anything else you\'d like me to do?'
+  const finalMessage = generateSummaryFromToolHistory(toolHistory, iteration)
   if (onFinalMessage) {
     onFinalMessage(finalMessage)
   }
