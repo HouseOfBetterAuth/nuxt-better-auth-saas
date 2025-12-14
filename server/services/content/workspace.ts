@@ -17,12 +17,10 @@ export async function getContentWorkspacePayload(
   const rows = await db
     .select({
       content: schema.content,
-      sourceContent: schema.sourceContent,
-      currentVersion: schema.contentVersion
+      sourceContent: schema.sourceContent
     })
     .from(schema.content)
     .leftJoin(schema.sourceContent, eq(schema.sourceContent.id, schema.content.sourceContentId))
-    .leftJoin(schema.contentVersion, eq(schema.contentVersion.id, schema.content.currentVersionId))
     .where(and(
       eq(schema.content.organizationId, organizationId),
       eq(schema.content.id, contentId)
@@ -36,6 +34,16 @@ export async function getContentWorkspacePayload(
       statusCode: 404,
       statusMessage: 'Content not found'
     })
+  }
+
+  let currentVersion: typeof schema.contentVersion.$inferSelect | null = null
+  if (record.content.currentVersionId) {
+    const [versionRow] = await db
+      .select()
+      .from(schema.contentVersion)
+      .where(eq(schema.contentVersion.id, record.content.currentVersionId))
+      .limit(1)
+    currentVersion = versionRow ?? null
   }
 
   let chatMessages: Array<{
@@ -93,22 +101,22 @@ export async function getContentWorkspacePayload(
 
   const workspaceSummary = buildWorkspaceSummary({
     content: record.content,
-    currentVersion: record.currentVersion,
+    currentVersion,
     sourceContent: record.sourceContent
   })
 
   let structuredData: string | null = null
-  if (record.currentVersion?.frontmatter) {
+  if (currentVersion?.frontmatter) {
     structuredData = generateStructuredDataJsonLd({
-      frontmatter: record.currentVersion.frontmatter as ContentFrontmatter,
-      seoSnapshot: record.currentVersion.seoSnapshot as Record<string, any> | null,
-      sections: record.currentVersion.sections as ContentSection[] | null | undefined
+      frontmatter: currentVersion.frontmatter as ContentFrontmatter,
+      seoSnapshot: currentVersion.seoSnapshot as Record<string, any> | null,
+      sections: currentVersion.sections as ContentSection[] | null | undefined
     }) || null
   }
 
-  const currentVersionWithDerived = record.currentVersion
+  const currentVersionWithDerived = currentVersion
     ? {
-        ...record.currentVersion,
+        ...currentVersion,
         structuredData
       }
     : null
