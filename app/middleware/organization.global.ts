@@ -6,12 +6,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!loggedIn.value)
     return
 
-  const routeSlug = to.params.slug as string
+  let routeSlug = to.params.slug as string | undefined
+  if (!routeSlug || routeSlug === 't') {
+    const contentMatch = to.path.match(/^\/([^/]+)\/content(?:\/|$)/)
+    if (contentMatch && contentMatch[1] && contentMatch[1] !== 't') {
+      routeSlug = contentMatch[1]
+    }
+  }
   if (!routeSlug || routeSlug === 't')
     return
 
-  // Only handle routes that still use slug-based routing (settings, billing, etc.)
-  // New routes (/conversations, /content) don't use slugs, so this middleware won't run for them
+  // Only handle routes that use slug-based routing (settings, billing, content, etc.)
 
   // Check if we need to switch organization
   interface SessionWithOrg {

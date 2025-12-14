@@ -30,6 +30,7 @@ export interface ContentGenerationInput {
   intentSnapshot?: ConversationIntentSnapshot | null
   onPlanReady?: (details: ContentPlanDetails) => Promise<void> | void
   event?: H3Event | null
+  onProgress?: (message: string) => Promise<void> | void
 }
 
 export interface ContentGenerationResult {
@@ -47,6 +48,7 @@ export interface SectionUpdateInput {
   instructions: string
   temperature?: number
   mode?: 'chat' | 'agent'
+  onProgress?: (message: string) => Promise<void> | void
 }
 
 export interface SectionUpdateResult {

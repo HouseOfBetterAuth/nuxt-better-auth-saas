@@ -175,6 +175,16 @@ export const generateContentDraftFromSource = async (
     event: _event,
     intentSnapshot
   } = input
+  const progressCallback = input.onProgress
+  const emitProgress = async (message: string) => {
+    if (!progressCallback)
+      return
+    try {
+      await progressCallback(message)
+    } catch (error) {
+      safeWarn('[generateContentDraftFromSource] Progress callback failed', { error })
+    }
+  }
 
   // Enforce agent mode for writes
   if (mode === 'chat') {
@@ -421,6 +431,7 @@ export const generateContentDraftFromSource = async (
     intentSummary
   })
   pipelineStages.push('plan')
+  await emitProgress('Outline drafted.')
 
   let frontmatter = createFrontmatterFromOutline({
     plan,
@@ -434,6 +445,7 @@ export const generateContentDraftFromSource = async (
     sourceContent
   })
   pipelineStages.push('frontmatter')
+  await emitProgress('Frontmatter prepared.')
 
   if (input.onPlanReady) {
     await input.onPlanReady({ plan, frontmatter })
@@ -452,14 +464,20 @@ export const generateContentDraftFromSource = async (
     intentSummary
   })
   pipelineStages.push('sections')
+  await emitProgress('Sections generated.')
 
   const assembled = assembleMarkdownFromSections({
     frontmatter,
     sections
   })
   pipelineStages.push('assembly')
+  await emitProgress('Content assembled.')
 
   frontmatter = deriveSchemaMetadata(frontmatter, assembled.sections)
+  const schemaValidation = validateSchemaMetadata(frontmatter)
+  await emitProgress(schemaValidation.errors.length
+    ? 'Schema validation detected issues.'
+    : 'Schema validation passed.')
 
   const resolvedSourceContentId = frontmatter.sourceContentId ?? sourceContent?.id ?? null
   const selectedStatus = frontmatter.status
@@ -470,7 +488,6 @@ export const generateContentDraftFromSource = async (
   // SEO snapshot is created, so SEO stage is complete
   pipelineStages.push('seo')
 
-  const schemaValidation = validateSchemaMetadata(frontmatter)
   const assets = createGenerationMetadata(sourceContent, pipelineStages)
   const seoSnapshot = {
     plan: plan.seo,
@@ -642,6 +659,8 @@ export const generateContentDraftFromSource = async (
     }
   })
 
+  await emitProgress('Content saved.')
+
   const meta = {
     engine: 'codex-pipeline',
     stages: {
@@ -684,8 +703,18 @@ export const updateContentSectionWithAI = async (
     sectionId,
     instructions,
     temperature,
-    mode
+    mode,
+    onProgress
   } = input
+  const emitProgress = async (message: string) => {
+    if (!onProgress)
+      return
+    try {
+      await onProgress(message)
+    } catch (error) {
+      safeWarn('[updateContentSection] Progress callback failed', { error })
+    }
+  }
 
   safeLog('[updateContentSection] Starting section update', {
     hasContentId: !!contentId,
@@ -1001,7 +1030,6 @@ export const updateContentSectionWithAI = async (
   const slug = record.version.frontmatter?.slug || record.content.slug
   const previousSeoSnapshot = currentVersion.seoSnapshot ?? {}
   const assets = createSectionUpdateMetadata(record.sourceContent ?? null, targetSection.id)
-  const schemaValidation = validateSchemaMetadata(frontmatter)
   const seoSnapshot = {
     ...previousSeoSnapshot,
     primaryKeyword: frontmatter.primaryKeyword,
@@ -1083,6 +1111,8 @@ export const updateContentSectionWithAI = async (
       version: newVersion
     }
   })
+
+  await emitProgress('Section update saved.')
 
   return {
     content: result.content,

@@ -6,6 +6,8 @@ const router = useRouter()
 const route = useRoute()
 const localePath = useLocalePath()
 const toast = useToast()
+const { useActiveOrganization } = useAuth()
+const activeOrg = useActiveOrganization()
 
 // Content list
 const {
@@ -54,10 +56,51 @@ onMounted(() => {
   initializeConversations()
 })
 
-// Helper to check if current path matches a route pattern (accounting for locale)
+const routeSlug = computed(() => {
+  const param = route.params.slug
+  if (Array.isArray(param))
+    return param[0] || null
+  if (typeof param === 'string' && param.trim().length > 0 && param !== 't')
+    return param
+  return null
+})
+
+const resolvedOrgSlug = computed(() => routeSlug.value || activeOrg.value?.data?.slug || null)
+
+const normalizePathForMatch = (value: string) => {
+  if (!value)
+    return ''
+  if (value === '/')
+    return '/'
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+const ensureLeadingSlash = (value: string) => value.startsWith('/') ? value : `/${value}`
+
+const buildCandidates = (pattern: string) => {
+  const normalizedPattern = ensureLeadingSlash(pattern)
+  const candidates = new Set<string>()
+  const localizedPattern = localePath(normalizedPattern)
+
+  candidates.add(normalizePathForMatch(normalizedPattern))
+  if (localizedPattern)
+    candidates.add(normalizePathForMatch(localizedPattern))
+
+  if (routeSlug.value) {
+    const slugPattern = `/${routeSlug.value}${normalizedPattern}`
+    candidates.add(normalizePathForMatch(slugPattern))
+    const localizedSlugPattern = localePath(slugPattern)
+    if (localizedSlugPattern)
+      candidates.add(normalizePathForMatch(localizedSlugPattern))
+  }
+
+  return Array.from(candidates).filter(Boolean)
+}
+
 const isRouteMatch = (pattern: string) => {
-  const localizedPattern = localePath(pattern)
-  return route.path.startsWith(localizedPattern) || route.path.startsWith(pattern)
+  const currentPath = normalizePathForMatch(route.path)
+  const candidates = buildCandidates(pattern)
+  return candidates.some(candidate => currentPath.startsWith(candidate))
 }
 
 // Active content/conversation detection
@@ -89,12 +132,14 @@ const isConversationActive = (id: string) => {
   return activeConversationId.value === id
 }
 
+const resolveContentPath = (contentId?: string | null) => {
+  const slug = resolvedOrgSlug.value
+  const base = slug ? `/${slug}/content` : '/content'
+  return contentId ? `${base}/${contentId}` : base
+}
+
 const openContent = (contentId: string | null) => {
-  if (contentId) {
-    router.push(localePath(`/content/${contentId}`))
-  } else {
-    router.push(localePath('/content'))
-  }
+  router.push(localePath(resolveContentPath(contentId || undefined)))
 }
 
 const openConversation = (conversationId: string | null) => {

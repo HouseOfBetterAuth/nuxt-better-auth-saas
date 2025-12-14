@@ -584,6 +584,12 @@ async function executeChatTool(
           sanitizedTemperature = validateNumber(args.temperature, 'temperature', 0, 2)
         }
 
+        const handleProgress = (progressMessage: string) => {
+          if (onToolProgress && toolCallId) {
+            onToolProgress(toolCallId, progressMessage)
+          }
+        }
+
         const generationResult = await generateContentFromSource(db, {
           organizationId,
           userId,
@@ -605,7 +611,8 @@ async function executeChatTool(
               : DEFAULT_CONTENT_TYPE
           },
           systemPrompt: sanitizedSystemPrompt,
-          temperature: sanitizedTemperature
+          temperature: sanitizedTemperature,
+          onProgress: handleProgress
         })
 
         safeLog('[content_write] Successfully created content', {
@@ -831,6 +838,12 @@ async function executeChatTool(
         temperature: sanitizedTemperature
       })
 
+      const handleProgress = (progressMessage: string) => {
+        if (onToolProgress && toolCallId) {
+          onToolProgress(toolCallId, progressMessage)
+        }
+      }
+
       const patchResult = await updateContentSection(db, {
         organizationId,
         userId,
@@ -838,7 +851,8 @@ async function executeChatTool(
         sectionId: resolvedSectionId,
         instructions: args.instructions,
         temperature: sanitizedTemperature,
-        mode: context.mode
+        mode: context.mode,
+        onProgress: handleProgress
       })
 
       safeLog('[edit_section] Successfully updated section', {

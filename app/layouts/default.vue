@@ -61,10 +61,48 @@ provide('setHeaderTitle', (title: string | null) => {
 // Determine if we should show workspace header
 const showWorkspaceHeader = computed(() => workspaceHeader.value !== null || workspaceHeaderLoading.value)
 
-// Helper to check if current path matches a route pattern (accounting for locale)
+const routeSlug = computed(() => {
+  const param = route.params.slug
+  if (Array.isArray(param))
+    return param[0] || null
+  if (typeof param === 'string' && param.trim().length > 0 && param !== 't')
+    return param
+  return null
+})
+
+const normalizePathForMatch = (value: string) => {
+  if (!value)
+    return ''
+  if (value === '/')
+    return '/'
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+const ensureLeadingSlash = (value: string) => value.startsWith('/') ? value : `/${value}`
+
+const buildRouteCandidates = (pattern: string) => {
+  const normalizedPattern = ensureLeadingSlash(pattern)
+  const candidates = new Set<string>()
+  const localizedPattern = localePath(normalizedPattern)
+
+  candidates.add(normalizePathForMatch(normalizedPattern))
+  if (localizedPattern)
+    candidates.add(normalizePathForMatch(localizedPattern))
+
+  if (routeSlug.value) {
+    const slugPattern = `/${routeSlug.value}${normalizedPattern}`
+    candidates.add(normalizePathForMatch(slugPattern))
+    const localizedSlugPattern = localePath(slugPattern)
+    if (localizedSlugPattern)
+      candidates.add(normalizePathForMatch(localizedSlugPattern))
+  }
+
+  return Array.from(candidates).filter(Boolean)
+}
+
 const isRouteMatch = (pattern: string) => {
-  const localizedPattern = localePath(pattern)
-  return route.path.startsWith(localizedPattern) || route.path.startsWith(pattern)
+  const currentPath = normalizePathForMatch(route.path)
+  return buildRouteCandidates(pattern).some(candidate => currentPath.startsWith(candidate))
 }
 
 // Determine if we should show chat interface - only on conversation routes
