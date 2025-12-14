@@ -1,12 +1,14 @@
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
+import type * as schema from '~~/server/db/schema'
 import { createError, getQuery, getRouterParams } from 'h3'
 import { getWorkspaceWithCache } from '~~/server/services/content/workspaceCache'
 import { requireAuth } from '~~/server/utils/auth'
-import { getDB } from '~~/server/utils/db'
+import { useDB } from '~~/server/utils/db'
 import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 async function findWorkspaceForActiveOrganization(
-  db: ReturnType<typeof getDB>,
+  db: NodePgDatabase<typeof schema>,
   activeOrganizationId: string,
   contentId: string,
   includeChat: boolean
@@ -25,19 +27,42 @@ async function findWorkspaceForActiveOrganization(
 }
 
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event)
-  const { organizationId } = await requireActiveOrganization(event, user.id)
-  const db = getDB()
+  try {
+    const user = await requireAuth(event)
+    const { organizationId } = await requireActiveOrganization(event, user.id)
+    const db = await useDB(event)
 
-  const { id } = getRouterParams(event)
-  const validatedContentId = validateUUID(id, 'id')
-  const query = getQuery(event)
-  const includeChatParam = Array.isArray(query.includeChat) ? query.includeChat[0] : query.includeChat
-  const includeChat = includeChatParam === 'true' || includeChatParam === '1'
+    const { id } = getRouterParams(event)
+    const validatedContentId = validateUUID(id, 'id')
+    const query = getQuery(event)
+    const includeChatParam = Array.isArray(query.includeChat) ? query.includeChat[0] : query.includeChat
+    const includeChat = includeChatParam === 'true' || includeChatParam === '1'
 
-  const workspace = await findWorkspaceForActiveOrganization(db, organizationId, validatedContentId, includeChat)
+    const workspace = await findWorkspaceForActiveOrganization(db, organizationId, validatedContentId, includeChat)
 
-  return {
-    workspace
+    return {
+      workspace
+    }
+  } catch (error) {
+    console.error('[Content API] Error:', error)
+    if (error instanceof Error) {
+      console.error('[Content API] Error name:', error.name)
+      console.error('[Content API] Error message:', error.message)
+      console.error('[Content API] Error stack:', error.stack)
+    } else {
+      console.error('[Content API] Error type:', typeof error)
+      console.error('[Content API] Error value:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    }
+    // Re-throw H3 errors as-is, wrap others
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      console.error('[Content API] Re-throwing H3 error with statusCode:', (error as any).statusCode)
+      throw error
+    }
+    console.error('[Content API] Wrapping error in createError')
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'An unexpected error occurred'
+    })
   }
 })

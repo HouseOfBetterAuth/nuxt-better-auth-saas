@@ -55,6 +55,7 @@ const handleError = () => {
     <ClientOnly>
       <KeepAlive :max="5">
         <QuillioWidget
+          :key="`conversation-${conversationId}`"
           :conversation-id="conversationId"
           @loading="handleLoading"
           @ready="handleReady"

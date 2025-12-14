@@ -24,24 +24,40 @@ const hasSlugParam = computed(() => {
 })
 
 const redirecting = ref(false)
+const hasRedirected = ref(false)
 
+// Only redirect once per route change, and only if we don't have a slug
 watchEffect(() => {
-  if (hasSlugParam.value || redirecting.value)
+  // Skip if we already have a slug or are redirecting
+  if (hasSlugParam.value || redirecting.value || hasRedirected.value)
+    return
+
+  // Skip if we don't have a content ID (shouldn't happen on this page, but safety check)
+  if (!contentId.value)
     return
 
   const slug = activeOrg.value?.data?.slug
   if (!slug || slug === 't')
     return
 
-  const target = contentId.value
-    ? localePath(`/${slug}/content/${contentId.value}`)
-    : localePath(`/${slug}/content`)
+  // Only redirect if we're not already on the correct path
+  const target = localePath(`/${slug}/content/${contentId.value}`)
+  if (route.path === target)
+    return
 
   redirecting.value = true
-  router.replace(target)
+  hasRedirected.value = true
+  router.replace(target).finally(() => {
+    redirecting.value = false
+  })
+})
+
+// Reset redirect flag when route changes
+watch(() => route.path, () => {
+  hasRedirected.value = false
 })
 </script>
 
 <template>
-  <ContentWorkspacePage />
+  <ContentWorkspacePage :key="`content-${contentId}`" />
 </template>
