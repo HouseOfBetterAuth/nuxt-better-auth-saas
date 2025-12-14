@@ -170,7 +170,7 @@ function generateSummaryFromToolHistory(
     }
     // Ensure we're actually under the limit
     if (message.length > 500) {
-      message = `${truncatedSummaries.substring(0, 450)}... (truncated)`
+      message = `${message.substring(0, 450)}... (truncated)`
     }
   }
 

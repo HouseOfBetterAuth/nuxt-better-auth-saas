@@ -788,6 +788,9 @@ export const updateContentSectionWithAI = async (
     })
   }
 
+  // Store original section body for diff calculation
+  const originalSectionBody = targetSection.body || ''
+
   const frontmatter = extractFrontmatterFromVersion({
     content: recordContent,
     version: currentVersion
@@ -921,6 +924,38 @@ export const updateContentSectionWithAI = async (
     sections: updatedSections
   })
 
+  // Calculate diff stats by comparing old vs new section body
+  const calculateDiffStats = (oldText: string, newText: string): { additions: number, deletions: number } => {
+    const oldLines = oldText.split('\n')
+    const newLines = newText.split('\n')
+
+    // Simple line-based diff: count lines that appear in new but not old (additions)
+    // and lines that appear in old but not new (deletions)
+    const oldSet = new Set(oldLines.map(line => line.trim()))
+    const newSet = new Set(newLines.map(line => line.trim()))
+
+    let additions = 0
+    let deletions = 0
+
+    // Count additions (lines in new but not in old)
+    for (const line of newLines) {
+      if (line.trim() && !oldSet.has(line.trim())) {
+        additions++
+      }
+    }
+
+    // Count deletions (lines in old but not in new)
+    for (const line of oldLines) {
+      if (line.trim() && !newSet.has(line.trim())) {
+        deletions++
+      }
+    }
+
+    return { additions, deletions }
+  }
+
+  const diffStats = calculateDiffStats(originalSectionBody, updatedBody)
+
   const slug = record.version.frontmatter?.slug || record.content.slug
   const previousSeoSnapshot = currentVersion.seoSnapshot ?? {}
   const assets = createSectionUpdateMetadata(record.sourceContent ?? null, targetSection.id)
@@ -969,7 +1004,11 @@ export const updateContentSectionWithAI = async (
           schemaTypes: frontmatter.schemaTypes,
           sourceContentId: frontmatter.sourceContentId,
           primaryKeyword: frontmatter.primaryKeyword,
-          targetLocale: frontmatter.targetLocale
+          targetLocale: frontmatter.targetLocale,
+          diffStats: {
+            additions: diffStats.additions,
+            deletions: diffStats.deletions
+          }
         },
         bodyMdx: enrichedMdx,
         bodyHtml: null,

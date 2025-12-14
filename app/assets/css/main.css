@@ -32,7 +32,6 @@
   html, body {
     height: 100%;
     height: 100dvh;
-    overflow-x: hidden;
   }
 
   /* Apply Lora font to all headings with CJK fallback */

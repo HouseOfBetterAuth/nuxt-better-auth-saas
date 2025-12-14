@@ -291,7 +291,7 @@ function buildEditSectionParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
+        description: 'Content ID (UUID format) of the content item to edit. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       sectionId: {
         type: ['string', 'null'],
@@ -351,7 +351,7 @@ function buildEditMetadataParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
+        description: 'Content ID (UUID format) of the content item to update. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       title: {
         type: ['string', 'null'],
@@ -388,7 +388,7 @@ function buildReadContentParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
+        description: 'Content ID (UUID format) of the content item to read. Must be a valid UUID - use read_content_list to find content IDs.'
       }
     },
     required: ['contentId']
@@ -401,7 +401,7 @@ function buildReadSectionParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
+        description: 'Content ID (UUID format) of the content item to read. Must be a valid UUID - use read_content_list to find content IDs.'
       },
       sectionId: {
         type: 'string',
@@ -505,7 +505,7 @@ function buildReadWorkspaceSummaryParameters(): ParameterSchema {
     properties: {
       contentId: {
         type: 'string',
-        description: 'Content ID (UUID format) of the content item (required for action="enrich"). Must be a valid UUID - use read_content_list to find content IDs.'
+        description: 'Content ID (UUID format) of the content item to summarize. Must be a valid UUID - use read_content_list to find content IDs.'
       }
     },
     required: ['contentId']

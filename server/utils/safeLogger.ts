@@ -41,17 +41,18 @@ const SENSITIVE_CONTENT_FIELDS = [
 /**
  * Redacts sensitive data from an object, replacing IDs with boolean flags
  * and sensitive content with redaction markers or metadata only.
- * Handles circular references to prevent infinite recursion.
+ * Handles previously-seen objects (both circular and shared references) to prevent infinite recursion.
  */
 function redactSensitiveData(data: unknown, seen: Set<unknown> = new Set()): unknown {
   if (data === null || data === undefined) {
     return data
   }
 
-  // Check for circular references
+  // Check for previously-seen objects (prevents infinite recursion)
+  // This includes both circular references and shared (non-circular) references
   if (typeof data === 'object') {
     if (seen.has(data)) {
-      return '[Circular]'
+      return '[Shared]'
     }
     seen.add(data)
   }
@@ -68,12 +69,42 @@ function redactSensitiveData(data: unknown, seen: Set<unknown> = new Set()): unk
 
       // Check if this is a sensitive ID field
       const isSensitiveId = SENSITIVE_ID_FIELDS.some(
-        field => keyLower === field.toLowerCase() || keyLower.endsWith(field.toLowerCase())
+        (field) => {
+          const fieldLower = field.toLowerCase()
+          if (keyLower === fieldLower) {
+            return true
+          }
+          if (!keyLower.endsWith(fieldLower)) {
+            return false
+          }
+          // Check for camelCase boundary: previous char should be uppercase in original key
+          const prevIndex = key.length - field.length - 1
+          if (prevIndex < 0) {
+            return false
+          }
+          const prevChar = key.charAt(prevIndex)
+          return prevChar === prevChar.toUpperCase() && prevChar !== prevChar.toLowerCase()
+        }
       )
 
       // Check if this is sensitive content
       const isSensitiveContent = SENSITIVE_CONTENT_FIELDS.some(
-        field => keyLower === field.toLowerCase() || keyLower.endsWith(field.toLowerCase())
+        (field) => {
+          const fieldLower = field.toLowerCase()
+          if (keyLower === fieldLower) {
+            return true
+          }
+          if (!keyLower.endsWith(fieldLower)) {
+            return false
+          }
+          // Check for camelCase boundary: previous char should be uppercase in original key
+          const prevIndex = key.length - field.length - 1
+          if (prevIndex < 0) {
+            return false
+          }
+          const prevChar = key.charAt(prevIndex)
+          return prevChar === prevChar.toUpperCase() && prevChar !== prevChar.toLowerCase()
+        }
       )
 
       if (isSensitiveId) {
