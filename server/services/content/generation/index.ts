@@ -21,6 +21,7 @@ import {
 } from '~~/server/utils/content'
 import { safeError, safeLog, safeWarn } from '~~/server/utils/safeLogger'
 import { validateEnum } from '~~/server/utils/validation'
+import { calculateDiffStats, findSectionLineRange } from '../diff'
 import {
   assembleMarkdownFromSections,
   extractMarkdownFromEnrichedMdx
@@ -29,7 +30,6 @@ import {
   ensureSourceContentChunksExist,
   findGlobalRelevantChunks
 } from './chunking'
-import { calculateDiffStats, findSectionLineRange } from '../diff'
 import {
   buildConversationContext,
   determineGenerationMode

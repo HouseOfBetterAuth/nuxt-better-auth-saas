@@ -52,10 +52,10 @@ function parseMarkdownLinks(text: string | null | undefined): MarkdownSegment[] 
   const normalized = text
   const segments: MarkdownSegment[] = []
   const linkPattern = /\[([^[\]]+)\]\(([^)]+)\)/g
-  let match: RegExpExecArray | null
   let lastIndex = 0
 
-  while ((match = linkPattern.exec(normalized)) !== null) {
+  let match = linkPattern.exec(normalized)
+  while (match !== null) {
     const [fullMatch, label, url] = match
     const preceding = normalized.slice(lastIndex, match.index)
     if (preceding) {
@@ -63,18 +63,24 @@ function parseMarkdownLinks(text: string | null | undefined): MarkdownSegment[] 
     }
     if (label && url) {
       const href = url.trim()
-      if (href.length) {
+      // Only allow http(s) URLs and relative paths starting with /
+      const isHttpUrl = /^https?:\/\//i.test(href)
+      const isRelativePath = /^\/[^/]/.test(href)
+      const isSafe = isHttpUrl || isRelativePath
+
+      if (href.length && isSafe) {
         segments.push({
           type: 'link',
           text: label.trim() || href,
           href,
-          external: /^https?:\/\//i.test(href)
+          external: isHttpUrl
         })
       } else {
         segments.push({ type: 'text', text: fullMatch })
       }
     }
     lastIndex = match.index + fullMatch.length
+    match = linkPattern.exec(normalized)
   }
 
   const trailing = normalized.slice(lastIndex)

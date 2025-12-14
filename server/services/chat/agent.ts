@@ -105,9 +105,13 @@ function generateSummaryFromToolHistory(
       let summary = `Successfully edited ${sectionTitle} in "${contentTitle}"`
 
       if (result.result.lineRange && contentId) {
-        const { start, end } = result.result.lineRange
-        const deeplink = generateContentDeeplink(contentId, result.result.lineRange)
-        summary += ` ([lines ${start}-${end}](${deeplink}))`
+        try {
+          const { start, end } = result.result.lineRange
+          const deeplink = generateContentDeeplink(contentId, result.result.lineRange)
+          summary += ` ([lines ${start}-${end}](${deeplink}))`
+        } catch (error) {
+          console.error('[Agent] Failed to generate deeplink:', error)
+        }
       }
 
       const instructions = invocation.arguments.instructions

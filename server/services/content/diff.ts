@@ -52,8 +52,9 @@ export function calculateDiffStats(oldText: string, newText: string): { addition
     } else if (lineDiff < 0) {
       deletions = Math.abs(lineDiff)
     } else {
-      additions = 1
-      deletions = 1
+      // Whitespace-only edits or reordered lines that retain the same trimmed content
+      // shouldn't be counted as substantive additions/deletions.
+      return { additions: 0, deletions: 0 }
     }
   }
 
@@ -121,7 +122,7 @@ export function calculateLineRange(
 export function findSectionLineRange(
   markdown: string,
   sectionId: string,
-  sections: Array<{ id: string; startOffset?: number; endOffset?: number }>
+  sections: Array<{ id: string, startOffset?: number, endOffset?: number }>
 ): { start: number, end: number } | null {
   if (!sections?.length) {
     safeWarn('[diff] No sections supplied when looking up line range', { sectionId })
