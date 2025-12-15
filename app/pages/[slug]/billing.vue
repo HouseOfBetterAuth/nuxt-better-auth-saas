@@ -1055,7 +1055,7 @@ async function confirmPlanChange() {
       <div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
 
       <div class="relative">
-        <!-- Header with toggle -->
+        <!-- Header -->
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <div class="flex items-center gap-2 mb-1">
@@ -1070,8 +1070,11 @@ async function confirmPlanChange() {
             </h2>
           </div>
 
-          <!-- Billing Toggle -->
-          <div class="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-full p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+          <!-- Billing Toggle (only show if multiple tiers) -->
+          <div
+            v-if="Object.keys(PLAN_TIERS).length > 1"
+            class="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-full p-1 shadow-sm border border-gray-200 dark:border-gray-700"
+          >
             <button
               class="px-4 py-2 text-sm font-medium rounded-full transition-all"
               :class="billingInterval === 'month' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'"
@@ -1095,8 +1098,105 @@ async function confirmPlanChange() {
           </div>
         </div>
 
-        <!-- Plan Cards Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Single Tier: Show Monthly/Yearly side by side -->
+        <div
+          v-if="Object.keys(PLAN_TIERS).length === 1"
+          class="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
+          <div
+            v-for="interval in (['month', 'year'] as PlanInterval[])"
+            :key="interval"
+            class="relative bg-white dark:bg-gray-900 rounded-xl shadow-lg border overflow-hidden transition-all hover:shadow-xl cursor-pointer"
+            :class="billingInterval === interval ? 'border-primary ring-2 ring-primary' : 'border-gray-200 dark:border-gray-700'"
+            @click="billingInterval = interval"
+          >
+            <!-- Save Badge for Yearly -->
+            <div
+              v-if="interval === 'year'"
+              class="absolute top-0 right-0"
+            >
+              <div class="bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">
+                Save
+              </div>
+            </div>
+
+            <div class="p-6">
+              <!-- Plan Header -->
+              <div class="mb-4">
+                <h3 class="text-xl font-bold">
+                  {{ Object.values(PLAN_TIERS)[0].name }} {{ interval === 'month' ? 'Monthly' : 'Yearly' }}
+                </h3>
+                <p class="text-sm text-muted-foreground">
+                  {{ interval === 'month' ? 'Pay month-to-month' : 'Best value' }}
+                </p>
+              </div>
+
+              <!-- Price -->
+              <div class="mb-4">
+                <div class="flex items-baseline gap-1">
+                  <span class="text-4xl font-bold">${{ getTierForInterval(Object.values(PLAN_TIERS)[0].key as Exclude<PlanKey, 'free'>, interval).price.toFixed(2) }}</span>
+                  <span class="text-muted-foreground">/ {{ interval === 'year' ? 'year' : 'month' }}</span>
+                </div>
+                <p class="text-sm text-muted-foreground mt-1">
+                  + ${{ getTierForInterval(Object.values(PLAN_TIERS)[0].key as Exclude<PlanKey, 'free'>, interval).seatPrice.toFixed(2) }}/seat
+                </p>
+                <div
+                  v-if="!hasUsedTrial"
+                  class="flex items-center gap-2 mt-2"
+                >
+                  <UIcon
+                    name="i-lucide-shield-check"
+                    class="w-4 h-4 text-green-500"
+                  />
+                  <span class="text-xs text-green-600 dark:text-green-400 font-medium">{{ Object.values(PLAN_TIERS)[0].trialDays }}-day free trial</span>
+                </div>
+              </div>
+
+              <!-- CTA Button -->
+              <UButton
+                size="lg"
+                :label="hasUsedTrial ? `Start ${Object.values(PLAN_TIERS)[0].name} Trial` : `Start ${Object.values(PLAN_TIERS)[0].name} Trial`"
+                :color="billingInterval === interval ? 'primary' : 'neutral'"
+                :variant="billingInterval === interval ? 'solid' : 'outline'"
+                :loading="loading && selectedUpgradeTier === Object.values(PLAN_TIERS)[0].key"
+                class="w-full mb-4"
+                @click.stop="billingInterval = interval; handleUpgradeWithTier(Object.values(PLAN_TIERS)[0].key as Exclude<PlanKey, 'free'>)"
+              >
+                <template #trailing>
+                  <UIcon name="i-lucide-arrow-right" />
+                </template>
+              </UButton>
+
+              <!-- Features -->
+              <div class="space-y-2">
+                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  What's included:
+                </p>
+                <ul class="space-y-2">
+                  <li
+                    v-for="(feature, i) in Object.values(PLAN_TIERS)[0].features"
+                    :key="i"
+                    class="flex items-start gap-2 text-sm"
+                  >
+                    <div class="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
+                      <UIcon
+                        name="i-lucide-check"
+                        class="w-3 h-3 text-primary"
+                      />
+                    </div>
+                    <span>{{ feature }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Multiple Tiers: Show toggle + tier cards -->
+        <div
+          v-else
+          class="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
           <div
             v-for="tier in Object.values(PLAN_TIERS).sort((a, b) => a.order - b.order)"
             :key="tier.key"

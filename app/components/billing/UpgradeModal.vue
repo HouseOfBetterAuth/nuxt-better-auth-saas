@@ -28,6 +28,10 @@ const availableTiers = computed(() => {
   return Object.values(PLAN_TIERS).sort((a, b) => a.order - b.order)
 })
 
+// Check if we have only one tier - if so, show monthly/yearly side by side
+const hasSingleTier = computed(() => availableTiers.value.length === 1)
+const singleTier = computed(() => hasSingleTier.value ? availableTiers.value[0] : null)
+
 // Get the selected plan config
 const selectedPlanConfig = computed(() => {
   return getTierForInterval(selectedTier.value, selectedInterval.value)
@@ -188,50 +192,29 @@ async function handleUpgrade() {
           </div>
         </div>
 
-        <!-- Billing Interval Toggle -->
-        <div class="flex justify-center mb-4">
-          <div class="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-            <button
-              v-for="interval in (['month', 'year'] as PlanInterval[])"
-              :key="interval"
-              class="relative px-4 py-2 text-sm font-medium rounded-md transition-all"
-              :class="selectedInterval === interval
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
-              @click="selectedInterval = interval"
-            >
-              {{ interval === 'month' ? 'Monthly' : 'Yearly' }}
-              <span
-                v-if="interval === 'year'"
-                class="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full"
-              >
-                Save
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Plan Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Single Tier: Show Monthly/Yearly side by side -->
+        <div
+          v-if="hasSingleTier && singleTier"
+          class="grid grid-cols-1 md:grid-cols-2 gap-4"
+        >
           <div
-            v-for="tier in availableTiers"
-            :key="tier.key"
+            v-for="interval in (['month', 'year'] as PlanInterval[])"
+            :key="interval"
             class="relative border rounded-xl p-5 cursor-pointer transition-all"
             :class="[
-              selectedTier === tier.key
+              selectedInterval === interval
                 ? 'border-primary ring-2 ring-primary bg-primary/5'
-                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
-              tier.order === 2 ? 'md:scale-[1.02]' : ''
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
             ]"
-            @click="selectedTier = tier.key as Exclude<PlanKey, 'free'>"
+            @click="selectedInterval = interval"
           >
-            <!-- Popular Badge -->
+            <!-- Save Badge for Yearly -->
             <div
-              v-if="tier.order === 2"
+              v-if="interval === 'year'"
               class="absolute -top-3 left-1/2 -translate-x-1/2"
             >
-              <span class="px-3 py-1 text-xs font-bold bg-primary text-white rounded-full">
-                Most Popular
+              <span class="px-3 py-1 text-xs font-bold bg-green-500 text-white rounded-full">
+                Save
               </span>
             </div>
 
@@ -239,14 +222,14 @@ async function handleUpgrade() {
             <div class="flex justify-between items-start mb-3">
               <div>
                 <h3 class="font-bold text-lg">
-                  {{ tier.name }}
+                  {{ singleTier.name }} {{ interval === 'month' ? 'Monthly' : 'Yearly' }}
                 </h3>
                 <p class="text-xs text-muted-foreground">
-                  {{ tier.key === 'pro' ? 'For small teams' : 'For growing businesses' }}
+                  {{ interval === 'month' ? 'Pay month-to-month' : 'Best value' }}
                 </p>
               </div>
               <UIcon
-                v-if="selectedTier === tier.key"
+                v-if="selectedInterval === interval"
                 name="i-lucide-check-circle"
                 class="w-6 h-6 text-primary"
               />
@@ -260,25 +243,25 @@ async function handleUpgrade() {
             <div class="mb-4">
               <div class="flex items-baseline gap-1">
                 <span class="text-3xl font-bold">
-                  ${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).price.toFixed(2) }}
+                  ${{ getTierForInterval(singleTier.key as Exclude<PlanKey, 'free'>, interval).price.toFixed(2) }}
                 </span>
                 <span class="text-sm text-muted-foreground">
-                  / {{ selectedInterval === 'year' ? 'year' : 'month' }}
+                  / {{ interval === 'year' ? 'year' : 'month' }}
                 </span>
               </div>
               <p class="text-xs text-muted-foreground mt-1">
                 <span
                   v-if="!hasUsedTrial"
                   class="font-semibold text-green-600 dark:text-green-400"
-                >{{ tier.trialDays }}-day free trial • </span>
-                +${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).seatPrice.toFixed(2) }}/seat
+                >{{ singleTier.trialDays }}-day free trial • </span>
+                +${{ getTierForInterval(singleTier.key as Exclude<PlanKey, 'free'>, interval).seatPrice.toFixed(2) }}/seat
               </p>
             </div>
 
             <!-- Features -->
             <ul class="space-y-2">
               <li
-                v-for="(feature, i) in tier.features"
+                v-for="(feature, i) in singleTier.features"
                 :key="i"
                 class="flex items-start gap-2 text-sm"
               >
@@ -291,6 +274,113 @@ async function handleUpgrade() {
             </ul>
           </div>
         </div>
+
+        <!-- Multiple Tiers: Show toggle + tier cards -->
+        <template v-else>
+          <!-- Billing Interval Toggle -->
+          <div class="flex justify-center mb-4">
+            <div class="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+              <button
+                v-for="interval in (['month', 'year'] as PlanInterval[])"
+                :key="interval"
+                class="relative px-4 py-2 text-sm font-medium rounded-md transition-all"
+                :class="selectedInterval === interval
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
+                @click="selectedInterval = interval"
+              >
+                {{ interval === 'month' ? 'Monthly' : 'Yearly' }}
+                <span
+                  v-if="interval === 'year'"
+                  class="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-green-500 text-white rounded-full"
+                >
+                  Save
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Plan Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              v-for="tier in availableTiers"
+              :key="tier.key"
+              class="relative border rounded-xl p-5 cursor-pointer transition-all"
+              :class="[
+                selectedTier === tier.key
+                  ? 'border-primary ring-2 ring-primary bg-primary/5'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+                tier.order === 2 ? 'md:scale-[1.02]' : ''
+              ]"
+              @click="selectedTier = tier.key as Exclude<PlanKey, 'free'>"
+            >
+              <!-- Popular Badge -->
+              <div
+                v-if="tier.order === 2"
+                class="absolute -top-3 left-1/2 -translate-x-1/2"
+              >
+                <span class="px-3 py-1 text-xs font-bold bg-primary text-white rounded-full">
+                  Most Popular
+                </span>
+              </div>
+
+              <!-- Header -->
+              <div class="flex justify-between items-start mb-3">
+                <div>
+                  <h3 class="font-bold text-lg">
+                    {{ tier.name }}
+                  </h3>
+                  <p class="text-xs text-muted-foreground">
+                    {{ tier.key === 'pro' ? 'For small teams' : 'For growing businesses' }}
+                  </p>
+                </div>
+                <UIcon
+                  v-if="selectedTier === tier.key"
+                  name="i-lucide-check-circle"
+                  class="w-6 h-6 text-primary"
+                />
+                <div
+                  v-else
+                  class="w-6 h-6 rounded-full border-2 border-gray-300 dark:border-gray-600"
+                />
+              </div>
+
+              <!-- Price -->
+              <div class="mb-4">
+                <div class="flex items-baseline gap-1">
+                  <span class="text-3xl font-bold">
+                    ${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).price.toFixed(2) }}
+                  </span>
+                  <span class="text-sm text-muted-foreground">
+                    / {{ selectedInterval === 'year' ? 'year' : 'month' }}
+                  </span>
+                </div>
+                <p class="text-xs text-muted-foreground mt-1">
+                  <span
+                    v-if="!hasUsedTrial"
+                    class="font-semibold text-green-600 dark:text-green-400"
+                  >{{ tier.trialDays }}-day free trial • </span>
+                  +${{ getTierForInterval(tier.key as Exclude<PlanKey, 'free'>, selectedInterval).seatPrice.toFixed(2) }}/seat
+                </p>
+              </div>
+
+              <!-- Features -->
+              <ul class="space-y-2">
+                <li
+                  v-for="(feature, i) in tier.features"
+                  :key="i"
+                  class="flex items-start gap-2 text-sm"
+                >
+                  <UIcon
+                    name="i-lucide-check"
+                    class="w-4 h-4 text-green-500 mt-0.5 shrink-0"
+                  />
+                  <span class="text-muted-foreground">{{ feature }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </template>
       </div>
     </template>
 
