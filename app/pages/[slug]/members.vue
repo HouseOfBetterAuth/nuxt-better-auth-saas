@@ -17,20 +17,16 @@ useHead({
 const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
 setHeaderTitle?.('Members')
 
-const { organization, useActiveOrganization, session, user, fetchSession, activeOrgExtras, refreshActiveOrganizationExtras } = useAuth()
+const { organization, useActiveOrganization, session, user, fetchSession } = useAuth()
+const { activeSub: billingSubscription, refresh: refreshBillingState } = usePaymentStatus()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
 const { copy } = useClipboard()
 
 const loading = ref(false)
 
-// Get subscription data from activeOrg
-const subscriptionData = computed(() => {
-  const subs = activeOrgExtras.value?.subscriptions
-  if (!subs || !Array.isArray(subs))
-    return null
-  return subs.find((s: any) => s.status === 'active' || s.status === 'trialing' || s.status === 'past_due')
-})
+// Get subscription data from usePaymentStatus() via billingSubscription
+const subscriptionData = computed(() => billingSubscription.value)
 
 // Check if current user is admin or owner
 const currentUserRole = computed(() => {
@@ -82,7 +78,7 @@ async function refreshPage() {
   loading.value = true
   try {
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
     toast.add({ title: 'Data refreshed', color: 'success' })
   } catch {
     toast.add({ title: 'Error refreshing data', color: 'error' })
@@ -111,7 +107,7 @@ async function updateMemberRole(memberId: string, newRole: string) {
 
     toast.add({ title: 'Role updated', color: 'success' })
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
   } catch (e: any) {
     toast.add({
       title: 'Error updating role',
@@ -142,7 +138,7 @@ async function removeMember(memberId: string) {
 
     toast.add({ title: 'Member removed', color: 'success' })
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
   } catch (e: any) {
     toast.add({
       title: 'Error removing member',
@@ -170,7 +166,7 @@ async function revokeInvitation(invitationId: string) {
 
     toast.add({ title: 'Invitation revoked', color: 'success' })
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
   } catch (e: any) {
     toast.add({
       title: 'Error revoking invitation',

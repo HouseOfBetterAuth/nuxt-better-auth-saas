@@ -8,7 +8,8 @@ import { getUserMenus } from '~/layouts/menu'
 const { t } = useI18n()
 const localePath = useLocalePath()
 const route = useRoute()
-const { user, useActiveOrganization, activeOrgExtras } = useAuth()
+const { user, useActiveOrganization } = useAuth()
+const { needsUpgrade } = usePaymentStatus()
 const activeOrg = useActiveOrganization()
 
 // Get organization slug from route
@@ -59,9 +60,6 @@ const currentUserRole = computed(() => {
   return member?.role || null
 })
 
-// Check if upgrade is needed
-const needsUpgrade = computed(() => activeOrgExtras.value?.needsUpgrade ?? false)
-
 // Get menu items for the drawer - reactive to org data changes
 const menus = computed(() => {
   const role = currentUserRole.value as 'owner' | 'admin' | 'member' | null | undefined
@@ -78,6 +76,8 @@ const menus = computed(() => {
         <USlideover
           side="left"
           :handle="false"
+          title="Settings navigation"
+          description="Choose a settings section."
         >
           <UButton
             icon="i-lucide-menu"

@@ -15,7 +15,7 @@ useHead({
 const setHeaderTitle = inject<(title: string | null) => void>('setHeaderTitle', null)
 setHeaderTitle?.('Billing')
 
-const { useActiveOrganization, subscription: stripeSubscription, client, activeOrgExtras, refreshActiveOrganizationExtras } = useAuth()
+const { useActiveOrganization, subscription: stripeSubscription, client } = useAuth()
 const activeOrg = useActiveOrganization()
 const router = useRouter()
 const toast = useToast()
@@ -33,8 +33,17 @@ const showTierChangePreview = ref(false)
 const pendingTierChange = ref<{ tierKey: Exclude<PlanKey, 'free'>, interval: PlanInterval } | null>(null)
 
 // Show upgrade modal if showUpgrade query param is present or if upgrade is needed
+const {
+  subscriptions,
+  activeSub,
+  hasUsedTrial: _hasUsedTrial,
+  isPaymentFailed,
+  refresh: refreshBillingState,
+  needsUpgrade
+} = usePaymentStatus()
+
 watchEffect(() => {
-  if (route.query.showUpgrade === 'true' || activeOrgExtras.value?.needsUpgrade) {
+  if (route.query.showUpgrade === 'true' || needsUpgrade.value) {
     showUpgradeModal.value = true
   }
 })
@@ -54,10 +63,10 @@ onMounted(async () => {
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       console.log(`Checking for subscription update... (Attempt ${attempts + 1}/${maxAttempts})`)
-      await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+      await refreshBillingState()
 
       // Check if we have a Pro subscription now
-      const currentSubs = activeOrgExtras.value?.subscriptions || []
+      const currentSubs = subscriptions.value || []
       const hasPro = currentSubs.some((s: any) => s.status === 'active' || s.status === 'trialing')
 
       if (hasPro) {
@@ -107,20 +116,13 @@ onMounted(async () => {
   }
 })
 
-// We don't need to fetch subscriptions here because:
-// 1. The layout already fetches 'get-full-organization' via SSR
-// 2. That endpoint includes subscriptions
-// 3. We just fixed useActiveOrganization() to use global state populated by the layout
-// So we can just read the data directly!
-const _subscriptions = computed(() => activeOrgExtras.value?.subscriptions || [])
+// Subscriptions are loaded via usePaymentStatus (backed by Better Auth's Stripe plugin)
+const _subscriptions = computed(() => subscriptions.value || [])
 
 // Refresh function for after mutations - re-fetches the whole org data
 const refresh = async () => {
-  await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+  await refreshBillingState()
 }
-
-// Use shared payment status composable for consistent behavior
-const { activeSub, hasUsedTrial: _hasUsedTrial, isPaymentFailed } = usePaymentStatus()
 
 // Sync billingInterval with active subscription
 watch(activeSub, (sub) => {
@@ -259,7 +261,7 @@ async function confirmTierChange() {
     }
 
     // Refresh to get updated subscription
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
   } catch (e: any) {
     console.error('Tier change error:', e)
     toast.add({

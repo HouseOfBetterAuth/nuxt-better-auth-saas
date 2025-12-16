@@ -31,9 +31,6 @@
         "errorDetails": "Error Details:",
         "genericError": "An unexpected error occurred. Please try again or contact support."
       },
-      "quota": {
-        "left": "{remaining} left"
-      },
       "legal": {
         "chatDisclaimer": "By messaging Quillio, an AI chatbot, you agree to our {terms} and have read our {privacy}.",
         "terms": "Terms",
@@ -74,9 +71,6 @@
         "status": "状态",
         "createdAt": "创建时间",
         "all": "全部"
-      },
-      "quota": {
-        "left": "剩余 {remaining}"
       },
       "legal": {
         "chatDisclaimer": "通过向 Quillio（AI 聊天机器人）发送消息，您同意我们的 {terms} 并已阅读我们的 {privacy}。",
@@ -119,9 +113,6 @@
         "createdAt": "作成日時",
         "all": "すべて"
       },
-      "quota": {
-        "left": "残り {remaining}"
-      },
       "legal": {
         "chatDisclaimer": "Quillio（AI チャットボット）にメッセージを送信することで、{terms} に同意し、{privacy} を読んだことになります。",
         "terms": "利用規約",
@@ -162,9 +153,6 @@
         "status": "Statut",
         "createdAt": "Créé le",
         "all": "Tout"
-      },
-      "quota": {
-        "left": "{remaining} restant"
       },
       "legal": {
         "chatDisclaimer": "En envoyant un message à Quillio, un chatbot IA, vous acceptez nos {terms} et avez lu notre {privacy}.",

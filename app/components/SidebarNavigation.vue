@@ -6,8 +6,6 @@ const router = useRouter()
 const route = useRoute()
 const localePath = useLocalePath()
 const toast = useToast()
-const { useActiveOrganization } = useAuth()
-const activeOrg = useActiveOrganization()
 
 // Content list
 const {
@@ -56,17 +54,6 @@ onMounted(() => {
   initializeConversations()
 })
 
-const routeSlug = computed(() => {
-  const param = route.params.slug
-  if (Array.isArray(param))
-    return param[0] || null
-  if (typeof param === 'string' && param.trim().length > 0 && param !== 't')
-    return param
-  return null
-})
-
-const resolvedOrgSlug = computed(() => routeSlug.value || activeOrg.value?.data?.slug || null)
-
 const normalizePathForMatch = (value: string) => {
   if (!value)
     return ''
@@ -85,14 +72,6 @@ const buildCandidates = (pattern: string) => {
   candidates.add(normalizePathForMatch(normalizedPattern))
   if (localizedPattern)
     candidates.add(normalizePathForMatch(localizedPattern))
-
-  if (routeSlug.value) {
-    const slugPattern = `/${routeSlug.value}${normalizedPattern}`
-    candidates.add(normalizePathForMatch(slugPattern))
-    const localizedSlugPattern = localePath(slugPattern)
-    if (localizedSlugPattern)
-      candidates.add(normalizePathForMatch(localizedSlugPattern))
-  }
 
   return Array.from(candidates).filter(Boolean)
 }
@@ -133,8 +112,7 @@ const isConversationActive = (id: string) => {
 }
 
 const resolveContentPath = (contentId?: string | null) => {
-  const slug = resolvedOrgSlug.value
-  const base = slug ? `/${slug}/content` : '/content'
+  const base = '/content'
   return contentId ? `${base}/${contentId}` : base
 }
 

@@ -50,17 +50,6 @@ declare module '@nuxt/schema' {
   }
 }
 
-const parseConversationQuotaLimit = (value: string | undefined, fallback: number) => {
-  const parsed = Number.parseInt(value ?? '', 10)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-const DEFAULT_CONVERSATION_QUOTA = {
-  anonymous: parseConversationQuotaLimit(process.env.NUXT_CONVERSATION_QUOTA_ANONYMOUS, 10),
-  verified: parseConversationQuotaLimit(process.env.NUXT_CONVERSATION_QUOTA_VERIFIED, 50),
-  paid: parseConversationQuotaLimit(process.env.NUXT_CONVERSATION_QUOTA_PAID, 0)
-}
-
 let runtimeConfigInstance: NitroRuntimeConfig | null = null
 let _resolvedFromNuxt = false
 let _resolvedFromEnv = false
@@ -150,7 +139,6 @@ export const generateRuntimeConfig = () => ({
     appNotifyEmail: process.env.NUXT_APP_NOTIFY_EMAIL,
     appContactEmail: process.env.NUXT_APP_CONTACT_EMAIL,
     payment: process.env.NUXT_PAYMENT || 'stripe',
-    conversationQuota: DEFAULT_CONVERSATION_QUOTA,
     auth: {
       redirectUserTo: '/',
       redirectGuestTo: '/signin'

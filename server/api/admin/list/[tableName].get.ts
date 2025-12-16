@@ -1,10 +1,9 @@
 import type { SQL } from 'drizzle-orm'
-import { and, asc, count, desc, getTableColumns, sql } from 'drizzle-orm'
+import { asc, count, desc, getTableColumns, sql } from 'drizzle-orm'
 import { PgTable } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import * as schema from '~~/server/db/schema'
 import { isValidTable } from '~~/server/utils/db'
-import { filterSchema, processFilters } from '~~/server/utils/query'
 
 const sortSchema = z.array(
   z.tuple([
@@ -16,26 +15,6 @@ const sortSchema = z.array(
 const querySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  filter: z.string()
-    .transform((str) => {
-      try {
-        const parsed = JSON.parse(str)
-        if (!Array.isArray(parsed))
-          return []
-
-        return parsed.reduce<z.infer<typeof filterSchema>>((validFilters, item) => {
-          const result = filterSchema.element.safeParse(item)
-          if (result.success) {
-            validFilters.push(result.data)
-          }
-          return validFilters
-        }, [])
-      }
-      catch {
-        return []
-      }
-    })
-    .optional(),
   sort: z.string()
     .transform((str) => {
       try {
@@ -117,18 +96,10 @@ export default eventHandler(async (event) => {
     with?: Record<string, any>
   } = {}
 
-  // Handle filters
-  if (query?.filter?.length) {
-    const filters = processFilters(query.filter, columns)
-    if (filters.length) {
-      queryOptions.where = filters.length === 1 ? filters[0] : and(...filters)
-    }
-  }
-
   // Cache busting
   if (query?.t) {
     const cacheBuster = sql`${query.t} = ${query.t}`
-    queryOptions.where = queryOptions.where ? and(queryOptions.where, cacheBuster) : cacheBuster
+    queryOptions.where = cacheBuster
   }
 
   // Handle sorting

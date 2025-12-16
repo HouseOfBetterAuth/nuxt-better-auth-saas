@@ -1,9 +1,8 @@
 import { createError } from 'h3'
 import { z } from 'zod'
 import { getOrCreateConversationForContent } from '~~/server/services/conversation'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateOptionalUUID } from '~~/server/utils/validation'
 
 /**

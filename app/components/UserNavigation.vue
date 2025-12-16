@@ -6,7 +6,8 @@ const emit = defineEmits<{
 }>()
 const localePath = useLocalePath()
 const { t } = useI18n()
-const { loggedIn, signOut, user, activeStripeSubscription } = useAuth()
+const { loggedIn, signOut, user } = useAuth()
+const { activeSub: activeStripeSubscription } = usePaymentStatus()
 
 // Get the tier display name from the subscription plan
 const tierBadgeLabel = computed(() => {

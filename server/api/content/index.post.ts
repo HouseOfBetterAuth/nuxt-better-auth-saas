@@ -2,7 +2,7 @@ import type { CreateContentRequestBody } from '~~/server/types/content'
 import { eq } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/db/schema'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import {
   CONTENT_STATUSES,
   CONTENT_TYPES,
@@ -12,7 +12,6 @@ import {
 } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
 import { createInternalError, createNotFoundError } from '~~/server/utils/errors'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateEnum, validateOptionalString, validateOptionalUUID, validateRequestBody, validateRequiredString } from '~~/server/utils/validation'
 
 /**
@@ -35,7 +34,6 @@ export default defineEventHandler(async (event) => {
 
   validateRequestBody(body)
 
-  // Conversation quota is checked at chat session creation, not here
   // Content creation can happen as part of existing conversations
 
   const title = validateRequiredString(body.title, 'title')

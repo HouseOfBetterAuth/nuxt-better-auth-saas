@@ -1,16 +1,14 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { H3Event } from 'h3'
 import type { User } from '~~/shared/utils/types'
-import { createHash } from 'node:crypto'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthMiddleware, getOAuthState } from 'better-auth/api'
 import { admin as adminPlugin, anonymous, apiKey, openAPI, organization } from 'better-auth/plugins'
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, sql } from 'drizzle-orm'
 import { appendResponseHeader, createError, getRequestHeaders } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/db/schema'
-import { ensureDefaultOrganizationForUser, setUserActiveOrganization } from '~~/server/services/organization/provision'
 import { ac, admin, member, owner } from '~~/shared/utils/permissions'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
@@ -37,31 +35,6 @@ const trustedOrigins = [
   'http://127.0.0.1:4000',
   runtimeConfig.public.baseURL
 ]
-
-const parseConversationQuotaValue = (value: unknown, fallback: number) => {
-  if (typeof value === 'number' && Number.isFinite(value))
-    return value
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10)
-    if (Number.isFinite(parsed))
-      return parsed
-  }
-  return fallback
-}
-
-const CONVERSATION_QUOTA_SETTINGS = {
-  anonymous: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.anonymous, 10),
-  verified: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.verified, 50),
-  paid: parseConversationQuotaValue((runtimeConfig.public as any)?.conversationQuota?.paid, 0)
-} as const
-const QUOTA_USAGE_THRESHOLDS = [0.5, 0.8, 1] as const
-const CONVERSATION_QUOTAS_DISABLED = process.env.NUXT_ENABLE_CONVERSATION_QUOTAS !== 'true'
-export const areConversationQuotasDisabled = () => CONVERSATION_QUOTAS_DISABLED
-
-const _getQuotaAdvisoryLockKeys = (organizationId: string): [number, number] => {
-  const hash = createHash('sha256').update(`quota:${organizationId}`).digest()
-  return [hash.readInt32BE(0), hash.readInt32BE(4)]
-}
 
 export const createBetterAuth = () => betterAuth({
   baseURL: `${runtimeConfig.public.baseURL}/api/auth`,
@@ -176,7 +149,7 @@ export const createBetterAuth = () => betterAuth({
           // This ensures they always have a valid organization context
           if (user.isAnonymous) {
             const db = getDB()
-            let anonymousOrgId: string | null = null
+            let _anonymousOrgId: string | null = null
             try {
               await db.transaction(async (tx) => {
                 const [newOrg] = await tx
@@ -196,7 +169,7 @@ export const createBetterAuth = () => betterAuth({
                 if (!newOrg)
                   return
 
-                anonymousOrgId = newOrg.id
+                _anonymousOrgId = newOrg.id
                 await tx.insert(schema.member).values({
                   id: uuidv7(),
                   userId: user.id,
@@ -212,12 +185,6 @@ export const createBetterAuth = () => betterAuth({
               // Rethrow to prevent user from being created without a valid organization
               throw new Error('Failed to provision anonymous workspace', { cause: error })
             }
-
-            if (anonymousOrgId) {
-              await setUserActiveOrganization(user.id, anonymousOrgId)
-            }
-          } else {
-            await ensureDefaultOrganizationForUser(user)
           }
         }
       },
@@ -335,6 +302,34 @@ export const createBetterAuth = () => betterAuth({
           }
           // Return undefined to continue with default behavior
           return undefined
+        }
+      }
+    },
+    session: {
+      create: {
+        before: async (session) => {
+          if (!session?.userId || session.activeOrganizationId) {
+            return
+          }
+
+          const db = getDB()
+          const [membership] = await db
+            .select({ organizationId: schema.member.organizationId })
+            .from(schema.member)
+            .where(eq(schema.member.userId, session.userId))
+            .orderBy(asc(schema.member.createdAt))
+            .limit(1)
+
+          if (!membership?.organizationId) {
+            return
+          }
+
+          return {
+            data: {
+              ...session,
+              activeOrganizationId: membership.organizationId
+            }
+          }
         }
       }
     },
@@ -690,97 +685,6 @@ export const createBetterAuth = () => betterAuth({
           }
         }
       }
-
-      const sessionUser = ctx.context.newSession?.user || ctx.context.session?.user
-      const shouldEnsureOrganization = sessionUser && !sessionUser.isAnonymous && (
-        Boolean(ctx.context.newSession)
-        || ctx.path.startsWith('/organization/delete')
-        || ctx.path.startsWith('/organization/leave')
-      )
-
-      if (shouldEnsureOrganization) {
-        // For sign-in operations, make organization provisioning non-blocking to prevent
-        // request timeouts if database operations hang. The user doesn't need to wait
-        // for organization provisioning to complete before they can sign in.
-        const isSignInOperation = ['/sign-in/email', '/sign-up/email'].includes(ctx.path)
-        // If the user was previously an anonymous user in this browser/session and is now
-        // a real user (new session), transfer their anonymous organization membership to the
-        // new user so that conversation migration can occur.
-        const previousSessionUser = ctx.context.session?.user
-        const newSessionUser = ctx.context.newSession?.user
-        const isAnonymousUpgrade = Boolean(previousSessionUser?.id)
-          && Boolean(newSessionUser?.id)
-          && Boolean(previousSessionUser?.isAnonymous)
-          && !newSessionUser?.isAnonymous
-          && previousSessionUser?.id !== newSessionUser?.id
-
-        if (isAnonymousUpgrade) {
-          const db = getDB()
-          try {
-            await db.transaction(async (tx) => {
-              const previousUserId = previousSessionUser!.id
-              const newUserId = newSessionUser!.id
-
-              // Find anonymous org memberships on the previous anonymous user.
-              const anonMemberships = await tx
-                .select({ organizationId: schema.member.organizationId })
-                .from(schema.member)
-                .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
-                .where(and(
-                  eq(schema.member.userId, previousUserId),
-                  eq(schema.organization.isAnonymous, true)
-                ))
-
-              const anonOrgIds = Array.from(
-                new Set(anonMemberships.map(m => m.organizationId).filter(Boolean))
-              )
-
-              if (anonOrgIds.length === 0) {
-                return
-              }
-
-              // Avoid unique constraint collisions (member_unique_idx on orgId+userId)
-              // by removing any existing memberships for the new user on these orgs.
-              await tx
-                .delete(schema.member)
-                .where(and(
-                  eq(schema.member.userId, newUserId),
-                  inArray(schema.member.organizationId, anonOrgIds)
-                ))
-
-              // Transfer the anon memberships to the new user.
-              await tx
-                .update(schema.member)
-                .set({ userId: newUserId })
-                .where(and(
-                  eq(schema.member.userId, previousUserId),
-                  inArray(schema.member.organizationId, anonOrgIds)
-                ))
-
-              // Set active org to the first anonymous org (best-effort).
-              // Use the transaction so this participates in the same transaction
-              await setUserActiveOrganization(newUserId, anonOrgIds[0], tx)
-            })
-          } catch (error) {
-            console.error('[Auth] Failed to transfer anonymous org membership during upgrade:', error)
-          }
-        }
-
-        // For sign-in operations, make organization provisioning non-blocking
-        // to prevent request timeouts. For other operations, keep it blocking.
-        if (isSignInOperation) {
-          // Fire-and-forget: don't await to prevent blocking the response
-          // sessionUser is guaranteed to be defined here due to the outer if condition
-          ensureDefaultOrganizationForUser(sessionUser!).catch((error) => {
-            console.error('[Auth] Failed to ensure default organization for user (non-blocking):', error)
-          })
-        } else {
-          // For non-sign-in operations (like org delete/leave), keep it blocking
-          // as these operations may depend on the organization state
-          // sessionUser is guaranteed to be defined here due to the outer if condition
-          await ensureDefaultOrganizationForUser(sessionUser!)
-        }
-      }
     })
   },
   plugins: [
@@ -978,6 +882,13 @@ export const getAuthSession = async (event: H3Event) => {
   return session
 }
 
+const getSessionOrganizationId = (session: any): string | null => {
+  return session?.session?.activeOrganizationId
+    ?? session?.data?.session?.activeOrganizationId
+    ?? session?.activeOrganizationId
+    ?? null
+}
+
 export const requireAuth = async (event: H3Event, options: RequireAuthOptions = {}) => {
   if (event.context.user) {
     return event.context.user as User
@@ -985,6 +896,11 @@ export const requireAuth = async (event: H3Event, options: RequireAuthOptions = 
 
   const session = await getAuthSession(event)
   if (session?.user) {
+    event.context.authSession = session
+    const organizationId = getSessionOrganizationId(session)
+    if (organizationId) {
+      event.context.organizationId = organizationId
+    }
     event.context.user = session.user
     return session.user as User
   }
@@ -1003,6 +919,28 @@ export const requireAuth = async (event: H3Event, options: RequireAuthOptions = 
   })
 }
 
+export const requireActiveOrganization = async (
+  event: H3Event
+) => {
+  const cachedOrgId = event.context.organizationId
+  if (typeof cachedOrgId === 'string' && cachedOrgId.length > 0) {
+    return { organizationId: cachedOrgId }
+  }
+
+  const session = event.context.authSession ?? await getAuthSession(event)
+  const organizationId = getSessionOrganizationId(session)
+
+  if (!organizationId) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'No active organization found in session'
+    })
+  }
+
+  event.context.organizationId = organizationId
+  return { organizationId }
+}
+
 export const requireAdmin = async (event: H3Event) => {
   const user = await requireAuth(event)
   if (user.role !== 'admin') {
@@ -1018,7 +956,7 @@ export const requireAdmin = async (event: H3Event) => {
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'] as const
 
-const getOrganizationSubscriptionStatus = async (db: NodePgDatabase<typeof schema>, organizationId: string) => {
+const _getOrganizationSubscriptionStatus = async (db: NodePgDatabase<typeof schema>, organizationId: string) => {
   const [activeSubscription] = await db
     .select({
       plan: schema.subscription.plan,
@@ -1034,468 +972,5 @@ const getOrganizationSubscriptionStatus = async (db: NodePgDatabase<typeof schem
   return {
     hasActiveSubscription: Boolean(activeSubscription),
     planLabel: activeSubscription ? 'Pro plan' : 'Starter plan'
-  }
-}
-
-const resolveConversationQuotaProfile = (user: User | null, hasActiveSubscription: boolean) => {
-  if (hasActiveSubscription) {
-    return { profile: 'paid' as const, label: 'Pro plan' }
-  }
-  if (!user || user.isAnonymous || !user.emailVerified) {
-    return { profile: 'anonymous' as const, label: 'Guest access' }
-  }
-  return { profile: 'verified' as const, label: 'Starter plan' }
-}
-
-const logQuotaUsageSnapshot = async (
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  quota: ConversationQuotaUsageResult
-) => {
-  const thresholdsToLog: Array<{ threshold: number, ratio: number, used: number, limit: number }> = []
-  try {
-    const [last] = await db
-      .select()
-      .from(schema.quotaUsageLog)
-      .where(eq(schema.quotaUsageLog.organizationId, organizationId))
-      .orderBy(desc(schema.quotaUsageLog.createdAt))
-      .limit(1)
-
-    const hasMeaningfulChange = !last ||
-      last.used !== quota.used ||
-      (last.quotaLimit ?? null) !== (quota.limit ?? null) ||
-      last.unlimited !== Boolean(quota.unlimited)
-
-    if (!hasMeaningfulChange) {
-      return
-    }
-
-    await db.insert(schema.quotaUsageLog).values({
-      organizationId,
-      quotaLimit: quota.limit ?? null,
-      used: quota.used,
-      remaining: quota.remaining ?? (quota.limit !== null ? Math.max(0, quota.limit - quota.used) : null),
-      profile: quota.profile,
-      label: quota.label,
-      unlimited: Boolean(quota.unlimited)
-    })
-
-    if (quota.limit && quota.limit > 0) {
-      const ratio = quota.used / quota.limit
-      const lastRatio = last && last.quotaLimit ? (last.used / last.quotaLimit) : 0
-      for (const threshold of QUOTA_USAGE_THRESHOLDS) {
-        if (ratio >= threshold && lastRatio < threshold) {
-          thresholdsToLog.push({
-            threshold,
-            ratio,
-            used: quota.used,
-            limit: quota.limit
-          })
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Unable to log quota usage snapshot', error)
-  }
-
-  for (const event of thresholdsToLog) {
-    await logAuditEvent({
-      category: 'quota',
-      action: `threshold_${Math.round(event.threshold * 100)}`,
-      targetType: 'organization',
-      targetId: organizationId,
-      details: `Usage at ${Math.round(event.ratio * 100)}% (${event.used}/${event.limit}).`
-    })
-  }
-}
-
-export interface ConversationQuotaUsageResult {
-  limit: number | null
-  used: number
-  remaining: number | null
-  label: string
-  unlimited: boolean
-  profile: 'anonymous' | 'verified' | 'paid'
-}
-
-/**
- * Get device fingerprint for anonymous quota tracking
- * This prevents quota reset when cookies are cleared
- *
- * Uses Better Auth session data when available, falls back to request headers.
- * Follows Better Auth's IP address detection patterns.
- */
-export const getDeviceFingerprint = async (
-  db: NodePgDatabase<typeof schema>,
-  event?: H3Event | null,
-  userId?: string | null
-): Promise<string | null> => {
-  if (!event)
-    return null
-
-  try {
-    let ipAddress = ''
-    let userAgent = ''
-
-    // Try to get IP/User-Agent from current session if available
-    // This uses Better Auth's stored session data which is more reliable
-    if (userId) {
-      try {
-        const [currentSession] = await db
-          .select({
-            ipAddress: schema.session.ipAddress,
-            userAgent: schema.session.userAgent
-          })
-          .from(schema.session)
-          .where(
-            and(
-              eq(schema.session.userId, userId),
-              sql`${schema.session.expiresAt} > NOW()`
-            )
-          )
-          .orderBy(desc(schema.session.createdAt))
-          .limit(1)
-
-        if (currentSession?.ipAddress)
-          ipAddress = currentSession.ipAddress
-
-        if (currentSession?.userAgent)
-          userAgent = currentSession.userAgent
-      } catch {
-        // Fall through to request headers
-      }
-    }
-
-    // Fall back to request headers if session data not available
-    // This handles cases where cookies are cleared but we still need device tracking
-    if (!ipAddress || !userAgent) {
-      const headers = getRequestHeaders(event)
-
-      // Better Auth uses X-Forwarded-For by default, but can be configured
-      // We follow the same pattern for consistency
-      // Handle both string and array formats (some proxies return arrays)
-      if (!ipAddress) {
-        const forwardedFor = headers['x-forwarded-for']
-        const forwardedForStr = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor
-        ipAddress = forwardedForStr?.split(',')[0]?.trim()
-          || headers['x-real-ip']
-          || headers['cf-connecting-ip']
-          || ''
-      }
-
-      if (!userAgent)
-        userAgent = headers['user-agent'] || ''
-    }
-
-    // Need at least one identifier to create fingerprint
-    if (!ipAddress && !userAgent)
-      return null
-
-    // Create a hash of IP + User-Agent for device identification
-    // Using SHA-256 for security (same as Better Auth uses for signing)
-    const fingerprint = `${ipAddress}|${userAgent}`
-    const hash = createHash('sha256').update(fingerprint).digest('hex')
-    return hash
-  } catch {
-    return null
-  }
-}
-
-/**
- * Ensure device fingerprint is stored in anonymous organization metadata
- * This allows quota tracking across cookie clears
- *
- * Follows Better Auth patterns by using session data when available
- */
-const _ensureDeviceFingerprintInOrg = async (
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  event?: H3Event | null,
-  userId?: string | null
-): Promise<void> => {
-  if (!event)
-    return
-
-  const deviceFingerprint = await getDeviceFingerprint(db, event, userId)
-  if (!deviceFingerprint)
-    return
-
-  try {
-    // Check if organization is anonymous
-    // Only update if deviceFingerprint not already set
-    const [org] = await db
-      .select({
-        id: schema.organization.id,
-        isAnonymous: schema.organization.isAnonymous,
-        metadata: schema.organization.metadata,
-        deviceFingerprint: schema.organization.deviceFingerprint
-      })
-      .from(schema.organization)
-      .where(eq(schema.organization.id, organizationId))
-      .limit(1)
-
-    if (!org || !org.isAnonymous)
-      return
-
-    let metadata: Record<string, any> = {}
-    if (org.metadata) {
-      try {
-        const parsed = JSON.parse(org.metadata)
-        if (parsed && typeof parsed === 'object') {
-          metadata = parsed as Record<string, any>
-        } else {
-          metadata = {}
-        }
-      } catch {
-        metadata = {}
-      }
-    }
-
-    const updates: Record<string, any> = {}
-
-    if (!metadata.deviceFingerprint) {
-      metadata.deviceFingerprint = deviceFingerprint
-      updates.metadata = JSON.stringify(metadata)
-    }
-
-    if (!org.deviceFingerprint) {
-      updates.deviceFingerprint = deviceFingerprint
-    }
-
-    if (Object.keys(updates).length === 0)
-      return
-
-    await db
-      .update(schema.organization)
-      .set(updates)
-      .where(eq(schema.organization.id, organizationId))
-  } catch (error) {
-    // Silently fail - device fingerprint is optional
-    console.error('Failed to store device fingerprint:', error)
-  }
-}
-
-const buildDeviceFingerprintSearchCondition = (fingerprint: string) => {
-  // Metadata column is stored as text and may contain legacy non-JSON values.
-  // Use safe substring matching instead of JSON casting to avoid runtime errors.
-  const doubleQuotedPattern = `%\"deviceFingerprint\":\"${fingerprint}\"%`
-  const singleQuotedPattern = `%\'deviceFingerprint\':\'${fingerprint}\'%`
-  return sql`
-    (
-      ${schema.organization.metadata} IS NOT NULL
-      AND (
-        ${schema.organization.metadata} LIKE ${doubleQuotedPattern}
-        OR ${schema.organization.metadata} LIKE ${singleQuotedPattern}
-      )
-    )
-  `
-}
-
-const findAnonymousOrganizationIdsForFingerprint = async (
-  db: NodePgDatabase<typeof schema>,
-  fingerprint: string
-) => {
-  if (!fingerprint)
-    return [] as string[]
-
-  const directMatches = await db
-    .select({ id: schema.organization.id })
-    .from(schema.organization)
-    .where(and(
-      eq(schema.organization.deviceFingerprint, fingerprint),
-      eq(schema.organization.isAnonymous, true)
-    ))
-
-  if (directMatches.length > 0)
-    return directMatches.map(org => org.id)
-
-  const legacyMatches = await db
-    .select({ id: schema.organization.id })
-    .from(schema.organization)
-    .where(and(
-      buildDeviceFingerprintSearchCondition(fingerprint),
-      eq(schema.organization.isAnonymous, true)
-    ))
-
-  if (legacyMatches.length === 0)
-    return []
-
-  const legacyIds = legacyMatches.map(org => org.id)
-
-  try {
-    await db
-      .update(schema.organization)
-      .set({ deviceFingerprint: fingerprint })
-      .where(inArray(schema.organization.id, legacyIds))
-  } catch (error) {
-    console.error('Failed to backfill device fingerprint column:', error)
-  }
-
-  return legacyIds
-}
-
-export const getConversationQuotaUsage = async (
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  user: User | null,
-  event?: H3Event | null
-): Promise<ConversationQuotaUsageResult> => {
-  if (CONVERSATION_QUOTAS_DISABLED) {
-    return {
-      limit: null,
-      used: 0,
-      remaining: null,
-      label: 'Unlimited access',
-      unlimited: true,
-      profile: user?.isAnonymous ? 'anonymous' : 'paid'
-    }
-  }
-  // Run subscription check and conversation count in parallel for non-anonymous users
-  const isAnonymous = user?.isAnonymous ?? false
-
-  // For anonymous users, we need to do device fingerprint lookup first
-  if (isAnonymous && event) {
-    const deviceFingerprint = await getDeviceFingerprint(db, event, user?.id || null)
-    if (deviceFingerprint) {
-      const orgIds = await findAnonymousOrganizationIdsForFingerprint(db, deviceFingerprint)
-
-      if (orgIds.length > 0) {
-        // Count conversations across all anonymous orgs from this device
-        const [aggregateResult] = await db
-          .select({ total: count() })
-          .from(schema.conversation)
-          .where(and(
-            inArray(schema.conversation.organizationId, orgIds),
-            sql`${schema.conversation.status} != 'archived'`,
-            sql`${schema.conversation.status} != 'completed'`
-          ))
-
-        const used = Number(aggregateResult?.total ?? 0) || 0
-        const anonymousLimit = CONVERSATION_QUOTA_SETTINGS.anonymous
-        const quota = {
-          limit: anonymousLimit,
-          used,
-          remaining: Math.max(0, anonymousLimit - used),
-          label: 'Guest access',
-          unlimited: false,
-          profile: 'anonymous' as const
-        }
-        logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
-          console.error('[Quota] Failed to log snapshot:', err)
-        })
-        return quota
-      }
-    }
-    // Fallback to current organization
-    const [countResult] = await db
-      .select({ total: count() })
-      .from(schema.conversation)
-      .where(and(
-        eq(schema.conversation.organizationId, organizationId),
-        sql`${schema.conversation.status} != 'archived'`,
-        sql`${schema.conversation.status} != 'completed'`
-      ))
-    const used = Number(countResult?.total ?? 0) || 0
-    const anonymousLimit = CONVERSATION_QUOTA_SETTINGS.anonymous
-    const quota = {
-      limit: anonymousLimit,
-      used,
-      remaining: Math.max(0, anonymousLimit - used),
-      label: 'Guest access',
-      unlimited: false,
-      profile: 'anonymous' as const
-    }
-    logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
-      console.error('[Quota] Failed to log snapshot:', err)
-    })
-    return quota
-  }
-
-  // For signed-in users, run subscription check and conversation count in parallel
-  const [
-    subscriptionStatus,
-    countResult
-  ] = await Promise.all([
-    getOrganizationSubscriptionStatus(db, organizationId),
-    db
-      .select({ total: count() })
-      .from(schema.conversation)
-      .where(and(
-        eq(schema.conversation.organizationId, organizationId),
-        sql`${schema.conversation.status} != 'archived'`,
-        sql`${schema.conversation.status} != 'completed'`
-      ))
-  ])
-
-  const { hasActiveSubscription, planLabel } = subscriptionStatus
-  const { profile, label } = resolveConversationQuotaProfile(user, hasActiveSubscription)
-  const configuredLimit = CONVERSATION_QUOTA_SETTINGS[profile]
-  const unlimited = profile === 'paid' && configuredLimit <= 0
-  const used = Number(countResult[0]?.total ?? 0) || 0
-
-  if (unlimited) {
-    const quota = {
-      limit: null,
-      used,
-      remaining: null,
-      label: planLabel,
-      unlimited: true,
-      profile
-    }
-    // Fire and forget - don't block response for logging
-    logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
-      console.error('[Quota] Failed to log snapshot:', err)
-    })
-    return quota
-  }
-
-  const limit = Math.max(0, configuredLimit)
-  const quota = {
-    limit,
-    used,
-    remaining: Math.max(0, limit - used),
-    label,
-    unlimited: false,
-    profile
-  }
-  // Fire and forget - don't block response for logging
-  logQuotaUsageSnapshot(db, organizationId, quota).catch((err) => {
-    console.error('[Quota] Failed to log snapshot:', err)
-  })
-  return quota
-}
-
-export const ensureConversationCapacity = async (
-  db: NodePgDatabase<typeof schema>,
-  organizationId: string,
-  user: User,
-  event?: H3Event | null
-): Promise<{ limit: number, used: number, remaining: number } | null> => {
-  const quota = await getConversationQuotaUsage(db, organizationId, user, event)
-  if (!quota || quota.unlimited || quota.limit === null) {
-    return null
-  }
-
-  if (quota.used >= quota.limit) {
-    const statusMessage = quota.profile === 'anonymous'
-      ? 'Conversation limit reached. Please create an account to continue chatting.'
-      : 'Conversation limit reached. Please upgrade your plan to continue chatting.'
-    throw createError({
-      statusCode: 403,
-      statusMessage,
-      data: {
-        limitReached: true,
-        anonLimitReached: quota.profile === 'anonymous',
-        limit: quota.limit,
-        used: quota.used,
-        remaining: 0
-      }
-    })
-  }
-
-  return {
-    limit: quota.limit,
-    used: quota.used,
-    remaining: quota.remaining ?? Math.max(0, quota.limit - quota.used)
   }
 }

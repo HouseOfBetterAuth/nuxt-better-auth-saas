@@ -1,11 +1,10 @@
 import type { IngestYouTubeVideoAsSourceContentRequestBody } from '~~/server/types/sourceContent'
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
 import { useDB } from '~~/server/utils/db'
 import { createServiceUnavailableError, createValidationError } from '~~/server/utils/errors'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { validateOptionalString, validateRequestBody, validateRequiredString } from '~~/server/utils/validation'
 

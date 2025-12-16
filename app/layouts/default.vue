@@ -61,15 +61,6 @@ provide('setHeaderTitle', (title: string | null) => {
 // Determine if we should show workspace header
 const showWorkspaceHeader = computed(() => workspaceHeader.value !== null || workspaceHeaderLoading.value)
 
-const routeSlug = computed(() => {
-  const param = route.params.slug
-  if (Array.isArray(param))
-    return param[0] || null
-  if (typeof param === 'string' && param.trim().length > 0 && param !== 't')
-    return param
-  return null
-})
-
 const normalizePathForMatch = (value: string) => {
   if (!value)
     return ''
@@ -88,14 +79,6 @@ const buildRouteCandidates = (pattern: string) => {
   candidates.add(normalizePathForMatch(normalizedPattern))
   if (localizedPattern)
     candidates.add(normalizePathForMatch(localizedPattern))
-
-  if (routeSlug.value) {
-    const slugPattern = `/${routeSlug.value}${normalizedPattern}`
-    candidates.add(normalizePathForMatch(slugPattern))
-    const localizedSlugPattern = localePath(slugPattern)
-    if (localizedSlugPattern)
-      candidates.add(normalizePathForMatch(localizedSlugPattern))
-  }
 
   return Array.from(candidates).filter(Boolean)
 }
@@ -167,7 +150,8 @@ const primaryActionColor = computed(() => {
       v-model:open="mobileSidebarOpen"
       side="left"
       :handle="false"
-      aria-label="Mobile navigation"
+      title="Navigation menu"
+      description="Browse workspace sections and account options."
     >
       <template #content>
         <div class="w-[80vw] max-w-sm h-full flex flex-col bg-white dark:bg-gray-900 text-left">

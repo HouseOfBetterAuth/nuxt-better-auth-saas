@@ -2,9 +2,8 @@ import { and, desc, eq, lt, or, sql } from 'drizzle-orm'
 import { createError, getValidatedQuery } from 'h3'
 import { z } from 'zod'
 import * as schema from '~~/server/db/schema'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 
 const querySchema = z.object({
   cursor: z.string().optional(),
@@ -136,9 +135,9 @@ export default defineEventHandler(async (event) => {
       cursorDate = parsedDate
     }
 
-    const filters = [eq(schema.conversation.organizationId, organizationId)]
+    const whereClauses = [eq(schema.conversation.organizationId, organizationId)]
     if (cursorDate && cursorId) {
-      filters.push(or(
+      whereClauses.push(or(
         lt(schema.conversation.updatedAt, cursorDate),
         and(
           eq(schema.conversation.updatedAt, cursorDate),
@@ -147,7 +146,7 @@ export default defineEventHandler(async (event) => {
       ))
     }
 
-    const whereClause = filters.length === 1 ? filters[0] : and(...filters)
+    const whereClause = whereClauses.length === 1 ? whereClauses[0] : and(...whereClauses)
     console.log('[Conversations API] Executing database query')
 
     const results = await db

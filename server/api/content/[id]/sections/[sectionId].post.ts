@@ -1,9 +1,8 @@
 import type { UpdateContentSectionWithAIRequestBody } from '~~/server/types/content'
 import { getRouterParams, readBody } from 'h3'
 import { updateContentSection } from '~~/server/services/content/generation'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateNumber, validateRequestBody, validateRequiredString, validateUUID } from '~~/server/utils/validation'
 
 /**

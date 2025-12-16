@@ -1,8 +1,7 @@
 import { getRouterParams, readBody } from 'h3'
 import { refreshContentVersionMetadata } from '~~/server/services/content/generation'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 interface ReEnrichContentRequestBody {

@@ -1,8 +1,7 @@
 import { createError, getRouterParams } from 'h3'
 import { getConversationById } from '~~/server/services/conversation'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 /**

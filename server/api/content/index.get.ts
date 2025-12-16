@@ -2,9 +2,8 @@ import { and, desc, eq, lt, or } from 'drizzle-orm'
 import { createError, getValidatedQuery } from 'h3'
 import { z } from 'zod'
 import * as schema from '~~/server/db/schema'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 
 const querySchema = z.object({
   cursor: z.string().optional(),
@@ -134,9 +133,9 @@ export default defineEventHandler(async (event) => {
       cursorDate = parsedDate
     }
 
-    const filters = [eq(schema.content.organizationId, organizationId)]
+    const whereClauses = [eq(schema.content.organizationId, organizationId)]
     if (cursorDate && cursorId) {
-      filters.push(or(
+      whereClauses.push(or(
         lt(schema.content.updatedAt, cursorDate),
         and(
           eq(schema.content.updatedAt, cursorDate),
@@ -145,7 +144,7 @@ export default defineEventHandler(async (event) => {
       ))
     }
 
-    const whereClause = filters.length === 1 ? filters[0] : and(...filters)
+    const whereClause = whereClauses.length === 1 ? whereClauses[0] : and(...whereClauses)
 
     const results = await db
       .select({

@@ -75,13 +75,6 @@ const contentListPath = computed(() => {
   return slug ? `/${slug}/content` : '/content'
 })
 
-const lineRange = computed(() => parseLinesQuery(route.query.lines))
-const contentLineRangeState = useState<{ start: number, end: number } | null>('content/highlightedLineRange', () => null)
-
-watch(lineRange, (range) => {
-  contentLineRangeState.value = range
-}, { immediate: true })
-
 // Set workspace header state
 const workspaceHeader = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
 const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () => true)
@@ -112,7 +105,6 @@ setShellHeader()
 const { data: contentData, pending, error } = useFetch(() => `/api/content/${contentId.value}`, {
   key: computed(() => `content-${contentId.value}`),
   lazy: true,
-  server: false,
   default: () => null
 })
 
@@ -192,6 +184,21 @@ const structuredDataSnippet = computed(() => {
 const schemaErrors = computed(() => contentEntry.value?.schemaValidation?.errors || [])
 const schemaWarnings = computed(() => contentEntry.value?.schemaValidation?.warnings || [])
 
+const isMounted = ref(false)
+
+const setOnBackCallback = () => {
+  if (workspaceHeader.value) {
+    workspaceHeader.value.onBack = () => {
+      router.push(localePath(contentListPath.value))
+    }
+  }
+}
+
+onMounted(() => {
+  isMounted.value = true
+  setOnBackCallback()
+})
+
 watch(contentEntry, (entry) => {
   if (entry) {
     const updatedAtLabel = formatDateRelative(entry.updatedAt, { includeTime: true })
@@ -206,15 +213,17 @@ watch(contentEntry, (entry) => {
       deletions: entry.deletions ?? 0,
       contentId: entry.id,
       showBackButton: true,
-      onBack: () => {
-        router.push(localePath(contentListPath.value))
-      },
+      onBack: null,
       onArchive: null,
       onShare: null,
       onPrimaryAction: null,
       primaryActionLabel: '',
       primaryActionColor: '',
       primaryActionDisabled: false
+    }
+
+    if (isMounted.value) {
+      setOnBackCallback()
     }
 
     workspaceHeaderLoading.value = false
@@ -226,31 +235,6 @@ watchEffect(() => {
     workspaceHeaderLoading.value = pending.value
   }
 })
-
-function parseLinesQuery(lines: string | string[] | null | undefined): { start: number, end: number } | null {
-  if (!lines)
-    return null
-
-  const raw = Array.isArray(lines) ? lines[0] : lines
-  if (!raw)
-    return null
-
-  const match = raw.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/)
-  if (!match)
-    return null
-
-  const start = Number.parseInt(match[1], 10)
-  const end = Number.parseInt(match[2], 10)
-
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0)
-    return null
-
-  if (end < start) {
-    return { start: end, end: start }
-  }
-
-  return { start, end }
-}
 </script>
 
 <template>
@@ -284,8 +268,8 @@ function parseLinesQuery(lines: string | string[] | null | undefined): { start: 
           <template #description>
             <ul class="list-disc list-inside space-y-1 text-sm">
               <li
-                v-for="(issue, index) in schemaErrors"
-                :key="`schema-error-${index}-${issue}`"
+                v-for="(issue, i) in schemaErrors"
+                :key="`schema-error-${issue}-${i}`"
               >
                 {{ issue }}
               </li>
@@ -302,8 +286,8 @@ function parseLinesQuery(lines: string | string[] | null | undefined): { start: 
           <template #description>
             <ul class="list-disc list-inside space-y-1 text-sm">
               <li
-                v-for="(issue, index) in schemaWarnings"
-                :key="`schema-warning-${index}-${issue}`"
+                v-for="(issue, i) in schemaWarnings"
+                :key="`schema-warning-${issue}-${i}`"
               >
                 {{ issue }}
               </li>

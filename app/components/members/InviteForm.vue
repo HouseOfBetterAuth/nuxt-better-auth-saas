@@ -17,10 +17,14 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-const { organization, useActiveOrganization, fetchSession, refreshActiveOrganizationExtras, activeStripeSubscription, user, client } = useAuth()
+const { organization, useActiveOrganization, fetchSession, user, client } = useAuth()
+const {
+  activeSub: activeStripeSubscription,
+  refresh: refreshBillingState,
+  hasUsedTrial
+} = usePaymentStatus()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
-const { hasUsedTrial } = usePaymentStatus()
 
 const inviteEmail = ref('')
 const inviteRole = ref('member')
@@ -132,7 +136,7 @@ async function inviteMember() {
     toast.add({ title: 'Invitation sent', color: 'success' })
     inviteEmail.value = ''
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
     emit('refresh')
   } catch (e: any) {
     console.error('InviteMember Error:', e)
@@ -220,7 +224,7 @@ async function confirmAddSeat() {
 
     showAddSeatModal.value = false
     await fetchSession()
-    await refreshActiveOrganizationExtras(activeOrg.value?.data?.id)
+    await refreshBillingState()
     emit('refresh')
   } catch (e: any) {
     console.error(e)
