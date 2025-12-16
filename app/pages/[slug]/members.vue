@@ -25,7 +25,7 @@ const { copy } = useClipboard()
 
 const loading = ref(false)
 
-// Get subscription data from activeOrg
+// Get subscription data from usePaymentStatus() via billingSubscription
 const subscriptionData = computed(() => billingSubscription.value)
 
 // Check if current user is admin or owner

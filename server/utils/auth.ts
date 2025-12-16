@@ -919,15 +919,8 @@ export const requireAuth = async (event: H3Event, options: RequireAuthOptions = 
   })
 }
 
-interface RequireActiveOrganizationOptions {
-  requireRoles?: Array<'owner' | 'admin' | 'member'>
-  isAnonymousUser?: boolean
-}
-
 export const requireActiveOrganization = async (
-  event: H3Event,
-  _userId: string,
-  _options?: RequireActiveOrganizationOptions
+  event: H3Event
 ) => {
   const cachedOrgId = event.context.organizationId
   if (typeof cachedOrgId === 'string' && cachedOrgId.length > 0) {

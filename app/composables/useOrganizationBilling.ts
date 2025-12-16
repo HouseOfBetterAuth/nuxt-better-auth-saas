@@ -75,7 +75,12 @@ export function useOrganizationBilling() {
       return state.value
     } catch (error) {
       console.error('[useOrganizationBilling] Failed to refresh billing data', error)
-      state.value.loading = false
+      state.value = {
+        subscriptions: [],
+        ownershipInfo: null,
+        lastOrgId: organizationId,
+        loading: false
+      }
       throw error
     }
   }

@@ -97,8 +97,7 @@ const shouldShowChat = computed(() => {
 
 // Determine if we should show sidebar - on conversations and content routes
 const shouldShowSidebar = computed(() => {
-  const path = normalizePathForMatch(route.path)
-  return isRouteMatch('/conversations') || path.includes('/content/')
+  return isRouteMatch('/conversations') || isRouteMatch('/content')
 })
 
 // Determine if we should use full-width layout (conversations and content pages)

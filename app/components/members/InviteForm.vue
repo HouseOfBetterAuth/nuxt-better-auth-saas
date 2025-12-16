@@ -18,10 +18,13 @@ const emit = defineEmits<{
 }>()
 
 const { organization, useActiveOrganization, fetchSession, user, client } = useAuth()
-const { activeSub: activeStripeSubscription, refresh: refreshBillingState } = usePaymentStatus()
+const {
+  activeSub: activeStripeSubscription,
+  refresh: refreshBillingState,
+  hasUsedTrial
+} = usePaymentStatus()
 const activeOrg = useActiveOrganization()
 const toast = useToast()
-const { hasUsedTrial } = usePaymentStatus()
 
 const inviteEmail = ref('')
 const inviteRole = ref('member')

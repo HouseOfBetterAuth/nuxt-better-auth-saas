@@ -149,8 +149,8 @@ const clickSignOut = () => {
           <USlideover
             side="left"
             :handle="false"
-            title="Admin navigation"
-            description="Browse administrative sections."
+            :title="t('admin.navigation.title')"
+            :description="t('admin.navigation.description')"
           >
             <UButton
               icon="i-lucide-menu"

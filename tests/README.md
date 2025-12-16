@@ -106,17 +106,17 @@ pnpm coverage
 
 ## Test Data Management
 
-- Tests automatically archive conversations before/after
+- Tests automatically archive conversations once before all tests (not before/after each)
 - Uses anonymous user sessions for testing
 - No persistent test data (cleanup after each test)
 
 ## Known Limitations
 
-2. **Vectorization**: Tests mock embeddings to avoid Cloudflare API calls
+1. **Vectorization**: Tests mock embeddings to avoid Cloudflare API calls
    - Real embedding behavior is tested in production
    - Chunking logic is tested independently
 
-3. **LLM Behavior**: E2E tests depend on LLM tool selection
+2. **LLM Behavior**: E2E tests depend on LLM tool selection
    - Tests verify tool availability, not specific LLM decisions
    - Mode enforcement is tested at the guardrail level
 
