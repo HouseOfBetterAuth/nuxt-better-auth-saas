@@ -2,9 +2,8 @@ import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParams } from 'h3'
 import * as schema from '~~/server/db/schema'
 import { logAuditEvent } from '~~/server/utils/auditLogger'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 export default defineEventHandler(async (event) => {

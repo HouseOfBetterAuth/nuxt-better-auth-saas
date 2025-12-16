@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 describe('chat Modes E2E', async () => {
   await setup({ host: process.env.NUXT_TEST_APP_URL })
 
-  // Helper to archive conversations to clear quota
+  // Helper to archive conversations
   // Optimized: Only archive once before all tests, not before/after each
   async function archiveAllConversations() {
     try {
@@ -47,7 +47,7 @@ describe('chat Modes E2E', async () => {
   })
 
   describe('anonymous conversations API', () => {
-    it('returns quota details for anonymous users', async () => {
+    it('returns conversations for anonymous users', async () => {
       const response = await $fetch('/api/conversations', {
         method: 'GET'
       }) as any
@@ -79,12 +79,12 @@ describe('chat Modes E2E', async () => {
         expect(response).not.toContain('not available in chat mode')
         expect(response).not.toContain('Switch to agent mode')
       } catch (error: any) {
-        // May hit quota or other errors - that's acceptable
+        // May hit other errors - that's acceptable
         // The important thing is it's not a mode enforcement error
         if (error?.data?.message?.includes('not available in chat mode')) {
           throw new Error('Chat mode incorrectly blocked read operation')
         }
-        // Other errors (quota, etc.) are acceptable
+        // Other errors are acceptable
       }
     })
 
@@ -114,11 +114,7 @@ describe('chat Modes E2E', async () => {
           expect(response.length).toBeGreaterThan(0)
         }
       } catch (error: any) {
-        // May hit quota - that's acceptable
-        if (error?.data?.message?.includes('limit reached')) {
-          // Quota error is acceptable
-          return
-        }
+        // Errors are acceptable
 
         // Mode enforcement error is expected
         if (error?.data?.message?.includes('not available in chat mode')) {
@@ -149,13 +145,13 @@ describe('chat Modes E2E', async () => {
         expect(response).not.toContain('not available in chat mode')
         expect(response).not.toContain('Writes are not allowed in chat mode')
       } catch (error: any) {
-        // May hit quota or other errors - that's acceptable
+        // May hit other errors - that's acceptable
         // The important thing is it's not a mode enforcement error
         if (error?.data?.message?.includes('not available in chat mode') ||
           error?.data?.message?.includes('Writes are not allowed')) {
           throw new Error('Agent mode incorrectly blocked write operation')
         }
-        // Other errors (quota, etc.) are acceptable
+        // Other errors are acceptable
       }
     })
   })

@@ -1,9 +1,8 @@
 import type { PublishContentRequestBody } from '~~/server/types/content'
 import { getRouterParams, readBody } from 'h3'
 import { publishContentVersion } from '~~/server/services/content/publish'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateOptionalUUID, validateRequestBody, validateUUID } from '~~/server/utils/validation'
 
 export default defineEventHandler(async (event) => {

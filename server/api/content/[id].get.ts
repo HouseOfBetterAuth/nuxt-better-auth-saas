@@ -2,9 +2,8 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type * as schema from '~~/server/db/schema'
 import { createError, getQuery, getRouterParams } from 'h3'
 import { getWorkspaceWithCache } from '~~/server/services/content/workspaceCache'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 async function findWorkspaceForActiveOrganization(

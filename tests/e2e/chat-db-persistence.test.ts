@@ -98,11 +98,6 @@ describe('chat database persistence E2E', async () => {
         }
       }
     } catch (error: any) {
-      // If it's a quota error, skip the test explicitly
-      if (error?.data?.message?.includes('limit reached') || error?.data?.message?.includes('quota')) {
-        console.warn('Skipping test due to quota limits')
-        return
-      }
       // If it's a 404, the server route might not be available in test environment
       if (error?.status === 404 || error?.statusCode === 404) {
         throw new Error(`API endpoint not found. This test requires a running server. Error: ${error.message}`)

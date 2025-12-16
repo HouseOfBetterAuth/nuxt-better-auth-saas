@@ -1,9 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { createError, getRouterParams } from 'h3'
 import * as schema from '~~/server/db/schema'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { validateUUID } from '~~/server/utils/validation'
 
 /**

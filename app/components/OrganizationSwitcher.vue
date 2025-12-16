@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
 
-const { session, useActiveOrganization, user, activeOrgExtras } = useAuth()
+const { session, useActiveOrganization, user } = useAuth()
+const { activeSub: activeStripeSubscription } = usePaymentStatus()
 
 // Use shared composable with proper caching
 const { data: organizations, status } = useUserOrganizations({ lazy: true })
@@ -46,15 +47,6 @@ const activeOrgName = computed(() => {
 })
 
 // Compute active subscription from activeOrg state (populated by layout)
-const activeStripeSubscription = computed(() => {
-  const subs = activeOrgExtras.value?.subscriptions
-  if (!Array.isArray(subs))
-    return null
-  return subs.find(
-    (sub: any) => sub.status === 'active' || sub.status === 'trialing'
-  ) || null
-})
-
 // Check if current user is owner or admin
 const _canManageTeam = computed(() => {
   if (!activeOrg.value?.data?.members || !user.value?.id)

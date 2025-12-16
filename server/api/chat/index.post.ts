@@ -21,12 +21,11 @@ import {
 import { upsertSourceContent } from '~~/server/services/sourceContent'
 import { createSourceContentFromContext } from '~~/server/services/sourceContent/manualTranscript'
 import { ingestYouTubeVideoAsSourceContent } from '~~/server/services/sourceContent/youtubeIngest'
-import { areConversationQuotasDisabled, ensureConversationCapacity, getAuthSession, requireAuth } from '~~/server/utils/auth'
+import { getAuthSession, requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { extractYouTubeId } from '~~/server/utils/chat'
 import { CONTENT_STATUSES, CONTENT_TYPES, ensureUniqueContentSlug, slugifyTitle } from '~~/server/utils/content'
 import { useDB } from '~~/server/utils/db'
 import { createValidationError } from '~~/server/utils/errors'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { runtimeConfig } from '~~/server/utils/runtimeConfig'
 import { safeError, safeLog, safeWarn } from '~~/server/utils/safeLogger'
 import { createSSEStream } from '~~/server/utils/streaming'
@@ -1714,11 +1713,6 @@ export default defineEventHandler(async (event) => {
         }
 
         if (!conversation) {
-        // Check conversation quota before creating a new conversation (only if quotas are enabled)
-          if (!areConversationQuotasDisabled()) {
-            await ensureConversationCapacity(db, organizationId, user, event)
-          }
-
           const lastAction = trimmedMessage ? 'message' : null
           conversation = await createConversation(db, {
             organizationId,

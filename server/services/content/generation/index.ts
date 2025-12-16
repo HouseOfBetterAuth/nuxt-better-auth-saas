@@ -12,8 +12,6 @@ import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/db/schema'
 
 import { callChatCompletions } from '~~/server/utils/aiGateway'
-// Conversation quota is checked at chat session creation, not here
-// Content generation can happen as part of existing conversations
 import {
   CONTENT_TYPES,
   ensureUniqueContentSlug,
@@ -407,7 +405,6 @@ export const generateContentDraftFromSource = async (
       })
     }
 
-    // Conversation quota is checked at chat session creation, not here
     // Content generation can happen as part of existing conversations
   }
 

@@ -1,8 +1,7 @@
 import { and, count, desc, eq } from 'drizzle-orm'
 import * as schema from '~~/server/db/schema'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
-import { requireActiveOrganization } from '~~/server/utils/organization'
 import { createPaginatedResponse } from '~~/server/utils/responses'
 import { validateNumber } from '~~/server/utils/validation'
 

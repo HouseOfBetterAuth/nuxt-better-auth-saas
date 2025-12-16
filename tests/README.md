@@ -106,15 +106,11 @@ pnpm coverage
 
 ## Test Data Management
 
-- Tests automatically archive conversations before/after to clear quota
+- Tests automatically archive conversations before/after
 - Uses anonymous user sessions for testing
 - No persistent test data (cleanup after each test)
 
 ## Known Limitations
-
-1. **E2E Tests**: May hit conversation quota limits (10 for anonymous users)
-   - Tests handle this gracefully by checking for quota errors
-   - Tests archive conversations to free up quota when possible
 
 2. **Vectorization**: Tests mock embeddings to avoid Cloudflare API calls
    - Real embedding behavior is tested in production
@@ -137,5 +133,3 @@ Follow existing patterns:
 - Use `it` blocks for individual test cases
 - Mock external dependencies (DB, APIs)
 - Clean up test data after each test
-
-

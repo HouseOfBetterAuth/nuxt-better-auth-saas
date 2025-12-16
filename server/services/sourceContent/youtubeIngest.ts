@@ -17,7 +17,6 @@ export type TranscriptFailureReason =
   | 'auth_failed'
   | 'empty_transcript'
   | 'internal_error'
-  | 'quota_exceeded'
   | 'video_not_found'
   | 'invalid_credentials'
   | 'unknown'
@@ -93,9 +92,6 @@ function _stripVttToPlainText(vtt: string) {
 function _classifyTranscriptFailure(message: string, statusCode?: number) {
   const lowerMessage = message.toLowerCase()
 
-  if (statusCode === 403 && lowerMessage.includes('quota')) {
-    return { reasonCode: 'quota_exceeded' as const, userMessage: 'YouTube API quota exceeded. Please try again later.', canRetry: true }
-  }
   if (statusCode === 404 || lowerMessage.includes('not found') || lowerMessage.includes('video not found')) {
     return { reasonCode: 'video_not_found' as const, userMessage: 'This video was not found.' }
   }
