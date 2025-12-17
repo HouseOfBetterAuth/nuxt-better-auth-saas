@@ -90,6 +90,24 @@ function assertDatabaseUrl() {
   }
 }
 
+function maskToken(
+  token: unknown,
+  opts?: {
+    prefix?: number
+    suffix?: number
+  }
+) {
+  if (typeof token !== 'string') {
+    return token
+  }
+  const prefix = opts?.prefix ?? 8
+  const suffix = opts?.suffix ?? 4
+  if (token.length <= prefix + suffix) {
+    return `${token.slice(0, Math.min(prefix, token.length))}…`
+  }
+  return `${token.slice(0, prefix)}…${token.slice(-suffix)}`
+}
+
 async function runScan(client: pg.PoolClient, scanLimit: number) {
   const limit = Number.isFinite(scanLimit) && scanLimit > 0 ? scanLimit : 50
 
@@ -277,7 +295,7 @@ async function main() {
       }
 
       userId = sessionRow.user_id
-      console.log({ session: sessionRow })
+      console.log({ session: { ...sessionRow, token: maskToken(sessionRow.token) } })
     }
 
     if (!userId) {
@@ -419,6 +437,10 @@ async function main() {
           console.error('❌ --fixActiveOrg orgId does not exist in organization table:', args.fixActiveOrg)
           process.exit(2)
         }
+        if (args.fixActiveOrg && !args.sessionToken) {
+          console.error('❌ --fixActiveOrg requires --sessionToken (so we know which session row to update)')
+          process.exit(2)
+        }
 
         printSection('Apply fixes (transaction)')
         await client.query('BEGIN')
@@ -436,11 +458,6 @@ async function main() {
           }
 
           if (args.fixActiveOrg) {
-            if (!args.sessionToken) {
-              console.error('❌ --fixActiveOrg requires --sessionToken (so we know which session row to update)')
-              process.exit(2)
-            }
-
             await timed('update session.active_organization_id', async () => {
               await client.query(
                 `UPDATE "session"

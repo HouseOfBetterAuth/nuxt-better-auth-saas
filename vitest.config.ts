@@ -18,11 +18,6 @@ export default defineVitestConfig({
             }
           },
           vite: {
-            build: {
-              rollupOptions: {
-                external: ['hub:kv']
-              }
-            },
             resolve: {
               alias: {
                 'hub:kv': fileURLToPath(new URL('./tests/utils/hub-kv.stub.ts', import.meta.url))

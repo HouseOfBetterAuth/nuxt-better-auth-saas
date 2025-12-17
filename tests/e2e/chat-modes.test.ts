@@ -13,12 +13,27 @@ describe('chat Modes E2E', async () => {
 
   const baseURL = process.env.NUXT_TEST_APP_URL || 'http://localhost:3000'
 
+  const getSetCookieHeaders = (headers: any): string[] => {
+    // Node/undici Headers: non-standard but commonly available
+    if (typeof headers?.getSetCookie === 'function') {
+      return headers.getSetCookie() as string[]
+    }
+    // node-fetch style Headers
+    if (typeof headers?.raw === 'function') {
+      const raw = headers.raw()
+      const values = raw?.['set-cookie']
+      return Array.isArray(values) ? values : []
+    }
+    // Fallback (may only return the first Set-Cookie)
+    const value = typeof headers?.get === 'function' ? headers.get('set-cookie') : undefined
+    return typeof value === 'string' && value.length > 0 ? [value] : []
+  }
+
   const getAnonymousCookie = async () => {
     const res = await $fetch.raw(`${baseURL}/api/conversations`, { method: 'GET' })
-    const setCookie = res.headers.get('set-cookie') || ''
-    return setCookie
-      .split(',')
-      .map(part => part.split(';')[0]?.trim())
+    const cookies = getSetCookieHeaders(res.headers)
+    return cookies
+      .map(cookie => cookie.split(';')[0]?.trim())
       .filter(Boolean)
       .join('; ')
   }
