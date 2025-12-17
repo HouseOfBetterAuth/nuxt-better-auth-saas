@@ -482,11 +482,29 @@ async function fixOrphanAnonymousOrgOwner(client: pg.PoolClient, args: Args) {
   try {
     const memberId = generateId()
     await timed('insert member(owner)', async () => {
-      await client.query(
+      const res = await client.query(
         `INSERT INTO "member" (id, organization_id, user_id, role, created_at)
-         VALUES ($1, $2, $3, 'owner', NOW())`,
+         VALUES ($1, $2, $3, 'owner', NOW())
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
         [memberId, orgId, userId]
       )
+      if (res.rowCount === 0) {
+        const ownerCountAfter = await timed('re-check owner membership count after conflict', async () => {
+          const r = await client.query(
+            `SELECT COUNT(*)::int as owner_count
+             FROM "member"
+             WHERE organization_id = $1 AND role = 'owner'`,
+            [orgId]
+          )
+          return (r.rows[0]?.owner_count as number) ?? 0
+        })
+        if (ownerCountAfter > 0) {
+          console.log('ℹ️ Owner membership appears to have been created concurrently; no action needed.', { orgId, owner_count: ownerCountAfter })
+          return
+        }
+        throw new Error('Insert no-op but org still has no owner membership; aborting to avoid inconsistent state.')
+      }
     })
     await client.query('COMMIT')
     console.log('✅ Inserted owner membership:', { memberId, orgId, userId })
