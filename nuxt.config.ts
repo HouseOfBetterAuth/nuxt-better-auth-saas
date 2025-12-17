@@ -12,11 +12,10 @@ const nitroPreset = process.env.NUXT_NITRO_PRESET
 
 const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
 const hyperdriveBindings = hyperdriveId
-  ? {
-      hyperdrive: {
-        HYPERDRIVE: hyperdriveId
-      }
-    }
+  ? [{
+      binding: 'HYPERDRIVE',
+      id: hyperdriveId
+    }]
   : undefined
 
 if (process.env.NODE_ENV === 'production' && process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
@@ -70,7 +69,9 @@ export default defineNuxtConfig({
           blob: true,
           ...(hyperdriveBindings
             ? {
-                bindings: hyperdriveBindings
+                bindings: {
+                  hyperdrive: hyperdriveBindings
+                }
               }
             : {})
         }) as any

@@ -1,8 +1,8 @@
-import { sql } from 'drizzle-orm'
-import { db } from 'hub:db'
+import { getPgPool } from './drivers'
 
 export async function getDBStats() {
-  const dbStatsResult = await db.execute(sql`
+  const client = await getPgPool().connect()
+  const dbStatsResult = await client.query(`
     SELECT
       numbackends as active_backends,
       xact_commit as commits,
@@ -21,7 +21,8 @@ export async function getDBStats() {
     FROM pg_stat_database
     WHERE datname = current_database()
   `)
-  const dbStats = dbStatsResult[0]
+  client.release()
+  const dbStats = dbStatsResult.rows[0]
   if (!dbStats)
     throw new Error('Database statistics are unavailable')
   const totalBlocks = Number(dbStats.blks_read) + Number(dbStats.blks_hit)

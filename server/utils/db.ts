@@ -1,30 +1,43 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { EventHandlerRequest, H3Event } from 'h3'
-import { db as hubDb } from 'hub:db'
+import { drizzle } from 'drizzle-orm/node-postgres'
 
 import * as schema from '~~/server/db/schema'
+import { getPgPool } from './drivers'
+import { runtimeConfig } from './runtimeConfig'
 
 type DatabaseInstance = NodePgDatabase<typeof schema>
 
-const isDatabaseInstance = (value: unknown): value is DatabaseInstance => {
-  return !!value && typeof value === 'object' && typeof (value as any).execute === 'function'
+const createDB = (dbSchema: typeof schema = schema) => {
+  return drizzle({
+    client: getPgPool(),
+    schema: dbSchema
+  })
 }
 
-if (!isDatabaseInstance(hubDb))
-  throw new Error('Invalid database instance returned from hub:db binding')
+let db: ReturnType<typeof createDB>
 
-const database: DatabaseInstance = hubDb
+export const getDB = (): DatabaseInstance => {
+  // Reuse a DB instance in node-server, but create new instances elsewhere
+  // (e.g. tests, cloudflare module builds).
+  if (runtimeConfig.preset == 'node-server') {
+    if (!db)
+      db = createDB()
+    return db
+  }
 
-export const getDB = (): DatabaseInstance => database
+  return createDB()
+}
 
 export const useDB = async (event?: H3Event<EventHandlerRequest>): Promise<DatabaseInstance> => {
   if (event?.context.db)
     return event.context.db as DatabaseInstance
 
+  const dbInstance = createDB(schema)
   if (event)
-    event.context.db = database
+    event.context.db = dbInstance
 
-  return database
+  return dbInstance
 }
 
 export type TableNames = keyof typeof schema

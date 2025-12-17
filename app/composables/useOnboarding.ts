@@ -7,7 +7,16 @@ export function useOnboarding() {
     isOpen: false
   }))
 
-  const organizationsQuery = useUserOrganizations()
+  const organizationsQuery = useAsyncData('user-organizations', async () => {
+    const { organization } = useAuth()
+    const { data, error } = await organization.list()
+    if (error)
+      return []
+    return data
+  }, {
+    server: false,
+    getCachedData: () => undefined
+  })
 
   const organizations = computed(() => organizationsQuery.data.value ?? null)
 

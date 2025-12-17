@@ -1,7 +1,52 @@
 import { kv } from 'hub:kv'
 import Redis from 'ioredis'
+import pg from 'pg'
 import { Resend } from 'resend'
 import { runtimeConfig } from './runtimeConfig'
+
+interface HyperdriveBinding {
+  connectionString: string
+}
+
+const getDatabaseUrl = () => {
+  // Cloudflare Hyperdrive binding (available on Workers).
+  const env = ((globalThis as any).__env__ || globalThis) as Record<string, unknown>
+  const hyperdrive = (process.env.HYPERDRIVE
+    || process.env.POSTGRES
+    || env.HYPERDRIVE
+    || env.POSTGRES) as HyperdriveBinding | undefined
+
+  return hyperdrive?.connectionString || runtimeConfig.databaseUrl
+}
+
+const createPgPool = () => {
+  const connectionString = getDatabaseUrl()
+  if (!connectionString)
+    throw new Error('Database connection string is not available')
+
+  return new pg.Pool({
+    connectionString,
+    max: 90,
+    idleTimeoutMillis: 30000
+  })
+}
+
+const PG_POOL_KEY = '__quillio_pgPool'
+type GlobalWithPool = typeof globalThis & { [PG_POOL_KEY]?: pg.Pool }
+const globalRef = globalThis as GlobalWithPool
+
+export const getPgPool = () => {
+  // Match HouseOfBetterAuth behavior:
+  // - Reuse a singleton pool only in node-server.
+  // - In Workers, return a fresh pool (avoid keeping a long-lived pg Pool across isolates/requests).
+  if (runtimeConfig.preset == 'node-server') {
+    if (!globalRef[PG_POOL_KEY])
+      globalRef[PG_POOL_KEY] = createPgPool()
+    return globalRef[PG_POOL_KEY]
+  }
+
+  return createPgPool()
+}
 
 let redisClient: Redis | undefined
 

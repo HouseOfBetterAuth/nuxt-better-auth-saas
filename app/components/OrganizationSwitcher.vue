@@ -4,8 +4,18 @@ import { getPlanKeyFromId, PLAN_TIERS } from '~~/shared/utils/plans'
 const { session, useActiveOrganization, user } = useAuth()
 const { activeSub: activeStripeSubscription } = usePaymentStatus()
 
-// Use shared composable with proper caching
-const { data: organizations, status } = useUserOrganizations({ lazy: true })
+// Match HouseOfBetterAuth behavior: fetch orgs directly via Better Auth API.
+const { data: organizations, status } = useAsyncData('user-organizations', async () => {
+  const { organization } = useAuth()
+  const { data, error } = await organization.list()
+  if (error)
+    return []
+  return data
+}, {
+  lazy: true,
+  server: false,
+  getCachedData: () => undefined
+})
 
 const dropdownMenuUi = {
   content: 'w-60 cursor-pointer',

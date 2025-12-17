@@ -1,4 +1,3 @@
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { Storage } from 'unstorage'
 
 declare module 'hub:kv' {
@@ -12,12 +11,6 @@ declare module 'hub:kv' {
   }
 
   export const kv: KVStorage
-}
-
-declare module 'hub:db' {
-  // NuxtHub exposes a Drizzle database instance backed by postgres-js.
-  // We type it loosely here since schema is project-specific.
-  export const db: PostgresJsDatabase<Record<string, never>>
 }
 
 export {}
