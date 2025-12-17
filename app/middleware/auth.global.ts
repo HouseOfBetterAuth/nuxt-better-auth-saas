@@ -1,3 +1,4 @@
+import { useLocalePath } from '#i18n'
 import { defu } from 'defu'
 import { isAnonymousWorkspaceConversationRoute, stripLocalePrefix } from '~~/shared/utils/routeMatching'
 

@@ -1,3 +1,4 @@
+import { useLocalePath } from '#i18n'
 import { watch } from 'vue'
 import { useUserOrganizations } from '~/composables/useUserOrganizations'
 

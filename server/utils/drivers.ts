@@ -1,13 +1,25 @@
-import type { Hyperdrive } from '@cloudflare/workers-types'
 import { kv } from 'hub:kv'
 import Redis from 'ioredis'
 import pg from 'pg'
 import { Resend } from 'resend'
 import { runtimeConfig } from './runtimeConfig'
 
+// Avoid a hard dependency on Cloudflare types at runtime/lint time.
+interface Hyperdrive {
+  connectionString: string
+}
+
 const DB_SLOW_QUERY_THRESHOLD_MS = 3000
 const DB_QUERY_TIMEOUT_MS = 15000
 const DB_POOL_WAIT_WARNING_MS = 3000
+const DB_POOL_BACKPRESSURE_LOG_INTERVAL_MS = 10_000
+const DB_QUERY_START_LOG_INTERVAL_MS = 10_000
+
+const poolStats = (pool: pg.Pool) => ({
+  total: pool.totalCount,
+  idle: pool.idleCount,
+  waiting: pool.waitingCount
+})
 
 const getDatabaseUrl = () => {
   // @ts-expect-error globalThis.__env__ is not defined
@@ -34,22 +46,40 @@ const instrumentPool = (pool: pg.Pool) => {
   }
   (pool as any)[marker] = true
 
+  let lastBackpressureLogAt = 0
+  const maybeLogBackpressure = (reason: string, extra?: Record<string, unknown>) => {
+    // Only log if there's actually backpressure, and throttle.
+    if (pool.waitingCount <= 0) {
+      return
+    }
+    const now = Date.now()
+    if (now - lastBackpressureLogAt < DB_POOL_BACKPRESSURE_LOG_INTERVAL_MS) {
+      return
+    }
+    lastBackpressureLogAt = now
+    console.warn('[DB] Pool backpressure detected', {
+      reason,
+      pool: poolStats(pool),
+      ...extra
+    })
+  }
+
   pool.on('error', (error) => {
     console.error('[DB] Pool error detected', { error })
   })
 
   const originalConnect = pool.connect.bind(pool)
-  pool.connect = (async (...args) => {
+  ;(pool as any).connect = (async (...args: any[]) => {
     const start = Date.now()
+    // If something is already queued waiting for a connection, surface it early.
+    maybeLogBackpressure('before connect')
     try {
-      const client = await originalConnect(...args)
+      const client = await (originalConnect as any)(...args)
       const wait = Date.now() - start
       if (wait > DB_POOL_WAIT_WARNING_MS) {
         console.warn('[DB] Slow pool.connect detected', {
           waitMs: wait,
-          total: pool.totalCount,
-          idle: pool.idleCount,
-          waiting: pool.waitingCount
+          pool: poolStats(pool)
         })
       }
       return client
@@ -57,19 +87,34 @@ const instrumentPool = (pool: pg.Pool) => {
       console.error('[DB] pool.connect failed', error)
       throw error
     }
-  }) as typeof pool.connect
+  }) as any
 
   const originalQuery = pool.query.bind(pool)
-  pool.query = (async (...args) => {
+  ;(pool as any).query = (async (...args: any[]) => {
     const start = Date.now()
     const queryPreview = extractQueryPreview(args)
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    const startPoolSnapshot = poolStats(pool)
+
+    maybeLogBackpressure('before query', { query: queryPreview })
+
+    // Low-volume "query start" trace to correlate with timeouts in prod without spamming.
+    const now = Date.now()
+    const markerKey = '__quillio_lastQueryStartLogAt'
+    const ref = pool as any
+    const lastStartLogAt = typeof ref[markerKey] === 'number' ? ref[markerKey] : 0
+    if (now - lastStartLogAt > DB_QUERY_START_LOG_INTERVAL_MS) {
+      ref[markerKey] = now
+      console.log('[DB] Query start', { query: queryPreview, pool: startPoolSnapshot })
+    }
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         console.error('[DB] Query exceeded timeout threshold', {
           timeoutMs: DB_QUERY_TIMEOUT_MS,
-          query: queryPreview
+          query: queryPreview,
+          poolAtStart: startPoolSnapshot,
+          poolAtTimeout: poolStats(pool)
         })
         const error = new Error(`Database query timed out after ${DB_QUERY_TIMEOUT_MS}ms`)
         ;(error as any).statusCode = 504
@@ -77,8 +122,8 @@ const instrumentPool = (pool: pg.Pool) => {
       }, DB_QUERY_TIMEOUT_MS)
     })
 
-    const queryPromise = originalQuery(...args)
-    queryPromise.catch((error) => {
+    const queryPromise = (originalQuery as any)(...args) as Promise<any>
+    queryPromise.catch((error: any) => {
       console.error('[DB] Query failed', {
         error,
         query: queryPreview
@@ -96,16 +141,18 @@ const instrumentPool = (pool: pg.Pool) => {
       if (duration > DB_SLOW_QUERY_THRESHOLD_MS) {
         console.warn('[DB] Slow query detected', {
           durationMs: duration,
-          query: queryPreview
+          query: queryPreview,
+          poolAtStart: startPoolSnapshot,
+          poolAtEnd: poolStats(pool)
         })
       }
     }
-  }) as typeof pool.query
+  }) as any
 
   return pool
 }
 
-function extractQueryPreview(args: Parameters<pg.Pool['query']>): string {
+function extractQueryPreview(args: any[]): string {
   const [first] = args
   const queryText = typeof first === 'string'
     ? first
@@ -124,7 +171,14 @@ const createPgPool = () => {
     max: 90,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000, // 10 second timeout to prevent hanging in Cloudflare Workers
-    statement_timeout: 30000 // 30 second query timeout
+    // IMPORTANT:
+    // Our app-level timeout (DB_QUERY_TIMEOUT_MS) is implemented via Promise.race.
+    // If statement_timeout is longer than the app timeout, the underlying query can
+    // keep running and tie up pool connections, causing cascading timeouts.
+    //
+    // Keep statement_timeout <= DB_QUERY_TIMEOUT_MS so Postgres cancels and frees
+    // the connection promptly.
+    statement_timeout: DB_QUERY_TIMEOUT_MS
   })
   return instrumentPool(pool)
 }

@@ -11,15 +11,25 @@ interface Args {
   userId?: string
   sessionToken?: string
   orgId?: string
+  conversationId?: string
   scan?: boolean
   scanLimit?: number
   fixDefaultOrg?: string
   fixActiveOrg?: string
+  fixOrgOwner?: string
   apply?: boolean
+  statActivity?: boolean
+  locks?: boolean
+  explainConversations?: boolean
+  explainVerification?: boolean
+  verificationIdentifier?: string
+  statementTimeoutMs?: number
+  orgDeep?: boolean
+  conversationDeep?: boolean
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { scanLimit: 50 }
+  const out: Args = { scanLimit: 50, statementTimeoutMs: 30000 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
 
@@ -39,6 +49,8 @@ function parseArgs(argv: string[]): Args {
       out.sessionToken = requireValue(a)
     } else if (a === '--orgId') {
       out.orgId = requireValue(a)
+    } else if (a === '--conversationId') {
+      out.conversationId = requireValue(a)
     } else if (a === '--scan') {
       out.scan = true
     } else if (a === '--scanLimit') {
@@ -53,8 +65,32 @@ function parseArgs(argv: string[]): Args {
       out.fixDefaultOrg = requireValue(a)
     } else if (a === '--fixActiveOrg') {
       out.fixActiveOrg = requireValue(a)
+    } else if (a === '--fixOrgOwner') {
+      out.fixOrgOwner = requireValue(a)
     } else if (a === '--apply') {
       out.apply = true
+    } else if (a === '--statActivity') {
+      out.statActivity = true
+    } else if (a === '--locks') {
+      out.locks = true
+    } else if (a === '--explainConversations') {
+      out.explainConversations = true
+    } else if (a === '--explainVerification') {
+      out.explainVerification = true
+    } else if (a === '--verificationIdentifier') {
+      out.verificationIdentifier = requireValue(a)
+    } else if (a === '--statementTimeoutMs') {
+      const raw = requireValue(a)
+      const parsed = Number.parseInt(raw, 10)
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        console.error(`❌ Invalid value for --statementTimeoutMs: "${raw}" (expected a positive integer)`)
+        process.exit(2)
+      }
+      out.statementTimeoutMs = parsed
+    } else if (a === '--orgDeep') {
+      out.orgDeep = true
+    } else if (a === '--conversationDeep') {
+      out.conversationDeep = true
     } else if (a === '--help' || a === '-h') {
       printHelpAndExit(0)
     }
@@ -73,13 +109,24 @@ function printHelpAndExit(code: number) {
       '  --userId <id>',
       '  --sessionToken <token>',
       '  --orgId <id>',
+      '  --conversationId <id>',
+      '  --statActivity',
+      '  --locks',
+      '  --explainConversations',
+      '  --explainVerification [--verificationIdentifier <identifier>]',
+      '  --orgDeep (when using --orgId: include message/log summaries)',
+      '  --conversationDeep (when using --conversationId: include messages/logs)',
       '',
       'Scan options:',
       '  --scanLimit <n> (default: 50)',
       '',
+      'Diagnostics options:',
+      '  --statementTimeoutMs <n> (default: 30000)',
+      '',
       'Optional fixes (require --apply):',
       '  --fixDefaultOrg <orgId>',
       '  --fixActiveOrg <orgId> (requires --sessionToken)',
+      '  --fixOrgOwner <userId> (requires --orgId)',
       ''
     ].join('\n')
   )
@@ -264,6 +311,376 @@ async function inspectOrg(client: pg.PoolClient, orgId: string) {
   console.table(convs)
 }
 
+async function inspectConversation(client: pg.PoolClient, conversationId: string, deep: boolean) {
+  printSection('Conversation')
+  const conversation = await timed('select conversation', async () => {
+    const res = await client.query(
+      `SELECT id, organization_id, created_by_user_id, source_content_id, status, created_at, updated_at
+       FROM "conversation"
+       WHERE id = $1
+       LIMIT 1`,
+      [conversationId]
+    )
+    return res.rows[0] as any | undefined
+  })
+
+  if (!conversation) {
+    console.error('❌ No conversation row found for conversationId', conversationId)
+    return
+  }
+
+  console.log({ conversation })
+
+  if (!deep) {
+    return
+  }
+
+  printSection('Conversation message stats')
+  const stats = await timed('select message counts', async () => {
+    const res = await client.query(
+      `SELECT
+         COUNT(*)::int as total,
+         COUNT(*) FILTER (WHERE role = 'user')::int as user_count,
+         COUNT(*) FILTER (WHERE role = 'assistant')::int as assistant_count,
+         MIN(created_at) as first_message_at,
+         MAX(created_at) as last_message_at
+       FROM "conversation_message"
+       WHERE conversation_id = $1`,
+      [conversationId]
+    )
+    return res.rows[0] as any
+  })
+  console.log(stats)
+
+  printSection('Recent messages (last 20)')
+  const recentMessages = await timed('select recent messages', async () => {
+    const res = await client.query(
+      `SELECT id, role, created_at, LEFT(content, 160) as content_preview
+       FROM "conversation_message"
+       WHERE conversation_id = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [conversationId]
+    )
+    return res.rows as any[]
+  })
+  console.table(recentMessages)
+
+  printSection('Recent conversation logs (last 50)')
+  const recentLogs = await timed('select recent conversation logs', async () => {
+    const res = await client.query(
+      `SELECT id, type, created_at, LEFT(message, 200) as message_preview
+       FROM "conversation_log"
+       WHERE conversation_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [conversationId]
+    )
+    return res.rows as any[]
+  })
+  console.table(recentLogs)
+}
+
+export function generateId() {
+  // Member.id is a text PK with no default; requires Node 20+ for crypto.randomUUID().
+  if (typeof (globalThis.crypto as any)?.randomUUID !== 'function') {
+    throw new Error('crypto.randomUUID() is not available. Please use Node 20+.')
+  }
+  return (globalThis.crypto as any).randomUUID()
+}
+
+async function fixOrphanAnonymousOrgOwner(client: pg.PoolClient, args: Args) {
+  if (!args.orgId) {
+    console.error('❌ --fixOrgOwner requires --orgId')
+    process.exit(2)
+  }
+  if (!args.fixOrgOwner) {
+    console.error('❌ Missing --fixOrgOwner <userId>')
+    process.exit(2)
+  }
+
+  const orgId = args.orgId
+  const userId = args.fixOrgOwner
+
+  printSection('Fix: attach owner membership to org (dry-run unless --apply)')
+
+  const orgRow = await timed('select organization for fix', async () => {
+    const res = await client.query(
+      `SELECT id, slug, is_anonymous
+       FROM "organization"
+       WHERE id = $1
+       LIMIT 1`,
+      [orgId]
+    )
+    return res.rows[0] as any | undefined
+  })
+  if (!orgRow) {
+    console.error('❌ Organization not found:', orgId)
+    process.exit(2)
+  }
+  if (!orgRow.is_anonymous) {
+    console.error('❌ Refusing: org is not anonymous (is_anonymous=false):', { orgId, slug: orgRow.slug })
+    process.exit(2)
+  }
+
+  const userRow = await timed('select user for fix', async () => {
+    const res = await client.query(
+      `SELECT id, email, is_anonymous
+       FROM "user"
+       WHERE id = $1
+       LIMIT 1`,
+      [userId]
+    )
+    return res.rows[0] as any | undefined
+  })
+  if (!userRow) {
+    console.error('❌ User not found:', userId)
+    process.exit(2)
+  }
+
+  const existingOwnerCount = await timed('check existing owner membership count', async () => {
+    const res = await client.query(
+      `SELECT COUNT(*)::int as owner_count
+       FROM "member"
+       WHERE organization_id = $1 AND role = 'owner'`,
+      [orgId]
+    )
+    return (res.rows[0]?.owner_count as number) ?? 0
+  })
+  if (existingOwnerCount > 0) {
+    console.log('✅ Org already has an owner membership; no action needed.', { orgId, owner_count: existingOwnerCount })
+    return
+  }
+
+  const existingMembership = await timed('check existing membership for user+org', async () => {
+    const res = await client.query(
+      `SELECT id, role, created_at
+       FROM "member"
+       WHERE organization_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [orgId, userId]
+    )
+    return res.rows[0] as any | undefined
+  })
+  if (existingMembership) {
+    console.log('⚠️ User already has a membership in this org; promoting to owner is not implemented by this fix.', {
+      orgId,
+      userId,
+      membership: existingMembership
+    })
+    console.log('   If you want, we can add a safe promotion path too (UPDATE member SET role=\'owner\').')
+    return
+  }
+
+  if (!args.apply) {
+    console.error('❌ Refusing to write without --apply')
+    console.error('   Would insert owner membership:', { orgId, userId, userEmail: userRow.email, orgSlug: orgRow.slug })
+    process.exit(2)
+  }
+
+  await client.query('BEGIN')
+  try {
+    const memberId = generateId()
+    await timed('insert member(owner)', async () => {
+      const res = await client.query(
+        `INSERT INTO "member" (id, organization_id, user_id, role, created_at)
+         VALUES ($1, $2, $3, 'owner', NOW())
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [memberId, orgId, userId]
+      )
+      if (res.rowCount === 0) {
+        const ownerCountAfter = await timed('re-check owner membership count after conflict', async () => {
+          const r = await client.query(
+            `SELECT COUNT(*)::int as owner_count
+             FROM "member"
+             WHERE organization_id = $1 AND role = 'owner'`,
+            [orgId]
+          )
+          return (r.rows[0]?.owner_count as number) ?? 0
+        })
+        if (ownerCountAfter > 0) {
+          console.log('ℹ️ Owner membership appears to have been created concurrently; no action needed.', { orgId, owner_count: ownerCountAfter })
+          return
+        }
+        throw new Error('Insert no-op but org still has no owner membership; aborting to avoid inconsistent state.')
+      }
+    })
+    await client.query('COMMIT')
+    console.log('✅ Inserted owner membership:', { memberId, orgId, userId })
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  }
+}
+
+async function printExplainRows(rows: Array<{ [k: string]: any }>) {
+  const lines: string[] = []
+  for (const r of rows) {
+    const line = r['QUERY PLAN'] ?? r.query_plan ?? Object.values(r)[0]
+    if (typeof line === 'string') {
+      lines.push(line)
+    }
+  }
+  console.log(lines.join('\n'))
+}
+
+function parseStatementTimeoutMs(
+  input: unknown,
+  {
+    defaultMs = 30_000,
+    maxMs = 600_000
+  }: { defaultMs?: number, maxMs?: number } = {}
+) {
+  const n = input === undefined || input === null || input === '' ? defaultMs : Number(input)
+  if (!Number.isFinite(n)) {
+    throw new Error(`Invalid statementTimeoutMs: ${String(input)}`)
+  }
+  const int = Math.trunc(n)
+  if (int < 0) {
+    throw new Error(`statementTimeoutMs must be >= 0 (got ${int})`)
+  }
+  if (int > maxMs) {
+    throw new Error(`statementTimeoutMs too large (max ${maxMs}ms, got ${int})`)
+  }
+  return int
+}
+
+async function runDiagnostics(client: pg.PoolClient, args: Args) {
+  const timeoutMs = parseStatementTimeoutMs(args.statementTimeoutMs)
+  await timed(`set statement_timeout=${timeoutMs}ms`, async () => {
+    // Use set_config so the value is fully parameterized (no SQL concatenation).
+    // statement_timeout accepts a numeric string in milliseconds.
+    await client.query(`SELECT set_config('statement_timeout', $1, true);`, [String(timeoutMs)])
+  })
+
+  if (args.statActivity) {
+    printSection('pg_stat_activity (top 50, current DB)')
+    const activity = await timed('select pg_stat_activity', async () => {
+      const res = await client.query(
+        `SELECT
+           pid,
+           usename,
+           application_name,
+           client_addr,
+           state,
+           wait_event_type,
+           wait_event,
+           now() - query_start as query_age,
+           now() - xact_start as xact_age,
+           LEFT(query, 200) as query
+         FROM pg_stat_activity
+         WHERE datname = current_database()
+         ORDER BY query_start DESC NULLS LAST
+         LIMIT 50`
+      )
+      return res.rows as any[]
+    })
+    console.table(activity)
+  }
+
+  if (args.locks) {
+    printSection('Locks (waiting first, top 50)')
+    const locks = await timed('select waiting locks', async () => {
+      const res = await client.query(
+        `SELECT
+           a.pid,
+           a.usename,
+           a.state,
+           a.wait_event_type,
+           a.wait_event,
+           now() - a.query_start as query_age,
+           l.locktype,
+           l.mode,
+           l.granted,
+           LEFT(a.query, 160) as query
+         FROM pg_locks l
+         JOIN pg_stat_activity a ON a.pid = l.pid
+         WHERE a.datname = current_database()
+         ORDER BY l.granted ASC, a.query_start DESC NULLS LAST
+         LIMIT 50`
+      )
+      return res.rows as any[]
+    })
+    console.table(locks)
+  }
+
+  if (args.explainConversations) {
+    printSection('EXPLAIN (ANALYZE, BUFFERS): conversations list query')
+
+    let orgId = args.orgId
+    if (!orgId) {
+      const guess = await timed('pick orgId from most recent conversation', async () => {
+        const res = await client.query(
+          `SELECT organization_id
+           FROM "conversation"
+           WHERE organization_id IS NOT NULL AND organization_id <> ''
+           ORDER BY updated_at DESC NULLS LAST, created_at DESC
+           LIMIT 1`
+        )
+        return res.rows[0]?.organization_id as string | undefined
+      })
+      orgId = guess
+    }
+
+    if (!orgId) {
+      console.error('❌ Cannot EXPLAIN conversations: no --orgId provided and no conversations found to infer one.')
+    } else {
+      console.log('Using organization_id:', orgId)
+      const explain = await timed('explain conversations query', async () => {
+        const res = await client.query(
+          `EXPLAIN (ANALYZE, BUFFERS)
+           SELECT c.id, c.updated_at, NULLIF(c.metadata->>'title', '') as title
+           FROM "conversation" c
+           WHERE c.organization_id = $1
+           ORDER BY c.updated_at DESC, c.id DESC
+           LIMIT $2`,
+          [orgId, 41]
+        )
+        return res.rows as any[]
+      })
+      await printExplainRows(explain)
+    }
+  }
+
+  if (args.explainVerification) {
+    printSection('EXPLAIN (ANALYZE, BUFFERS): verification lookup query')
+
+    let identifier = args.verificationIdentifier
+    if (!identifier) {
+      const guess = await timed('pick identifier from most recent verification row', async () => {
+        const res = await client.query(
+          `SELECT identifier
+           FROM "verification"
+           ORDER BY created_at DESC
+           LIMIT 1`
+        )
+        return res.rows[0]?.identifier as string | undefined
+      })
+      identifier = guess
+    }
+
+    if (!identifier) {
+      console.error('❌ Cannot EXPLAIN verification: no --verificationIdentifier provided and no verification rows found.')
+    } else {
+      console.log('Using identifier:', identifier)
+      const explain = await timed('explain verification query', async () => {
+        const res = await client.query(
+          `EXPLAIN (ANALYZE, BUFFERS)
+           SELECT id, identifier, value, expires_at, created_at, updated_at
+           FROM "verification"
+           WHERE identifier = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [identifier]
+        )
+        return res.rows as any[]
+      })
+      await printExplainRows(explain)
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
 
@@ -273,6 +690,17 @@ async function main() {
   const client = await pool.connect()
 
   try {
+    if (args.statActivity || args.locks || args.explainConversations || args.explainVerification) {
+      await runDiagnostics(client, args)
+    }
+
+    if (args.fixOrgOwner) {
+      await fixOrphanAnonymousOrgOwner(client, args)
+      printSection('Done')
+      console.log('Fix complete.')
+      return
+    }
+
     if (args.scan) {
       await runScan(client, args.scanLimit ?? 50)
       printSection('Done')
@@ -282,9 +710,72 @@ async function main() {
 
     if (args.orgId && !args.userId && !args.sessionToken) {
       await inspectOrg(client, args.orgId)
+      if (args.orgDeep) {
+        printSection('Org deep inspection: conversation message + log summaries (last 20 convs)')
+        const summaries = await timed('summarize messages/logs by conversation', async () => {
+          const res = await client.query(
+            `WITH recent_convs AS (
+               SELECT id
+               FROM "conversation"
+               WHERE organization_id = $1
+               ORDER BY updated_at DESC NULLS LAST, created_at DESC
+               LIMIT 20
+             ),
+             msg_counts AS (
+               SELECT
+                 cm.conversation_id,
+                 COUNT(*)::int as message_count,
+                 COUNT(*) FILTER (WHERE cm.role = 'user')::int as user_message_count,
+                 COUNT(*) FILTER (WHERE cm.role = 'assistant')::int as assistant_message_count,
+                 MAX(cm.created_at) as last_message_at
+               FROM "conversation_message" cm
+               WHERE cm.conversation_id IN (SELECT id FROM recent_convs)
+               GROUP BY cm.conversation_id
+             ),
+             log_counts AS (
+               SELECT
+                 cl.conversation_id,
+                 COUNT(*)::int as log_count,
+                 MAX(cl.created_at) as last_log_at
+               FROM "conversation_log" cl
+               WHERE cl.conversation_id IN (SELECT id FROM recent_convs)
+               GROUP BY cl.conversation_id
+             )
+             SELECT
+               c.id as conversation_id,
+               c.created_by_user_id,
+               c.status,
+               c.updated_at,
+               COALESCE(mc.message_count, 0) as message_count,
+               COALESCE(mc.user_message_count, 0) as user_message_count,
+               COALESCE(mc.assistant_message_count, 0) as assistant_message_count,
+               mc.last_message_at,
+               COALESCE(lc.log_count, 0) as log_count,
+               lc.last_log_at
+             FROM "conversation" c
+             LEFT JOIN msg_counts mc ON mc.conversation_id = c.id
+             LEFT JOIN log_counts lc ON lc.conversation_id = c.id
+             WHERE c.organization_id = $1
+               AND c.id IN (SELECT id FROM recent_convs)
+             ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC`,
+            [args.orgId]
+          )
+          return res.rows as any[]
+        })
+        console.table(summaries)
+      }
       printSection('Done')
       console.log('Org inspection complete.')
       return
+    }
+
+    if (args.conversationId) {
+      await inspectConversation(client, args.conversationId, !!args.conversationDeep)
+      printSection('Done')
+      console.log('Conversation inspection complete.')
+      if (!args.userId && !args.sessionToken && !args.orgId) {
+        return
+      }
     }
 
     if (!args.userId && !args.sessionToken) {
