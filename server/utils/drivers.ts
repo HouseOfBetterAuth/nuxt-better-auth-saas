@@ -26,7 +26,6 @@ const createPgPool = () => {
 
   return new pg.Pool({
     connectionString,
-    max: 90,
     idleTimeoutMillis: 30000
   })
 }

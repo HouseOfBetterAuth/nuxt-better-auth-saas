@@ -7,11 +7,16 @@ export function useOnboarding() {
     isOpen: false
   }))
 
+  // Call composables synchronously at top-level to avoid "Nuxt instance is unavailable"
+  // when invoked from within async callbacks.
+  const { organization } = useAuth()
+
   const organizationsQuery = useAsyncData('user-organizations', async () => {
-    const { organization } = useAuth()
     const { data, error } = await organization.list()
-    if (error)
+    if (error) {
+      console.error('[useOnboarding] Failed to load organizations', error)
       return []
+    }
     return data
   }, {
     server: false,

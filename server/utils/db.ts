@@ -20,7 +20,7 @@ let db: ReturnType<typeof createDB>
 export const getDB = (): DatabaseInstance => {
   // Reuse a DB instance in node-server, but create new instances elsewhere
   // (e.g. tests, cloudflare module builds).
-  if (runtimeConfig.preset == 'node-server') {
+  if (runtimeConfig.preset === 'node-server') {
     if (!db)
       db = createDB()
     return db
