@@ -29,6 +29,19 @@ function openSignUpModal(event?: MouseEvent) {
   authModalOpen.value = true
 }
 
+const newConversationAriaLabel = computed(() => {
+  return loggedIn.value ? t('global.conversations.new') : t('global.auth.signUp')
+})
+
+function handleNewConversationClick(event?: MouseEvent) {
+  if (loggedIn.value) {
+    newConversation()
+    return
+  }
+
+  openSignUpModal(event)
+}
+
 const { useActiveOrganization } = useAuth()
 const activeOrg = useActiveOrganization()
 
@@ -200,8 +213,8 @@ const primaryActionColor = computed(() => {
               color="neutral"
               variant="ghost"
               size="sm"
-              :aria-label="t('global.conversations.new')"
-              @click="openSignUpModal"
+              :aria-label="newConversationAriaLabel"
+              @click="handleNewConversationClick"
             />
           </template>
 
@@ -404,7 +417,7 @@ const primaryActionColor = computed(() => {
                 size="sm"
                 @click="openSignInModal"
               >
-                Log in
+                {{ t('global.auth.signIn') }}
               </UButton>
               <UButton
                 color="primary"

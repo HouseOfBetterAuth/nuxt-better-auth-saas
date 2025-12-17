@@ -15,7 +15,7 @@ const MAX_LIMIT = 100
  */
 export default defineEventHandler(async (event) => {
   try {
-    const _user = await requireAuth(event, { allowAnonymous: true })
+    await requireAuth(event, { allowAnonymous: true })
     const { organizationId } = await requireActiveOrganization(event)
     const db = getDB()
 

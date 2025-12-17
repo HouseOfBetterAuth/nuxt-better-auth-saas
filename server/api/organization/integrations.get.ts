@@ -1,6 +1,7 @@
 import type { GithubIntegrationProvider } from '~~/shared/constants/githubScopes'
 import type { GoogleIntegrationProvider } from '~~/shared/constants/googleScopes'
 import { and, eq, inArray } from 'drizzle-orm'
+import { createError } from 'h3'
 import * as schema from '~~/server/db/schema'
 import { requireActiveOrganization, requireAuth } from '~~/server/utils/auth'
 import { getDB } from '~~/server/utils/db'
@@ -24,12 +25,30 @@ function hasGithubIntegrationScopes(scope: string | null | undefined, provider: 
 }
 
 export default defineEventHandler(async (event) => {
-  const _user = await requireAuth(event)
+  const user = await requireAuth(event)
 
   // Get organizationId from Better Auth session
   const { organizationId } = await requireActiveOrganization(event)
 
   const db = getDB()
+
+  // Only organization owners/admins may read integration OAuth tokens.
+  const [membership] = await db
+    .select({ role: schema.member.role })
+    .from(schema.member)
+    .where(and(
+      eq(schema.member.organizationId, organizationId),
+      eq(schema.member.userId, user.id)
+    ))
+    .limit(1)
+
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      message: 'Organization owner or admin access required'
+    })
+  }
 
   // Get all members of this organization
   const orgMembers = await db.select().from(schema.member).where(eq(schema.member.organizationId, organizationId))

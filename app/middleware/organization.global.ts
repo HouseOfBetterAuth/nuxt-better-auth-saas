@@ -1,7 +1,48 @@
+import { watch } from 'vue'
 import { useUserOrganizations } from '~/composables/useUserOrganizations'
 
 // Known locale codes from nuxt.config.ts
 const KNOWN_LOCALES = ['en', 'zh-CN', 'ja', 'fr']
+
+type PendingWaitResult = { ok: true } | { ok: false, reason: 'timeout' }
+
+async function waitForPendingToResolve(
+  pending: { value: boolean },
+  { timeoutMs = 3000 }: { timeoutMs?: number } = {}
+): Promise<PendingWaitResult> {
+  if (!pending.value) {
+    return { ok: true }
+  }
+
+  return await new Promise((resolve) => {
+    let done = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+    const stop = watch(
+      () => pending.value,
+      (isPending) => {
+        if (done)
+          return
+        if (!isPending) {
+          done = true
+          stop()
+          if (timeoutId)
+            clearTimeout(timeoutId)
+          resolve({ ok: true })
+        }
+      },
+      { immediate: true }
+    )
+
+    timeoutId = setTimeout(() => {
+      if (done)
+        return
+      done = true
+      stop()
+      resolve({ ok: false, reason: 'timeout' })
+    }, timeoutMs)
+  })
+}
 
 export default defineNuxtRouteMiddleware(async (to) => {
   const { loggedIn, organization, useActiveOrganization, fetchSession, session } = useAuth()
@@ -20,9 +61,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
     // Fall back to first available org if active org isn't loaded yet.
     const { data: orgs, pending } = useUserOrganizations()
-    while (pending.value) {
-      await new Promise(resolve => setTimeout(resolve, 50))
-    }
+    await waitForPendingToResolve(pending, { timeoutMs: 3000 })
     const firstOrg = orgs.value?.[0]
     if (firstOrg?.slug) {
       return navigateTo(localePath(`/${firstOrg.slug}/conversations`))
@@ -74,9 +113,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const { data: orgs, pending } = useUserOrganizations()
 
   // Wait for organizations to load
-  while (pending.value) {
-    await new Promise(resolve => setTimeout(resolve, 50))
-  }
+  await waitForPendingToResolve(pending, { timeoutMs: 3000 })
 
   if (!orgs.value || orgs.value.length === 0)
     return

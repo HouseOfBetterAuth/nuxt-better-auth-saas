@@ -179,7 +179,7 @@ export const createBetterAuth = () => betterAuth({
 
                 if (!newOrg) {
                   console.error('[Auth] Organization insert returned no result')
-                  return
+                  throw new Error('Organization insert returned no result')
                 }
 
                 console.log('[Auth] Organization created successfully:', { orgId: newOrg.id, slug: newOrg.slug })
@@ -197,15 +197,11 @@ export const createBetterAuth = () => betterAuth({
 
                 console.log('[Auth] Member record created successfully')
                 // Organization is now managed by Better Auth's organization plugin
-              })
 
-              console.log('[Auth] Transaction completed, _anonymousOrgId:', _anonymousOrgId)
-
-              if (_anonymousOrgId) {
                 console.log('[Auth] Updating user defaultOrganizationId:', { userId: user.id, orgId: _anonymousOrgId })
 
                 try {
-                  const updateResult = await db
+                  const updateResult = await tx
                     .update(schema.user)
                     .set({ defaultOrganizationId: _anonymousOrgId })
                     .where(eq(schema.user.id, user.id))
@@ -215,39 +211,22 @@ export const createBetterAuth = () => betterAuth({
 
                   if (!updateResult || updateResult.length === 0) {
                     console.error('[Auth] ❌ Update returned no rows - user might not exist!')
+                    throw new Error('Failed to update user defaultOrganizationId (no rows returned)')
                   } else {
                     console.log('[Auth] Update returned rows:', updateResult.length)
-
-                    // Verify the update worked
-                    await new Promise(resolve => setTimeout(resolve, 100)) // Small delay to ensure DB consistency
-
-                    const [updatedUser] = await db
-                      .select({ defaultOrganizationId: schema.user.defaultOrganizationId })
-                      .from(schema.user)
-                      .where(eq(schema.user.id, user.id))
-                      .limit(1)
-
-                    if (updatedUser?.defaultOrganizationId === _anonymousOrgId) {
-                      console.log('[Auth] ✅ Successfully set defaultOrganizationId:', { userId: user.id, orgId: _anonymousOrgId })
-                    } else {
-                      console.error('[Auth] ❌ Failed to set defaultOrganizationId - verification failed:', {
-                        userId: user.id,
-                        expected: _anonymousOrgId,
-                        actual: updatedUser?.defaultOrganizationId,
-                        updateResult: updateResult[0]?.defaultOrganizationId
-                      })
-                    }
+                    console.log('[Auth] ✅ Successfully set defaultOrganizationId:', { userId: user.id, orgId: _anonymousOrgId })
                   }
                 } catch (updateError) {
                   console.error('[Auth] ❌ Exception during user update:', updateError)
                   if (updateError instanceof Error) {
                     console.error('[Auth] Update error stack:', updateError.stack)
                   }
-                  // Don't throw - org was created successfully, this is just a metadata issue
+                  // Throw to rollback the whole transaction (org + member + user update)
+                  throw updateError
                 }
-              } else {
-                console.error('[Auth] ❌ _anonymousOrgId is null, cannot update user')
-              }
+              })
+
+              console.log('[Auth] Transaction completed, _anonymousOrgId:', _anonymousOrgId)
             } catch (error) {
               console.error('[Auth] ❌ Failed to create anonymous organization - aborting user creation:', error)
               if (error instanceof Error) {

@@ -9,7 +9,7 @@ const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
 
 export default defineEventHandler(async (event) => {
-  const _user = await requireAuth(event)
+  await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event)
   const db = getDB()
 

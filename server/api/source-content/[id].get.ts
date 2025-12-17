@@ -15,7 +15,7 @@ import { validateUUID } from '~~/server/utils/validation'
  * @returns Source content record
  */
 export default defineEventHandler(async (event) => {
-  const _user = await requireAuth(event)
+  await requireAuth(event)
   const { organizationId } = await requireActiveOrganization(event)
   const db = await useDB(event)
 

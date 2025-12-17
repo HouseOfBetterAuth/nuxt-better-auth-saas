@@ -283,6 +283,9 @@ watch(activeConversationId, (value, previous) => {
     if (slug && slug !== 't') {
       router.push(localePath(`/${slug}/conversations/${value}`))
     }
+    else {
+      router.push(localePath(`/conversations/${value}`))
+    }
   }
 
   if (!conversationList.hasConversation(value))
