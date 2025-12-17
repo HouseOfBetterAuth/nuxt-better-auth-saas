@@ -15,6 +15,7 @@ const DB_POOL_WAIT_WARNING_MS = 3000
 const DB_POOL_BACKPRESSURE_LOG_INTERVAL_MS = 10_000
 const DB_QUERY_START_LOG_INTERVAL_MS = 10_000
 const DB_COLD_POOL_LOG_INTERVAL_MS = 10_000
+const DB_CONNECT_OK_LOG_INTERVAL_MS = 10_000
 const DB_BYPASS_HYPERDRIVE_ENV = 'NUXT_DB_BYPASS_HYPERDRIVE'
 
 const poolStats = (pool: pg.Pool) => ({
@@ -55,6 +56,7 @@ const instrumentPool = (pool: pg.Pool) => {
 
   let lastBackpressureLogAt = 0
   let lastColdPoolLogAt = 0
+  let lastConnectOkLogAt = 0
   const maybeLogBackpressure = (reason: string, extra?: Record<string, unknown>) => {
     // Only log if there's actually backpressure, and throttle.
     if (pool.waitingCount <= 0) {
@@ -109,11 +111,14 @@ const instrumentPool = (pool: pg.Pool) => {
         })
       } else if (pool.totalCount <= 1) {
         // Helpful signal for cold starts / newly created pools without spamming.
-        // totalCount <= 1 is a strong hint this is early in the pool lifecycle.
-        console.log('[DB] pool.connect ok', {
-          waitMs: wait,
-          pool: poolStats(pool)
-        })
+        const now = Date.now()
+        if (now - lastConnectOkLogAt > DB_CONNECT_OK_LOG_INTERVAL_MS) {
+          lastConnectOkLogAt = now
+          console.log('[DB] pool.connect ok', {
+            waitMs: wait,
+            pool: poolStats(pool)
+          })
+        }
       }
       return client
     } catch (error) {
