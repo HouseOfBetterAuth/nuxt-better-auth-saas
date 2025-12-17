@@ -17,6 +17,7 @@ const DB_QUERY_START_LOG_INTERVAL_MS = 10_000
 const DB_COLD_POOL_LOG_INTERVAL_MS = 10_000
 const DB_CONNECT_OK_LOG_INTERVAL_MS = 10_000
 const DB_BYPASS_HYPERDRIVE_ENV = 'NUXT_DB_BYPASS_HYPERDRIVE'
+const DB_HOST_LOGGED_KEY = '__quillio_dbHostLogged'
 
 const poolStats = (pool: pg.Pool) => ({
   total: pool.totalCount,
@@ -34,6 +35,18 @@ const getDatabaseUrl = () => {
   if (!url) {
     console.error('[DB] No database URL available - Hyperdrive:', !!hyperdrive, 'DATABASE_URL:', !!runtimeConfig.databaseUrl)
     throw new Error('Database connection string is not available')
+  }
+  // Log selected host (safe) once per isolate/process for diagnostics.
+  if (!(globalThis as any)[DB_HOST_LOGGED_KEY]) {
+    ;(globalThis as any)[DB_HOST_LOGGED_KEY] = true
+    try {
+      const parsed = new URL(url)
+      const host = parsed.hostname
+      const isPooler = host.includes('-pooler.')
+      console.log('[DB] Database host selected', { host, isPooler })
+    } catch {
+      console.warn('[DB] Database host selected (unparseable URL)')
+    }
   }
   // Log connection source (but not the actual URL for security)
   if (hyperdrive?.connectionString && !bypassHyperdrive) {
