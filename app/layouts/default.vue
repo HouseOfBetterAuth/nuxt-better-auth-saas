@@ -61,8 +61,21 @@ provide('setHeaderTitle', (title: string | null) => {
   headerTitle.value = title
 })
 
+const pathWithoutLocale = computed(() => stripLocalePrefix(route.path, KNOWN_LOCALES))
+
+// Only allow the "workspace header" state to hide the sidebar on routes that actually
+// render the workspace header content. This prevents stale state (e.g. after reload)
+// from hiding the sidebar on unrelated routes like conversations.
+const isWorkspaceHeaderRoute = computed(() => {
+  return /^\/[^/]+\/content\/[^/]+(?:\/|$)/.test(pathWithoutLocale.value)
+})
+
 // Determine if we should show workspace header
-const showWorkspaceHeader = computed(() => workspaceHeader.value !== null || workspaceHeaderLoading.value)
+const showWorkspaceHeader = computed(() => {
+  if (!isWorkspaceHeaderRoute.value)
+    return false
+  return workspaceHeader.value !== null || workspaceHeaderLoading.value
+})
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 // Show navbar on mobile, for guests, or whenever the workspace header is active
@@ -73,14 +86,14 @@ const shouldShowTopNav = computed(() => !isDesktop.value || !loggedIn.value || s
 const shouldShowChat = computed(() => {
   if (route.meta?.renderChatWidget === false)
     return false
-  const path = stripLocalePrefix(route.path, KNOWN_LOCALES)
+  const path = pathWithoutLocale.value
   // Check for /[slug]/conversations pattern (locale stripped)
   return /^\/[^/]+\/conversations(?:\/|$)/.test(path)
 })
 
 // Determine if we should show sidebar - on conversations and content routes
 const shouldShowSidebar = computed(() => {
-  const path = stripLocalePrefix(route.path, KNOWN_LOCALES)
+  const path = pathWithoutLocale.value
   if (!loggedIn.value)
     return false
   if (showWorkspaceHeader.value)
@@ -91,7 +104,7 @@ const shouldShowSidebar = computed(() => {
 
 // Determine if we should use full-width layout (conversations and content pages)
 const shouldUseFullWidth = computed(() => {
-  const path = stripLocalePrefix(route.path, KNOWN_LOCALES)
+  const path = pathWithoutLocale.value
   // Check for /[slug]/conversations or /[slug]/content patterns (locale stripped)
   return /^\/[^/]+\/(?:conversations|content)(?:\/|$)/.test(path)
 })
