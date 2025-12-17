@@ -12,10 +12,11 @@ const nitroPreset = process.env.NUXT_NITRO_PRESET
 
 const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
 const hyperdriveBindings = hyperdriveId
-  ? [{
-      binding: 'HYPERDRIVE',
-      id: hyperdriveId
-    }]
+  ? {
+      hyperdrive: {
+        HYPERDRIVE: hyperdriveId
+      }
+    }
   : undefined
 
 if (process.env.NODE_ENV === 'production' && process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
@@ -50,13 +51,11 @@ export default defineNuxtConfig({
     ...(nitroPreset && nitroPreset !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
   mdc: {
-    highlight: {
-      server: false
-    }
+    highlight: {}
   },
   ...(nitroPreset && nitroPreset !== 'node-server'
     ? {
-        hub: {
+        hub: ({
           // Enable db when using the Cloudflare-module preset (prod + wrangler/local worker runs).
           ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
             ? { db: 'postgresql' }
@@ -71,12 +70,10 @@ export default defineNuxtConfig({
           blob: true,
           ...(hyperdriveBindings
             ? {
-                bindings: {
-                  hyperdrive: hyperdriveBindings
-                }
+                bindings: hyperdriveBindings
               }
             : {})
-        }
+        }) as any
       }
     : {}),
   i18n: {
