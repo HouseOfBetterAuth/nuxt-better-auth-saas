@@ -8,7 +8,8 @@
         "features": "Features",
         "pricing": "Pricing",
         "docs": "Documentation",
-        "dashboard": "Dashboard"
+        "dashboard": "Dashboard",
+        "settings": "Settings"
       },
       "auth": {
         "signIn": "Sign In",
@@ -55,7 +56,8 @@
         "admin": "管理后台",
         "features": "功能特性",
         "pricing": "定价方案",
-        "docs": "文档"
+        "docs": "文档",
+        "settings": "设置"
       },
       "auth": {
         "signIn": "登录",
@@ -98,7 +100,8 @@
         "admin": "管理画面",
         "features": "機能",
         "pricing": "料金",
-        "docs": "ドキュメント"
+        "docs": "ドキュメント",
+        "settings": "設定"
       },
       "auth": {
         "signIn": "ログイン",
@@ -141,7 +144,8 @@
         "admin": "Administration",
         "features": "Fonctionnalités",
         "pricing": "Tarification",
-        "docs": "Documentation"
+        "docs": "Documentation",
+        "settings": "Paramètres"
       },
       "auth": {
         "signIn": "Connexion",

@@ -1,43 +1,17 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import type { NuxtPage } from 'nuxt/schema'
 import { resolve } from 'node:path'
+import { defineNuxtConfig } from 'nuxt/config'
 import { generateRuntimeConfig } from './server/utils/runtimeConfig'
-import { getAppUrl } from './shared/utils/app-url'
 
-const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
-if (isTestEnv) {
-  process.env.NUXT_NITRO_PRESET = 'node-server'
-}
-const nitroPreset = process.env.NUXT_NITRO_PRESET
+console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`)
 
-const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
-const hyperdriveBindings = hyperdriveId
-  ? [{
-      binding: 'HYPERDRIVE',
-      id: hyperdriveId
-    }]
-  : undefined
-
-if (process.env.NODE_ENV === 'production' && process.env.NUXT_NITRO_PRESET !== 'node-server' && !hyperdriveBindings) {
-  console.warn('[nuxt.config] NUXT_CF_HYPERDRIVE_ID is not set; Hyperdrive binding will be skipped.')
-}
-
-const resolveMdcHighlighterPlugin = {
-  name: 'resolve-mdc-highlighter',
-  resolveId(id: string) {
-    if (id && id.includes('mdc-highlighter.mjs') && id.includes('.cache')) {
-      // Replace the .cache path with the actual .nuxt directory
-      // Handle both absolute and relative paths
-      const workspaceRoot = process.cwd()
-      const relativePath = id.replace(/.*node_modules\/\.cache\/nuxt\/\.nuxt/, '.nuxt')
-      return resolve(workspaceRoot, relativePath)
-    }
-    return null
-  }
-}
+const effectiveNitroPreset = (process.env.NODE_ENV === 'development' && !process.env.NUXT_FORCE_CLOUDFLARE_DEV)
+  ? 'node-server'
+  : (process.env.NUXT_NITRO_PRESET || 'node-server')
 
 export default defineNuxtConfig({
-  compatibilityDate: '2025-12-11',
+  compatibilityDate: '2025-12-10',
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
   modules: [
@@ -47,39 +21,19 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@nuxtjs/seo',
     ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
-    ...(nitroPreset && nitroPreset !== 'node-server' ? ['@nuxthub/core'] : [])
+    '@nuxthub/core'
   ],
   mdc: {
     highlight: {}
   },
-  ...(nitroPreset && nitroPreset !== 'node-server'
-    ? {
-        hub: ({
-          // Enable db when using the Cloudflare-module preset (prod + wrangler/local worker runs).
-          ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
-            ? { db: 'postgresql' }
-            : {}),
-          workers: true,
-          kv: process.env.NODE_ENV === 'production'
-            ? true
-            : {
-                driver: 'fs-lite',
-                base: '.data/kv'
-              },
-          blob: true,
-          ...(hyperdriveBindings
-            ? {
-                bindings: {
-                  hyperdrive: hyperdriveBindings
-                }
-              }
-            : {})
-        }) as any
-      }
-    : {}),
+  hub: {
+    db: 'postgresql',
+    kv: true,
+    blob: true
+  },
   i18n: {
     vueI18n: '~/i18n/i18n.config.ts',
-    baseUrl: getAppUrl(),
+    baseUrl: process.env.NUXT_APP_URL,
     locales: [
       { code: 'en', language: 'en-US', name: 'English' },
       { code: 'zh-CN', language: 'zh-CN', name: '简体中文' },
@@ -112,8 +66,6 @@ export default defineNuxtConfig({
       standalone: false
     }
   },
-  // Fonts are now self-hosted locally for GDPR compliance, performance, and offline support
-  // See app/assets/css/main.css for @font-face declarations
   ogImage: {
     enabled: false
   },
@@ -123,13 +75,7 @@ export default defineNuxtConfig({
       scan: {
         globInclude: ['**\/*.{vue,jsx,tsx,md,mdc,mdx}', 'app/**/*.ts']
       }
-    },
-    customCollections: [
-      {
-        prefix: 'custom',
-        dir: './app/assets/icons'
-      }
-    ]
+    }
   },
   hooks: {
     'pages:extend': function (pages) {
@@ -163,11 +109,8 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
-    preset: nitroPreset,
-    experimental: {
-      openAPI: true
-    },
-    ...(nitroPreset === 'cloudflare-module'
+    preset: effectiveNitroPreset,
+    ...(effectiveNitroPreset === 'cloudflare-module'
       ? {
           cloudflare: {
             deployConfig: true,
@@ -176,10 +119,7 @@ export default defineNuxtConfig({
         }
       : {}),
     rollupConfig: {
-      external: nitroPreset && nitroPreset !== 'node-server' ? ['pg-native'] : undefined,
-      plugins: nitroPreset === 'cloudflare-module'
-        ? [resolveMdcHighlighterPlugin]
-        : undefined
+      external: effectiveNitroPreset != 'node-server' ? ['pg-native'] : undefined
     },
     esbuild: {
       options: {
@@ -203,4 +143,4 @@ export default defineNuxtConfig({
       transpile: ['zod']
     }
   }
-})
+}) as any

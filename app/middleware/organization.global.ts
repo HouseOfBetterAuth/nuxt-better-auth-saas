@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  const { loggedIn, organization, useActiveOrganization, fetchSession, session } = useAuth()
+  const { loggedIn, organization, fetchSession, session } = useAuth()
 
   if (!loggedIn.value)
     return
@@ -39,12 +39,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
       // Organization mismatch, set active organization
       await organization.setActive({ organizationId: targetOrg.id })
       await fetchSession()
-
-      // Update activeOrg ref immediately to update UI
-      const activeOrg = useActiveOrganization()
-      if (activeOrg.value) {
-        activeOrg.value.data = targetOrg
-      }
     }
   } else {
     // Invalid slug, redirect to first available org or handle error

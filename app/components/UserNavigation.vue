@@ -6,8 +6,36 @@ const emit = defineEmits<{
 }>()
 const localePath = useLocalePath()
 const { t } = useI18n()
-const { loggedIn, signOut, user } = useAuth()
+const route = useRoute()
+const { loggedIn, signOut, user, useActiveOrganization } = useAuth()
 const { activeSub: activeStripeSubscription } = usePaymentStatus()
+const activeOrg = useActiveOrganization()
+
+const orgSlug = computed(() => {
+  const param = route.params.slug
+  const routeSlug = Array.isArray(param) ? param[0] : param
+  if (routeSlug && routeSlug !== 't')
+    return routeSlug
+  const fallback = activeOrg.value?.data?.slug
+  return fallback && fallback !== 't' ? fallback : null
+})
+
+const menuItems = computed(() => {
+  const items: any[] = []
+  if (orgSlug.value) {
+    items.push({
+      label: t('global.nav.settings'),
+      icon: 'i-lucide-settings',
+      to: localePath(`/${orgSlug.value}/settings`)
+    })
+  }
+  items.push({
+    label: t('global.auth.signOut'),
+    icon: 'i-lucide-log-out',
+    onSelect: () => signOut()
+  })
+  return items
+})
 
 // Get the tier display name from the subscription plan
 const tierBadgeLabel = computed(() => {
@@ -23,13 +51,7 @@ const tierBadgeLabel = computed(() => {
 <template>
   <template v-if="loggedIn">
     <UDropdownMenu
-      :items="[
-        {
-          label: t('global.auth.signOut'),
-          icon: 'i-lucide-log-out',
-          onSelect: () => signOut()
-        }
-      ]"
+      :items="menuItems"
     >
       <UButton
         variant="ghost"
