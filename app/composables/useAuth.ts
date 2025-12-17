@@ -65,6 +65,12 @@ export function useAuth() {
   const user = useState<User | null>('auth:user', () => null)
   const sessionFetching = import.meta.server ? ref(false) : useState('auth:sessionFetching', () => false)
   const sharedActiveOrganization = useState<any>('auth:active-organization:data', () => null)
+  const isTestEnv = Boolean(
+    (globalThis as any)?.__NUXT_TESTING__ ||
+    (import.meta as any)?.env?.VITEST ||
+    process.env.VITEST ||
+    process.env.NUXT_TESTING
+  )
   const activeOrgWatcherInitialized = import.meta.client
     ? useState<boolean>('auth:active-organization:watcher-initialized', () => false)
     : null
@@ -109,7 +115,7 @@ export function useAuth() {
   }
 
   const initializeClientActiveOrganizationSource = () => {
-    if (!import.meta.client || !clientActiveOrganization)
+    if (!import.meta.client || !clientActiveOrganization || isTestEnv)
       return
 
     if (clientActiveOrganization.value) {
@@ -141,7 +147,7 @@ export function useAuth() {
   }
 
   const resolveActiveOrganization = () => {
-    if (import.meta.client) {
+    if (import.meta.client && !isTestEnv) {
       initializeClientActiveOrganizationSource()
 
       return computed(() => {
@@ -194,10 +200,14 @@ export function useAuth() {
           }
         }
       } else {
-        data = await $fetch('/api/auth/get-session', {
-          credentials: 'include',
-          headers
-        })
+        if (isTestEnv) {
+          data = { session: null, user: null }
+        } else {
+          data = await $fetch('/api/auth/get-session', {
+            credentials: 'include',
+            headers
+          })
+        }
       }
     } catch (error) {
       console.error('[useAuth] Failed to fetch session:', error)

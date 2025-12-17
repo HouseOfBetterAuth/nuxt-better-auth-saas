@@ -4,6 +4,12 @@ import { resolve } from 'node:path'
 import { generateRuntimeConfig } from './server/utils/runtimeConfig'
 import { getAppUrl } from './shared/utils/app-url'
 
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
+if (isTestEnv) {
+  process.env.NUXT_NITRO_PRESET = 'node-server'
+}
+const nitroPreset = process.env.NUXT_NITRO_PRESET
+
 const hyperdriveId = process.env.NUXT_CF_HYPERDRIVE_ID
 const hyperdriveBindings = hyperdriveId && process.env.NODE_ENV === 'production'
   ? [{
@@ -41,14 +47,14 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@nuxtjs/seo',
     ...(process.env.NODE_ENV === 'test' ? ['@nuxt/test-utils/module'] : []),
-    ...(process.env.NUXT_NITRO_PRESET !== 'node-server' ? ['@nuxthub/core'] : [])
+    ...(nitroPreset && nitroPreset !== 'node-server' ? ['@nuxthub/core'] : [])
   ],
   mdc: {
     highlight: {
       server: false
     }
   },
-  ...(process.env.NUXT_NITRO_PRESET !== 'node-server'
+  ...(nitroPreset && nitroPreset !== 'node-server'
     ? {
         hub: {
           // Enable db for Cloudflare Workers (production builds), but not in local dev
@@ -160,11 +166,11 @@ export default defineNuxtConfig({
     }
   },
   nitro: {
-    preset: process.env.NUXT_NITRO_PRESET,
+    preset: nitroPreset,
     experimental: {
       openAPI: true
     },
-    ...(process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+    ...(nitroPreset === 'cloudflare-module'
       ? {
           cloudflare: {
             deployConfig: true,
@@ -173,8 +179,8 @@ export default defineNuxtConfig({
         }
       : {}),
     rollupConfig: {
-      external: process.env.NUXT_NITRO_PRESET != 'node-server' ? ['pg-native'] : undefined,
-      plugins: process.env.NUXT_NITRO_PRESET === 'cloudflare-module'
+      external: nitroPreset && nitroPreset !== 'node-server' ? ['pg-native'] : undefined,
+      plugins: nitroPreset === 'cloudflare-module'
         ? [resolveMdcHighlighterPlugin]
         : undefined
     },

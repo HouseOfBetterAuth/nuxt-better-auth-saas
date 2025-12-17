@@ -27,6 +27,8 @@
     "sync:upstream:no-backup": "./scripts/sync-upstream.sh --no-backup",
     "db:backfill-device-fingerprints": "tsx scripts/backfill-device-fingerprints.ts",
     "db:backfill-is-anonymous": "pnpm dlx tsx scripts/backfill-is-anonymous.ts",
+    "db:troubleshoot-chat": "pnpm dlx tsx scripts/troubleshoot-chat-anon-orgs.ts",
+    "db:purge-anonymous": "pnpm dlx tsx scripts/purge-anonymous-data.ts",
     "debug:endpoints": "tsx scripts/debug-endpoint-hangs.ts",
     "prepare": "husky"
   },

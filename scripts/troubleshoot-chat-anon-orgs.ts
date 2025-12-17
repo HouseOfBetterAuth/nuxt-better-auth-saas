@@ -1,0 +1,497 @@
+#!/usr/bin/env tsx
+
+/** Troubleshoot anonymous auth + org resolution + chat persistence (direct DB). */
+
+import * as dotenv from 'dotenv'
+import pg from 'pg'
+
+dotenv.config()
+
+interface Args {
+  userId?: string
+  sessionToken?: string
+  orgId?: string
+  scan?: boolean
+  scanLimit?: number
+  fixDefaultOrg?: string
+  fixActiveOrg?: string
+  apply?: boolean
+}
+
+function parseArgs(argv: string[]): Args {
+  const out: Args = { scanLimit: 50 }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--userId') {
+      out.userId = argv[++i]
+    } else if (a === '--sessionToken') {
+      out.sessionToken = argv[++i]
+    } else if (a === '--orgId') {
+      out.orgId = argv[++i]
+    } else if (a === '--scan') {
+      out.scan = true
+    } else if (a === '--scanLimit') {
+      out.scanLimit = Number.parseInt(argv[++i] || '', 10)
+    } else if (a === '--fixDefaultOrg') {
+      out.fixDefaultOrg = argv[++i]
+    } else if (a === '--fixActiveOrg') {
+      out.fixActiveOrg = argv[++i]
+    } else if (a === '--apply') {
+      out.apply = true
+    } else if (a === '--help' || a === '-h') {
+      printHelpAndExit(0)
+    }
+  }
+  return out
+}
+
+function printHelpAndExit(code: number) {
+  console.log(
+    [
+      '',
+      'Troubleshoot chat/anonymous/orgs (direct DB inspection)',
+      '',
+      'Modes:',
+      '  --scan',
+      '  --userId <id>',
+      '  --sessionToken <token>',
+      '  --orgId <id>',
+      '',
+      'Scan options:',
+      '  --scanLimit <n> (default: 50)',
+      '',
+      'Optional fixes (require --apply):',
+      '  --fixDefaultOrg <orgId>',
+      '  --fixActiveOrg <orgId> (requires --sessionToken)',
+      ''
+    ].join('\n')
+  )
+  process.exit(code)
+}
+
+async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const start = Date.now()
+  try {
+    return await fn()
+  } finally {
+    const ms = Date.now() - start
+    console.log(`- ${label}: ${ms}ms`)
+  }
+}
+
+function printSection(title: string) {
+  console.log(`\n=== ${title} ===`)
+}
+
+function assertDatabaseUrl() {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ DATABASE_URL environment variable is not set')
+    process.exit(1)
+  }
+}
+
+async function runScan(client: pg.PoolClient, scanLimit: number) {
+  const limit = Number.isFinite(scanLimit) && scanLimit > 0 ? scanLimit : 50
+
+  printSection('Scan: users with dangling default_organization_id')
+  const danglingDefaults = await timed('scan dangling user.default_organization_id', async () => {
+    const res = await client.query(
+      `SELECT u.id as user_id, u.email, u.is_anonymous, u.default_organization_id
+       FROM "user" u
+       LEFT JOIN "organization" o ON o.id = u.default_organization_id
+       WHERE u.default_organization_id IS NOT NULL
+         AND o.id IS NULL
+       ORDER BY u.updated_at DESC NULLS LAST, u.created_at DESC
+       LIMIT $1`,
+      [limit]
+    )
+    return res.rows as any[]
+  })
+  console.table(danglingDefaults)
+
+  printSection('Scan: sessions with dangling active_organization_id')
+  const danglingActiveOrgs = await timed('scan dangling session.active_organization_id', async () => {
+    const res = await client.query(
+      `SELECT s.id as session_id, s.user_id, s.expires_at, s.active_organization_id
+       FROM "session" s
+       LEFT JOIN "organization" o ON o.id = s.active_organization_id
+       WHERE s.active_organization_id IS NOT NULL
+         AND o.id IS NULL
+       ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+       LIMIT $1`,
+      [limit]
+    )
+    return res.rows as any[]
+  })
+  console.table(danglingActiveOrgs)
+
+  printSection('Scan: anonymous users missing default_organization_id')
+  const anonMissingDefault = await timed('scan anon users missing default org', async () => {
+    const res = await client.query(
+      `SELECT u.id as user_id, u.email, u.created_at, u.updated_at FROM "user" u WHERE u.is_anonymous = true AND (u.default_organization_id IS NULL OR u.default_organization_id = '') ORDER BY u.updated_at DESC NULLS LAST, u.created_at DESC LIMIT $1`,
+      [limit]
+    )
+    return res.rows as any[]
+  })
+  console.table(anonMissingDefault)
+
+  if (anonMissingDefault.length > 0) {
+    printSection('Details: anon users missing default_organization_id (memberships + sessions)')
+    const userIds = anonMissingDefault.map(r => String(r.user_id))
+    const details = await timed('detail anon missing default', async () => {
+      const res = await client.query(
+        `WITH first_membership AS (SELECT DISTINCT ON (m.user_id) m.user_id, m.organization_id, m.created_at FROM "member" m WHERE m.user_id = ANY($1::text[]) ORDER BY m.user_id, m.created_at ASC), session_counts AS (SELECT s.user_id, COUNT(*)::int as session_count FROM "session" s WHERE s.user_id = ANY($1::text[]) GROUP BY s.user_id), member_counts AS (SELECT m.user_id, COUNT(*)::int as member_count FROM "member" m WHERE m.user_id = ANY($1::text[]) GROUP BY m.user_id) SELECT u.id as user_id, u.email, COALESCE(mc.member_count, 0) as member_count, fm.organization_id as first_membership_org_id, (o.id IS NOT NULL) as first_membership_org_exists, o.slug as first_membership_org_slug, o.is_anonymous as first_membership_org_is_anonymous, COALESCE(sc.session_count, 0) as session_count FROM "user" u LEFT JOIN first_membership fm ON fm.user_id = u.id LEFT JOIN "organization" o ON o.id = fm.organization_id LEFT JOIN session_counts sc ON sc.user_id = u.id LEFT JOIN member_counts mc ON mc.user_id = u.id WHERE u.id = ANY($1::text[]) ORDER BY u.updated_at DESC NULLS LAST, u.created_at DESC`,
+        [userIds]
+      )
+      return res.rows as any[]
+    })
+    console.table(details)
+  }
+
+  printSection('Scan: anonymous orgs without owner membership')
+  const anonOrgsWithoutOwner = await timed('scan anon orgs missing owner', async () => {
+    const res = await client.query(
+      `SELECT o.id as organization_id, o.slug, o.created_at FROM "organization" o LEFT JOIN "member" m ON m.organization_id = o.id AND m.role = 'owner' WHERE o.is_anonymous = true AND m.id IS NULL ORDER BY o.created_at DESC LIMIT $1`,
+      [limit]
+    )
+    return res.rows as any[]
+  })
+  console.table(anonOrgsWithoutOwner)
+
+  if (anonOrgsWithoutOwner.length > 0) {
+    printSection('Details: anon orgs without owner (member counts)')
+    const orgIds = anonOrgsWithoutOwner.map(r => String(r.organization_id))
+    const details = await timed('detail anon orgs missing owner', async () => {
+      const res = await client.query(
+        `WITH member_stats AS (SELECT m.organization_id, COUNT(*)::int as member_count, COUNT(*) FILTER (WHERE m.role = 'owner')::int as owner_count FROM "member" m WHERE m.organization_id = ANY($1::text[]) GROUP BY m.organization_id) SELECT o.id as organization_id, o.slug, o.created_at, COALESCE(ms.member_count, 0) as member_count, COALESCE(ms.owner_count, 0) as owner_count FROM "organization" o LEFT JOIN member_stats ms ON ms.organization_id = o.id WHERE o.id = ANY($1::text[]) ORDER BY o.created_at DESC`,
+        [orgIds]
+      )
+      return res.rows as any[]
+    })
+    console.table(details)
+  }
+}
+
+async function inspectOrg(client: pg.PoolClient, orgId: string) {
+  printSection('Organization')
+  const orgRow = await timed('select organization', async () => {
+    const res = await client.query(
+      `SELECT id, slug, name, is_anonymous, created_at FROM "organization" WHERE id = $1 LIMIT 1`,
+      [orgId]
+    )
+    return res.rows[0] as any | undefined
+  })
+
+  if (!orgRow) {
+    console.error('❌ No organization row found for orgId', orgId)
+  } else {
+    console.log({ organization: orgRow })
+  }
+
+  printSection('Users referencing this org (default_organization_id)')
+  const users = await timed('select users by default_organization_id', async () => {
+    const res = await client.query(
+      `SELECT id as user_id, email, is_anonymous, created_at, updated_at FROM "user" WHERE default_organization_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 50`,
+      [orgId]
+    )
+    return res.rows as any[]
+  })
+  console.table(users)
+
+  printSection('Sessions referencing this org (active_organization_id)')
+  const sessions = await timed('select sessions by active_organization_id', async () => {
+    const res = await client.query(
+      `SELECT id as session_id, user_id, expires_at, created_at, updated_at FROM "session" WHERE active_organization_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 50`,
+      [orgId]
+    )
+    return res.rows as any[]
+  })
+  console.table(sessions)
+
+  printSection('Memberships for this org')
+  const members = await timed('select members by organization_id', async () => {
+    const res = await client.query(
+      `SELECT m.id as member_id, m.role, m.created_at as member_created_at, u.id as user_id, u.email, u.is_anonymous FROM "member" m JOIN "user" u ON u.id = m.user_id WHERE m.organization_id = $1 ORDER BY m.created_at ASC LIMIT 100`,
+      [orgId]
+    )
+    return res.rows as any[]
+  })
+  console.table(members)
+
+  printSection('Recent conversations for this org')
+  const convs = await timed('select conversations by org', async () => {
+    const res = await client.query(
+      `SELECT id, created_by_user_id, status, created_at, updated_at FROM "conversation" WHERE organization_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 20`,
+      [orgId]
+    )
+    return res.rows as any[]
+  })
+  console.table(convs)
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2))
+
+  assertDatabaseUrl()
+
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+  const client = await pool.connect()
+
+  try {
+    if (args.scan) {
+      await runScan(client, args.scanLimit ?? 50)
+      printSection('Done')
+      console.log('Scan complete. Fix dangling default_organization_id / active_organization_id to unblock org resolution.')
+      return
+    }
+
+    if (args.orgId && !args.userId && !args.sessionToken) {
+      await inspectOrg(client, args.orgId)
+      printSection('Done')
+      console.log('Org inspection complete.')
+      return
+    }
+
+    if (!args.userId && !args.sessionToken) {
+      printHelpAndExit(1)
+    }
+
+    let userId = args.userId
+
+    if (!userId && args.sessionToken) {
+      printSection('Resolve userId from session token')
+      const sessionRow = await timed('select session by token', async () => {
+        const res = await client.query(
+          `SELECT id, token, user_id, active_organization_id, expires_at, created_at, updated_at
+           FROM "session"
+           WHERE token = $1
+           LIMIT 1`,
+          [args.sessionToken]
+        )
+        return res.rows[0] as any | undefined
+      })
+
+      if (!sessionRow) {
+        console.error('❌ No session row found for provided --sessionToken')
+        process.exit(1)
+      }
+
+      userId = sessionRow.user_id
+      console.log({ session: sessionRow })
+    }
+
+    if (!userId) {
+      console.error('❌ Could not resolve userId')
+      process.exit(1)
+    }
+
+    printSection('User')
+    const userRow = await timed('select user', async () => {
+      const res = await client.query(
+        `SELECT id, email, name, is_anonymous, default_organization_id, created_at, updated_at
+         FROM "user"
+         WHERE id = $1
+         LIMIT 1`,
+        [userId]
+      )
+      return res.rows[0] as any | undefined
+    })
+
+    if (!userRow) {
+      console.error('❌ No user row found for userId', userId)
+      process.exit(1)
+    }
+
+    console.log({ user: userRow })
+
+    const relevantOrgIds = new Set<string>()
+    if (userRow.default_organization_id) {
+      relevantOrgIds.add(String(userRow.default_organization_id))
+    }
+    if (args.orgId) {
+      relevantOrgIds.add(args.orgId)
+    }
+
+    printSection('Recent sessions (most recent first)')
+    const sessions = await timed('select sessions by user_id', async () => {
+      const res = await client.query(
+        `SELECT id, token, user_id, active_organization_id, expires_at, created_at, updated_at
+         FROM "session"
+         WHERE user_id = $1
+         ORDER BY updated_at DESC NULLS LAST, created_at DESC
+         LIMIT 10`,
+        [userId]
+      )
+      return res.rows as any[]
+    })
+
+    if (sessions.length === 0) {
+      console.warn('⚠️  No rows found in "session" table for this userId. If you are using cookie-only sessions or sessions are pruned, use --scan or pass an active --sessionToken.')
+    }
+
+    for (const s of sessions) {
+      if (s.active_organization_id) {
+        relevantOrgIds.add(String(s.active_organization_id))
+      }
+    }
+
+    console.table(sessions.map(s => ({
+      id: s.id,
+      expires_at: s.expires_at,
+      updated_at: s.updated_at,
+      active_organization_id: s.active_organization_id,
+      token_preview: typeof s.token === 'string' ? `${s.token.slice(0, 8)}…` : null
+    })))
+
+    printSection('Memberships')
+    const memberships = await timed('select members joined to org', async () => {
+      const res = await client.query(
+        `SELECT m.id as member_id, m.role, m.created_at as member_created_at,
+                o.id as organization_id, o.slug, o.name, o.is_anonymous as organization_is_anonymous
+         FROM "member" m
+         JOIN "organization" o ON o.id = m.organization_id
+         WHERE m.user_id = $1
+         ORDER BY m.created_at ASC`,
+        [userId]
+      )
+      return res.rows as any[]
+    })
+
+    memberships.forEach(m => relevantOrgIds.add(String(m.organization_id)))
+
+    console.table(memberships.map(m => ({
+      organization_id: m.organization_id,
+      slug: m.slug,
+      name: m.name,
+      role: m.role,
+      org_is_anonymous: m.organization_is_anonymous,
+      member_created_at: m.member_created_at
+    })))
+
+    if (relevantOrgIds.size > 0) {
+      printSection('Organizations (for all referenced org IDs)')
+      const orgIds = Array.from(relevantOrgIds)
+
+      const orgs = await timed('select organizations by ids', async () => {
+        const res = await client.query(
+          `SELECT id, slug, name, is_anonymous, created_at
+           FROM "organization"
+           WHERE id = ANY($1::text[])`,
+          [orgIds]
+        )
+        return res.rows as any[]
+      })
+
+      const orgById = new Map(orgs.map(o => [String(o.id), o]))
+
+      console.table(orgIds.map((id) => {
+        const o = orgById.get(id)
+        return {
+          id,
+          exists: !!o,
+          slug: o?.slug ?? null,
+          name: o?.name ?? null,
+          is_anonymous: o?.is_anonymous ?? null
+        }
+      }))
+
+      const defaultOrgId = userRow.default_organization_id ? String(userRow.default_organization_id) : null
+      if (defaultOrgId && !orgById.get(defaultOrgId)) {
+        console.error('\n❌ Dangling default_organization_id detected on user:', {
+          userId,
+          default_organization_id: defaultOrgId
+        })
+        console.error('   This will break use-active-organization and can stall /api/chat follow-ups.')
+      }
+
+      if (args.fixDefaultOrg || args.fixActiveOrg) {
+        if (!args.apply) {
+          console.error('\n❌ Refusing to write without --apply')
+          console.error('   Re-run with --apply to perform updates.')
+          process.exit(2)
+        }
+
+        if (args.fixDefaultOrg && !orgById.get(args.fixDefaultOrg)) {
+          console.error('❌ --fixDefaultOrg orgId does not exist in organization table:', args.fixDefaultOrg)
+          process.exit(2)
+        }
+        if (args.fixActiveOrg && !orgById.get(args.fixActiveOrg)) {
+          console.error('❌ --fixActiveOrg orgId does not exist in organization table:', args.fixActiveOrg)
+          process.exit(2)
+        }
+
+        printSection('Apply fixes (transaction)')
+        await client.query('BEGIN')
+        try {
+          if (args.fixDefaultOrg) {
+            await timed('update user.default_organization_id', async () => {
+              await client.query(
+                `UPDATE "user"
+                 SET default_organization_id = $1
+                 WHERE id = $2`,
+                [args.fixDefaultOrg, userId]
+              )
+            })
+            console.log('✅ Updated user.default_organization_id', { userId, default_organization_id: args.fixDefaultOrg })
+          }
+
+          if (args.fixActiveOrg) {
+            if (!args.sessionToken) {
+              console.error('❌ --fixActiveOrg requires --sessionToken (so we know which session row to update)')
+              process.exit(2)
+            }
+
+            await timed('update session.active_organization_id', async () => {
+              await client.query(
+                `UPDATE "session"
+                 SET active_organization_id = $1
+                 WHERE token = $2`,
+                [args.fixActiveOrg, args.sessionToken]
+              )
+            })
+            console.log('✅ Updated session.active_organization_id', { token: `${args.sessionToken.slice(0, 8)}…`, active_organization_id: args.fixActiveOrg })
+          }
+
+          await client.query('COMMIT')
+        } catch (e) {
+          await client.query('ROLLBACK')
+          throw e
+        }
+      }
+
+      // Chat persistence quick sanity: show recent conversations for any org we have
+      printSection('Recent conversations (by referenced orgs)')
+      const convs = await timed('select latest conversations', async () => {
+        const res = await client.query(
+          `SELECT id, organization_id, created_by_user_id, status, created_at, updated_at
+           FROM "conversation"
+           WHERE organization_id = ANY($1::text[])
+           ORDER BY updated_at DESC NULLS LAST, created_at DESC
+           LIMIT 20`,
+          [orgIds]
+        )
+        return res.rows as any[]
+      })
+
+      console.table(convs.map(c => ({
+        id: c.id,
+        organization_id: c.organization_id,
+        created_by_user_id: c.created_by_user_id,
+        status: c.status,
+        updated_at: c.updated_at,
+        created_at: c.created_at
+      })))
+    }
+
+    printSection('Done')
+    console.log('If default_organization_id was dangling, fix it (or recreate the org) and retry /api/auth/organization/use-active-organization.')
+  } finally {
+    client.release()
+    await pool.end()
+  }
+}
+
+main().catch((error) => {
+  console.error('Fatal error:', error)
+  process.exit(1)
+})

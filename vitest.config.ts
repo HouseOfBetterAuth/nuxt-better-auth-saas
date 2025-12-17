@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineVitestConfig } from '@nuxt/test-utils/config'
 
 export default defineVitestConfig({
@@ -8,7 +9,26 @@ export default defineVitestConfig({
       nuxt: {
         domEnvironment: 'happy-dom',
         overrides: {
-          // other Nuxt config you want to pass
+          alias: {
+            'hub:kv': fileURLToPath(new URL('./tests/utils/hub-kv.stub.ts', import.meta.url))
+          },
+          nitro: {
+            alias: {
+              'hub:kv': fileURLToPath(new URL('./tests/utils/hub-kv.stub.ts', import.meta.url))
+            }
+          },
+          vite: {
+            build: {
+              rollupOptions: {
+                external: ['hub:kv']
+              }
+            },
+            resolve: {
+              alias: {
+                'hub:kv': fileURLToPath(new URL('./tests/utils/hub-kv.stub.ts', import.meta.url))
+              }
+            }
+          }
         }
       }
     },

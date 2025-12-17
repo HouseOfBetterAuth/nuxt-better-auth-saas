@@ -185,6 +185,10 @@ const schemaErrors = computed(() => contentEntry.value?.schemaValidation?.errors
 const schemaWarnings = computed(() => contentEntry.value?.schemaValidation?.warnings || [])
 
 const isMounted = ref(false)
+const clearWorkspaceHeader = () => {
+  workspaceHeader.value = null
+  workspaceHeaderLoading.value = false
+}
 
 const setOnBackCallback = () => {
   if (workspaceHeader.value) {
@@ -197,6 +201,14 @@ const setOnBackCallback = () => {
 onMounted(() => {
   isMounted.value = true
   setOnBackCallback()
+})
+
+onBeforeRouteLeave(() => {
+  clearWorkspaceHeader()
+})
+
+onUnmounted(() => {
+  clearWorkspaceHeader()
 })
 
 watch(contentEntry, (entry) => {

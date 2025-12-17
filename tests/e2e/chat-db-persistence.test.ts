@@ -18,6 +18,17 @@ describe('chat database persistence E2E', async () => {
 
   const baseURL = process.env.NUXT_TEST_APP_URL || 'http://localhost:3000'
 
+  const getAnonymousCookie = async () => {
+    const res = await $fetch.raw(`${baseURL}/api/conversations`, { method: 'GET' })
+    const setCookie = res.headers.get('set-cookie') || ''
+    // Only keep cookie name=value pairs
+    return setCookie
+      .split(',')
+      .map(part => part.split(';')[0]?.trim())
+      .filter(Boolean)
+      .join('; ')
+  }
+
   // Verify database connection once before all tests
   beforeAll(async () => {
     const dbTest = await testDatabaseConnection()
@@ -43,11 +54,13 @@ describe('chat database persistence E2E', async () => {
     let userMessageId: string | null = null
 
     try {
+      const cookie = await getAnonymousCookie()
       const response = await $fetch(`${baseURL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
+          'Accept': 'text/event-stream',
+          ...(cookie ? { Cookie: cookie } : {})
         },
         body: {
           message: testMessage,

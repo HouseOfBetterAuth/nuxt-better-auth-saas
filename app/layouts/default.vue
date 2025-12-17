@@ -9,7 +9,6 @@ import UserNavigation from '~/components/UserNavigation.vue'
 
 const { t } = useI18n()
 const localePath = useLocalePath()
-const router = useRouter()
 const { loggedIn } = useAuth()
 
 const i18nHead = useLocaleHead()
@@ -30,29 +29,6 @@ function openSignUpModal(event?: MouseEvent) {
   authModalOpen.value = true
 }
 
-const newConversationAriaLabel = computed(() => {
-  return loggedIn.value ? t('global.conversations.new') : t('global.conversations.signUpToStart')
-})
-
-function handleNewConversationClick(event?: MouseEvent) {
-  if (loggedIn.value) {
-    newConversation()
-    return
-  }
-
-  openSignUpModal(event)
-}
-
-const { useActiveOrganization } = useAuth()
-const activeOrg = useActiveOrganization()
-
-function newConversation() {
-  const slug = activeOrg.value?.data?.slug
-  if (slug && slug !== 't') {
-    router.push(localePath(`/${slug}/conversations`))
-  }
-}
-
 useHead(() => ({
   link: [...(i18nHead.value.link || [])]
 }))
@@ -63,12 +39,9 @@ const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () 
 
 // Page title state - pages can set this via provide
 const headerTitle = useState<string | null>('page-header-title', () => null)
-const mobileSidebarOpen = ref(false)
-
 // Reset header title on route change
 watch(() => route.path, () => {
   headerTitle.value = null
-  mobileSidebarOpen.value = false
 })
 
 // Simple page title
@@ -103,6 +76,10 @@ const shouldShowChat = computed(() => {
 // Determine if we should show sidebar - on conversations and content routes
 const shouldShowSidebar = computed(() => {
   const path = route.path
+  if (!loggedIn.value)
+    return false
+  if (showWorkspaceHeader.value)
+    return false
   // Check for /[slug]/conversations or /[slug]/content patterns
   return /\/[^/]+\/(?:conversations|content)/.test(path)
 })
@@ -121,34 +98,6 @@ const primaryActionColor = computed(() => {
 
 <template>
   <div class="relative overflow-x-hidden">
-    <USlideover
-      v-if="shouldShowSidebar"
-      v-model:open="mobileSidebarOpen"
-      side="left"
-      :handle="false"
-      title="Navigation menu"
-      description="Browse workspace sections and account options."
-    >
-      <template #content>
-        <div class="w-[80vw] max-w-sm h-full flex flex-col bg-white dark:bg-gray-900 text-left">
-          <NuxtLink
-            :to="localePath('/')"
-            class="px-4 pt-4 pb-2 border-b border-neutral-200/70 dark:border-neutral-800/60 flex items-center gap-2 hover:opacity-80 transition-opacity"
-          >
-            <span class="text-lg font-semibold truncate">
-              {{ t('global.appName') }}
-            </span>
-          </NuxtLink>
-          <div class="flex-1 overflow-y-auto px-4 py-4">
-            <SidebarNavigation />
-          </div>
-          <div class="px-4 pb-4 border-t border-neutral-200/70 dark:border-neutral-800/60">
-            <UserNavigation @sign-in="openSignInModal" />
-          </div>
-        </div>
-      </template>
-    </USlideover>
-
     <UDashboardGroup>
       <!-- Sidebar with tabs for conversations and content -->
       <UDashboardSidebar
@@ -208,55 +157,20 @@ const primaryActionColor = computed(() => {
 
       <!-- Main content panel -->
       <UDashboardPanel>
-        <UDashboardNavbar v-if="shouldShowTopNav">
-          <!-- Replace built-in sidebar toggle (non-sidebar routes) -->
-          <template #toggle>
-            <UButton
-              v-if="!shouldShowSidebar"
-              icon="i-lucide-message-square-plus"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :aria-label="newConversationAriaLabel"
-              @click="handleNewConversationClick"
-            />
-          </template>
-
+        <UDashboardNavbar
+          v-if="shouldShowTopNav"
+          :toggle="shouldShowSidebar"
+        >
           <template
             v-if="showWorkspaceHeader"
             #left
           >
-            <div class="flex items-center gap-3 w-full">
-              <!-- Mobile controls for sidebar routes -->
-              <div
-                v-if="shouldShowSidebar"
-                class="flex items-center gap-2 lg:hidden"
-              >
-                <UButton
-                  icon="i-lucide-menu"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Menu"
-                  @click="mobileSidebarOpen = true"
-                />
-                <UButton
-                  icon="i-lucide-message-square-plus"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  :aria-label="t('global.conversations.new')"
-                  @click="newConversation"
-                />
-              </div>
-
+            <div class="flex flex-col gap-3 w-full lg:flex-row lg:items-center lg:justify-between">
               <div
                 v-if="workspaceHeaderLoading"
-                class="flex items-start gap-3 w-full"
+                class="flex items-center gap-3 w-full"
               >
-                <div class="flex-shrink-0 pt-1.5">
-                  <USkeleton class="h-10 w-10 rounded-full" />
-                </div>
+                <USkeleton class="h-10 w-10 rounded-full flex-shrink-0" />
                 <div class="min-w-0 flex-1 space-y-1">
                   <div class="flex items-center gap-2 min-w-0">
                     <USkeleton class="h-4 w-40 max-w-full rounded-md" />
@@ -272,60 +186,56 @@ const primaryActionColor = computed(() => {
 
               <div
                 v-else-if="workspaceHeader"
-                class="flex items-start gap-3 w-full"
+                class="flex flex-col gap-3 w-full lg:flex-row lg:items-center lg:justify-between"
               >
-                <div class="flex-shrink-0 pt-1.5">
+                <div class="flex items-center gap-2 w-full lg:w-auto">
                   <UButton
                     v-if="workspaceHeader.showBackButton"
                     icon="i-lucide-arrow-left"
                     variant="ghost"
                     size="sm"
                     :aria-label="t('global.back')"
-                    class="h-10 w-10 rounded-full p-0 flex items-center justify-center"
+                    class="rounded-full p-0 h-10 w-10 flex items-center justify-center"
                     @click="workspaceHeader.onBack?.()"
                   />
+                  <p class="text-base font-semibold truncate">
+                    {{ workspaceHeader.title }}
+                  </p>
+                  <UBadge
+                    v-if="workspaceHeader.status"
+                    color="neutral"
+                    variant="soft"
+                    size="xs"
+                    class="capitalize hidden lg:inline-flex"
+                  >
+                    {{ workspaceHeader.status }}
+                  </UBadge>
                 </div>
-                <div class="min-w-0 flex-1 space-y-1">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <p class="text-base font-semibold truncate">
-                      {{ workspaceHeader.title }}
-                    </p>
-                    <UBadge
-                      v-if="workspaceHeader.status"
-                      color="neutral"
-                      variant="soft"
-                      size="xs"
-                      class="capitalize"
-                    >
-                      {{ workspaceHeader.status }}
-                    </UBadge>
-                  </div>
-                  <div class="text-xs text-muted-500 flex flex-wrap items-center gap-1">
-                    <span>{{ workspaceHeader.updatedAtLabel || '—' }}</span>
-                    <template v-if="workspaceHeader.contentType">
-                      <span>·</span>
-                      <span class="capitalize">
-                        {{ workspaceHeader.contentType }}
-                      </span>
-                    </template>
-                    <template v-if="workspaceHeader.contentId">
-                      <span>·</span>
-                      <span class="font-mono text-[11px] text-muted-600 truncate">
-                        {{ workspaceHeader.contentId }}
-                      </span>
-                    </template>
-                    <template v-if="workspaceHeader.contentType || workspaceHeader.contentId">
-                      <span>·</span>
-                    </template>
-                    <span class="text-emerald-500 dark:text-emerald-400">
-                      +{{ workspaceHeader.additions ?? 0 }}
+                <div class="text-xs text-muted-500 hidden lg:flex flex-wrap items-center gap-1">
+                  <span>{{ workspaceHeader.updatedAtLabel || '—' }}</span>
+                  <template v-if="workspaceHeader.contentType">
+                    <span>·</span>
+                    <span class="capitalize">
+                      {{ workspaceHeader.contentType }}
                     </span>
-                    <span class="text-rose-500 dark:text-rose-400">
-                      -{{ workspaceHeader.deletions ?? 0 }}
+                  </template>
+                  <template v-if="workspaceHeader.contentId">
+                    <span>·</span>
+                    <span class="font-mono text-[11px] text-muted-600 truncate">
+                      {{ workspaceHeader.contentId }}
                     </span>
-                  </div>
+                  </template>
+                  <template v-if="workspaceHeader.contentType || workspaceHeader.contentId">
+                    <span>·</span>
+                  </template>
+                  <span class="text-emerald-500 dark:text-emerald-400">
+                    +{{ workspaceHeader.additions ?? 0 }}
+                  </span>
+                  <span class="text-rose-500 dark:text-rose-400">
+                    -{{ workspaceHeader.deletions ?? 0 }}
+                  </span>
                 </div>
-                <div class="flex items-center gap-2 flex-wrap justify-end">
+                <div class="hidden lg:flex flex-wrap gap-2 justify-end">
                   <UButton
                     v-if="workspaceHeader.onShare"
                     icon="i-lucide-copy"
@@ -365,29 +275,6 @@ const primaryActionColor = computed(() => {
             v-else
             #left
           >
-            <!-- Mobile controls for sidebar routes -->
-            <div
-              v-if="shouldShowSidebar"
-              class="flex items-center gap-2 lg:hidden"
-            >
-              <UButton
-                icon="i-lucide-menu"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                aria-label="Menu"
-                @click="mobileSidebarOpen = true"
-              />
-              <UButton
-                icon="i-lucide-message-square-plus"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                :aria-label="t('global.conversations.new')"
-                @click="newConversation"
-              />
-            </div>
-
             <NuxtLink
               :to="localePath('/')"
               class="flex items-center gap-2 hover:opacity-80 transition-opacity mr-4"
@@ -407,12 +294,8 @@ const primaryActionColor = computed(() => {
           </template>
 
           <template #right>
-            <UserNavigation
-              v-if="loggedIn"
-              @sign-in="openSignInModal"
-            />
             <div
-              v-else
+              v-if="!loggedIn"
               class="flex items-center gap-2"
             >
               <UButton
