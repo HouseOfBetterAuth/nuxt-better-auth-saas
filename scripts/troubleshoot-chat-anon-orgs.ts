@@ -507,10 +507,33 @@ async function printExplainRows(rows: Array<{ [k: string]: any }>) {
   console.log(lines.join('\n'))
 }
 
+function parseStatementTimeoutMs(
+  input: unknown,
+  {
+    defaultMs = 30_000,
+    maxMs = 600_000
+  }: { defaultMs?: number, maxMs?: number } = {}
+) {
+  const n = input === undefined || input === null || input === '' ? defaultMs : Number(input)
+  if (!Number.isFinite(n)) {
+    throw new Error(`Invalid statementTimeoutMs: ${String(input)}`)
+  }
+  const int = Math.trunc(n)
+  if (int < 0) {
+    throw new Error(`statementTimeoutMs must be >= 0 (got ${int})`)
+  }
+  if (int > maxMs) {
+    throw new Error(`statementTimeoutMs too large (max ${maxMs}ms, got ${int})`)
+  }
+  return int
+}
+
 async function runDiagnostics(client: pg.PoolClient, args: Args) {
-  const timeoutMs = args.statementTimeoutMs ?? 30000
+  const timeoutMs = parseStatementTimeoutMs(args.statementTimeoutMs)
   await timed(`set statement_timeout=${timeoutMs}ms`, async () => {
-    await client.query(`SET statement_timeout = ${Number(timeoutMs)};`)
+    // Use set_config so the value is fully parameterized (no SQL concatenation).
+    // statement_timeout accepts a numeric string in milliseconds.
+    await client.query(`SELECT set_config('statement_timeout', $1, true);`, [String(timeoutMs)])
   })
 
   if (args.statActivity) {
