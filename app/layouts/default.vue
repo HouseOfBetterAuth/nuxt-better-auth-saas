@@ -30,7 +30,7 @@ function openSignUpModal(event?: MouseEvent) {
 }
 
 const newConversationAriaLabel = computed(() => {
-  return loggedIn.value ? t('global.conversations.new') : t('global.auth.signUp')
+  return loggedIn.value ? t('global.conversations.new') : t('global.conversations.signUpToStart')
 })
 
 function handleNewConversationClick(event?: MouseEvent) {

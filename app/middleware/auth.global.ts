@@ -1,6 +1,9 @@
 import { defu } from 'defu'
 import { isAnonymousWorkspaceConversationRoute } from '~~/shared/utils/routeMatching'
 
+// Known locale codes from nuxt.config.ts (keep in sync with `organization.global.ts`)
+const KNOWN_LOCALES = ['en', 'zh-CN', 'ja', 'fr']
+
 type MiddlewareOptions = false | {
   /**
    * Only apply auth middleware to guest or user
@@ -69,11 +72,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       return true
     // Allow only anonymous workspace conversation routes: /anonymous-*/conversations
     // Strip locale prefix (if present) before extracting the workspace slug.
-    const { locales } = useI18n()
-    const localeCodes = (Array.isArray(locales.value) ? locales.value : [])
-      .map(l => (typeof l === 'string' ? l : (l as any)?.code))
-      .filter((l): l is string => typeof l === 'string' && l.length > 0)
-    if (isAnonymousWorkspaceConversationRoute(path, localeCodes))
+    if (isAnonymousWorkspaceConversationRoute(path, KNOWN_LOCALES))
       return true
     return false
   })()

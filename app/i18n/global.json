@@ -38,7 +38,8 @@
         "privacyPolicy": "Privacy Policy"
       },
       "conversations": {
-        "new": "New conversation"
+        "new": "New conversation",
+        "signUpToStart": "Sign up to start a conversation"
       }
     },
     "chat": {
@@ -80,7 +81,8 @@
         "privacyPolicy": "隐私政策"
       },
       "conversations": {
-        "new": "新对话"
+        "new": "新对话",
+        "signUpToStart": "注册以开始对话"
       }
     },
     "chat": {
@@ -122,7 +124,8 @@
         "privacyPolicy": "プライバシーポリシー"
       },
       "conversations": {
-        "new": "新しい会話"
+        "new": "新しい会話",
+        "signUpToStart": "会話を始めるには登録してください"
       }
     },
     "chat": {
@@ -164,7 +167,8 @@
         "privacyPolicy": "Politique de confidentialité"
       },
       "conversations": {
-        "new": "Nouvelle conversation"
+        "new": "Nouvelle conversation",
+        "signUpToStart": "Inscrivez-vous pour démarrer une conversation"
       }
     },
     "chat": {
