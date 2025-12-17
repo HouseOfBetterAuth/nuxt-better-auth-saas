@@ -381,11 +381,12 @@ async function inspectConversation(client: pg.PoolClient, conversationId: string
   console.table(recentLogs)
 }
 
-function generateId() {
-  // Member.id is a text PK with no default; use UUIDv4 string.
-  // Node 20+ provides crypto.randomUUID().
-
-  return (globalThis.crypto as any)?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+export function generateId() {
+  // Member.id is a text PK with no default; requires Node 20+ for crypto.randomUUID().
+  if (typeof (globalThis.crypto as any)?.randomUUID !== 'function') {
+    throw new Error('crypto.randomUUID() is not available. Please use Node 20+.')
+  }
+  return (globalThis.crypto as any).randomUUID()
 }
 
 async function fixOrphanAnonymousOrgOwner(client: pg.PoolClient, args: Args) {

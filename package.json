@@ -2,6 +2,9 @@
   "name": "quillio",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "nuxt dev",
     "test": "vitest run --silent=false",
