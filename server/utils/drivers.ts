@@ -15,6 +15,7 @@ const DB_POOL_WAIT_WARNING_MS = 3000
 const DB_POOL_BACKPRESSURE_LOG_INTERVAL_MS = 10_000
 const DB_QUERY_START_LOG_INTERVAL_MS = 10_000
 const DB_COLD_POOL_LOG_INTERVAL_MS = 10_000
+const DB_BYPASS_HYPERDRIVE_ENV = 'NUXT_DB_BYPASS_HYPERDRIVE'
 
 const poolStats = (pool: pg.Pool) => ({
   total: pool.totalCount,
@@ -25,16 +26,21 @@ const poolStats = (pool: pg.Pool) => ({
 const getDatabaseUrl = () => {
   // @ts-expect-error globalThis.__env__ is not defined
   const hyperdrive = (process.env.HYPERDRIVE || globalThis.__env__?.HYPERDRIVE || globalThis.HYPERDRIVE) as Hyperdrive | undefined
+  // Default to bypassing Hyperdrive for now. Set NUXT_DB_BYPASS_HYPERDRIVE=false to re-enable.
+  const bypassHyperdrive = process.env[DB_BYPASS_HYPERDRIVE_ENV] !== 'false'
   // Use Hyperdrive if available (prod Cloudflare), otherwise DATABASE_URL
-  const url = hyperdrive?.connectionString || runtimeConfig.databaseUrl
+  const url = (!bypassHyperdrive ? hyperdrive?.connectionString : undefined) || runtimeConfig.databaseUrl
   if (!url) {
     console.error('[DB] No database URL available - Hyperdrive:', !!hyperdrive, 'DATABASE_URL:', !!runtimeConfig.databaseUrl)
     throw new Error('Database connection string is not available')
   }
   // Log connection source (but not the actual URL for security)
-  if (hyperdrive?.connectionString) {
+  if (hyperdrive?.connectionString && !bypassHyperdrive) {
     console.log('[DB] Using Hyperdrive connection')
   } else {
+    if (hyperdrive?.connectionString && bypassHyperdrive) {
+      console.warn(`[DB] Bypassing Hyperdrive due to ${DB_BYPASS_HYPERDRIVE_ENV}=true`)
+    }
     console.log('[DB] Using DATABASE_URL connection')
   }
   return url
