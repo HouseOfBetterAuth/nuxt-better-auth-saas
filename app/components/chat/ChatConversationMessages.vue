@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="showWelcomeState"
-      class="flex items-center justify-center min-h-[50vh] lg:min-h-0"
+      class="flex items-center justify-center min-h-[60vh] lg:hidden"
     >
       <h1 class="text-2xl sm:text-3xl font-semibold text-center px-4">
         What would you like to write today?

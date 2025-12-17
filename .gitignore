@@ -24,7 +24,9 @@ logs
 !.env.example
 
 
-server/db/migrations
+server/db/migrations/*
+!server/db/migrations/.gitkeep
+!server/db/migrations/*.sql
 tests/coverage
 .wrangler/
 wrangler.toml

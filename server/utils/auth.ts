@@ -5,7 +5,7 @@ import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthMiddleware, getOAuthState } from 'better-auth/api'
 import { admin as adminPlugin, anonymous, apiKey, openAPI, organization } from 'better-auth/plugins'
-import { and, asc, count, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { appendResponseHeader, createError, getRequestHeaders } from 'h3'
 import { v7 as uuidv7 } from 'uuid'
 import * as schema from '~~/server/db/schema'
@@ -1149,7 +1149,11 @@ export const requireActiveOrganization = async (
             await db
               .update(schema.user)
               .set({ defaultOrganizationId: resolvedOrgId })
-              .where(eq(schema.user.id, userId))
+              // Avoid redundant writes under concurrency: only set if unset.
+              .where(and(
+                eq(schema.user.id, userId),
+                or(isNull(schema.user.defaultOrganizationId), eq(schema.user.defaultOrganizationId, ''))
+              ))
           }
         }
 
@@ -1159,12 +1163,28 @@ export const requireActiveOrganization = async (
             await db
               .update(schema.session)
               .set({ activeOrganizationId: resolvedOrgId })
-              .where(eq(schema.session.id, sessionId))
+              // Avoid redundant writes: only update if unset or different.
+              .where(and(
+                eq(schema.session.id, sessionId),
+                or(
+                  isNull(schema.session.activeOrganizationId),
+                  eq(schema.session.activeOrganizationId, ''),
+                  ne(schema.session.activeOrganizationId, resolvedOrgId)
+                )
+              ))
           } else if (typeof sessionToken === 'string' && sessionToken.length > 0) {
             await db
               .update(schema.session)
               .set({ activeOrganizationId: resolvedOrgId })
-              .where(eq(schema.session.token, sessionToken))
+              // Avoid redundant writes: only update if unset or different.
+              .where(and(
+                eq(schema.session.token, sessionToken),
+                or(
+                  isNull(schema.session.activeOrganizationId),
+                  eq(schema.session.activeOrganizationId, ''),
+                  ne(schema.session.activeOrganizationId, resolvedOrgId)
+                )
+              ))
           }
 
           event.context.organizationId = resolvedOrgId

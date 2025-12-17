@@ -6,7 +6,7 @@ const activeOrg = useActiveOrganization()
 
 // Special organization slug used for a non-org / tenant-less context.
 // When the active org slug is missing or equals this value, we must fall back
-// to non-organization conversation routes.
+// to the reserved non-organization conversation routes.
 const NON_ORG_SLUG = 't'
 
 const {
@@ -32,8 +32,8 @@ const openConversation = (conversationId: string | null) => {
   if (slug && slug !== NON_ORG_SLUG) {
     router.push(localePath(`/${slug}/conversations/${conversationId}`))
   } else {
-    // Fallback to non-organization route when org slug is unavailable.
-    router.push(localePath(`/conversations/${conversationId}`))
+    // Fallback to reserved non-org slug route when org slug is unavailable.
+    router.push(localePath(`/${NON_ORG_SLUG}/conversations/${conversationId}`))
   }
 }
 
@@ -47,7 +47,7 @@ const startNewConversation = () => {
   } else {
     // Fallback to non-organization route.
     router.push({
-      path: localePath('/conversations'),
+      path: localePath(`/${NON_ORG_SLUG}/conversations`),
       query: { new: '1' }
     })
   }

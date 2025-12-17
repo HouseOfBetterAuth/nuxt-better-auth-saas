@@ -22,6 +22,7 @@ const route = useRoute()
 const localePath = useLocalePath()
 const { loggedIn, signIn, useActiveOrganization } = useAuth()
 const activeOrg = useActiveOrganization()
+const NON_ORG_SLUG = 't'
 
 const {
   messages,
@@ -126,6 +127,11 @@ const routeConversationId = computed(() => {
 const conversationId = computed(() => {
   return props.conversationId || routeConversationId.value || activeConversationId.value
 })
+
+const showWelcomeState = computed(() =>
+  !messages.value.length && !conversationId.value && !isBusy.value && !promptSubmitting.value
+)
+
 const routeNewConversation = computed(() => {
   const flag = route.query.new
   if (Array.isArray(flag))
@@ -280,11 +286,11 @@ watch(activeConversationId, (value, previous) => {
 
   if (!props.contentId && value !== routeConversationId.value) {
     const slug = activeOrg.value?.data?.slug
-    if (slug && slug !== 't') {
+    if (slug && slug !== NON_ORG_SLUG) {
       router.push(localePath(`/${slug}/conversations/${value}`))
     }
     else {
-      router.push(localePath(`/conversations/${value}`))
+      router.push(localePath(`/${NON_ORG_SLUG}/conversations/${value}`))
     }
   }
 
@@ -293,7 +299,10 @@ watch(activeConversationId, (value, previous) => {
 })
 
 const getMessageText = (message: ChatMessage) => {
-  return message.parts[0]?.text || ''
+  return (message.parts || [])
+    .filter((part): part is { type: 'text', text: string } => part.type === 'text' && typeof (part as any).text === 'string')
+    .map(part => part.text)
+    .join('')
 }
 
 async function handleCopy(message: ChatMessage) {
@@ -330,7 +339,7 @@ const handleRegenerate = async (message: ChatMessage) => {
   if (isBusy.value)
     return
 
-  const text = message.parts[0]?.text?.trim() || ''
+  const text = getMessageText(message).trim()
   if (!text) {
     toast.add({
       title: 'Cannot regenerate',
@@ -347,7 +356,7 @@ async function handleSendAgain(message: ChatMessage) {
   if (isBusy.value)
     return
 
-  const text = message.parts?.[0]?.text || ''
+  const text = getMessageText(message)
   if (!text)
     return
 
@@ -433,9 +442,23 @@ if (import.meta.client) {
   <div
     ref="chatContainerRef"
     class="w-full min-h-full flex flex-col py-4 px-4 sm:px-6 pb-40 lg:pb-4 overflow-x-hidden"
+    :class="showWelcomeState ? 'lg:justify-center' : ''"
   >
-    <div class="w-full flex-1 flex flex-col justify-end lg:justify-start">
-      <div class="space-y-8 w-full max-w-3xl mx-auto">
+    <div
+      class="w-full flex-1 flex flex-col justify-end lg:justify-start"
+      :class="showWelcomeState ? 'lg:flex-none' : ''"
+    >
+      <div
+        class="space-y-8 w-full max-w-3xl mx-auto"
+        :class="showWelcomeState ? 'lg:space-y-10' : ''"
+      >
+        <h1
+          v-if="showWelcomeState"
+          class="hidden lg:block text-3xl font-semibold text-center px-4"
+        >
+          What would you like to write today?
+        </h1>
+
         <ChatConversationMessages
           :messages="messages"
           :display-messages="displayMessages"
@@ -453,7 +476,9 @@ if (import.meta.client) {
       </div>
     </div>
 
-    <div class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6 overflow-x-hidden">
+    <div
+      class="w-full flex flex-col justify-center fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm z-40 lg:static lg:bg-white lg:dark:bg-gray-900 lg:backdrop-blur-none px-4 sm:px-6 overflow-x-hidden"
+    >
       <div class="w-full max-w-3xl mx-auto">
         <PromptComposer
           v-model="prompt"

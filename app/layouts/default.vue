@@ -204,11 +204,9 @@ const primaryActionColor = computed(() => {
       <UDashboardPanel>
         <UDashboardNavbar>
           <!-- Replace built-in sidebar toggle (non-sidebar routes) -->
-          <template
-            v-if="!shouldShowSidebar"
-            #toggle
-          >
+          <template #toggle>
             <UButton
+              v-if="!shouldShowSidebar"
               icon="i-lucide-message-square-plus"
               color="neutral"
               variant="ghost"
