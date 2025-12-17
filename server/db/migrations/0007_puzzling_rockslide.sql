@@ -1,8 +1,15 @@
 -- Step 1: Backfill any NULL values to 'pending'
 UPDATE audit_log_queue SET status = 'pending' WHERE status IS NULL;
 
--- Step 2: Create the enum type (skip if already exists - type creation handled separately)
--- CREATE TYPE "public"."audit_log_status" AS ENUM('pending', 'success', 'failure');
+-- Step 2: Create the enum type (skip if already exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'audit_log_status'
+  ) THEN
+    CREATE TYPE "public"."audit_log_status" AS ENUM('pending', 'success', 'failure');
+  END IF;
+END $$;
 
 -- Step 3: Drop old default before type conversion
 ALTER TABLE "audit_log_queue"
