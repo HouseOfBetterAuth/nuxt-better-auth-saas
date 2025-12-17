@@ -17,7 +17,8 @@ const DB_QUERY_START_LOG_INTERVAL_MS = 10_000
 const DB_COLD_POOL_LOG_INTERVAL_MS = 10_000
 const DB_CONNECT_OK_LOG_INTERVAL_MS = 10_000
 const DB_BYPASS_HYPERDRIVE_ENV = 'NUXT_DB_BYPASS_HYPERDRIVE'
-const DB_HOST_LOGGED_KEY = '__quillio_dbHostLogged'
+// Versioned so new deploys can re-log once per isolate.
+const DB_HOST_LOGGED_KEY = '__quillio_dbHostLogged_v2'
 
 function tryExtractDbHost(url: string): { host: string, isPooler: boolean } | null {
   try {
