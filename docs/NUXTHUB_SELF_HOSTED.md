@@ -172,15 +172,15 @@ npx wrangler dev --cwd .output
 
 ### Database Connection
 
-The app uses a smart connection strategy:
+All database access uses NuxtHub’s `hub:db` module, so there’s no custom `pg.Pool` layer to configure. Provide a `DATABASE_URL` everywhere, and add a Hyperdrive binding when running on Cloudflare Workers.
 
 | Environment | Connection Source |
 |-------------|-------------------|
-| Cloudflare Workers (production) | Hyperdrive binding |
-| Cloudflare Workers (local wrangler) | `DATABASE_URL` |
+| Cloudflare Workers (production) | Hyperdrive binding via `hub:db` |
+| Cloudflare Workers (local wrangler) | `DATABASE_URL` (fallback when Hyperdrive unavailable) |
 | Node.js hosting | `DATABASE_URL` |
 
-Hyperdrive provides connection pooling for PostgreSQL on Cloudflare Workers, which is essential for serverless environments.
+Hyperdrive still provides the Worker-friendly bridge to PostgreSQL, but NuxtHub handles the driver selection and connection lifecycle internally.
 
 ### Caching
 
@@ -239,7 +239,7 @@ Ensure the `name` in your `wrangler.jsonc` matches your Cloudflare Worker name e
 │   ├── types/
 │   │   └── hub.d.ts        # Type declarations for hub:* modules
 │   └── utils/
-│       ├── drivers.ts      # Database, cache, and storage drivers
+│       ├── drivers.ts      # Cache and external service drivers
 │       └── runtimeConfig.ts
 └── nuxt.config.ts          # Hub configuration
 ```

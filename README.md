@@ -121,9 +121,9 @@ Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfi
 ### Recommended Hosting
 
 **Recommended stack:**
-- **Cloudflare Workers** — serverless hosting via [NuxHub](https://hub.nuxt.com)
+- **Cloudflare Workers** — serverless hosting via [NuxtHub](https://hub.nuxt.com)
 - **Neon Postgres** — serverless PostgreSQL database
-- **Cloudflare Hyperdrive** — connection pooling for Postgres
+- **Cloudflare Hyperdrive** — Postgres bridge for Workers (managed automatically by NuxtHub)
 
 **Caching:**
 - **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching, rate limiting)
@@ -145,7 +145,7 @@ This project supports **self-hosted Cloudflare Workers** deployment instead of u
 - Cloudflare resources:
   - **KV Namespace** — for caching
   - **R2 Bucket** — for file storage
-  - **Hyperdrive** — for PostgreSQL connection pooling
+  - **Hyperdrive** — for PostgreSQL connectivity on Workers
 
 ### Quick Setup
 
