@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { v7 as uuidv7 } from 'uuid'
 import { account, organization } from './auth'
@@ -24,11 +24,12 @@ export const integration = pgTable('integration', {
 }, table => ({
   organizationIdx: index('integration_org_idx').on(table.organizationId),
   typeIdx: index('integration_type_idx').on(table.type),
-  orgTypeAccountUnique: uniqueIndex('integration_org_type_account_idx').on(
-    table.organizationId,
-    table.type,
-    table.accountId
-  )
+  orgTypeAccountUnique: uniqueIndex('integration_org_type_account_not_null_idx')
+    .on(table.organizationId, table.type, table.accountId)
+    .where(sql`${table.accountId} IS NOT NULL`),
+  orgTypeNullAccountUnique: uniqueIndex('integration_org_type_null_account_idx')
+    .on(table.organizationId, table.type)
+    .where(sql`${table.accountId} IS NULL`)
 }))
 
 export const integrationRelations = relations(integration, ({ one }) => ({

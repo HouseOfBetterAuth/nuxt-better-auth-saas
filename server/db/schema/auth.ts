@@ -20,7 +20,8 @@ export const organization = pgTable('organization', {
   stripeCustomerId: text('stripe_customer_id'),
   referralCode: text('referral_code'),
   deviceFingerprint: text('device_fingerprint'),
-  isAnonymous: boolean('is_anonymous').default(false).notNull()
+  isAnonymous: boolean('is_anonymous').default(false).notNull(),
+  lastSyncedAt: timestamp('last_synced_at')
 }, table => [
   index('organization_device_fingerprint_idx').on(table.deviceFingerprint)
 ])

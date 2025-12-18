@@ -141,6 +141,8 @@ export const listOrganizationIntegrationsWithAccounts = async (
       status?: string
       scopes?: string | null
       connectedByUserId?: string | null
+      connectedByUserName?: string | null
+      connectedByUserEmail?: string | null
       expiresAt?: Date | null
     }>
   }
@@ -157,10 +159,25 @@ export const listOrganizationIntegrationsWithAccounts = async (
     : []
 
   const accountById = new Map(accounts.map(acc => [acc.id, acc]))
+  const userIds = Array.from(new Set(accounts.map(acc => acc.userId)))
+
+  const users = userIds.length
+    ? await db
+        .select({
+          id: schema.user.id,
+          name: schema.user.name,
+          email: schema.user.email
+        })
+        .from(schema.user)
+        .where(inArray(schema.user.id, userIds))
+    : []
+
+  const userById = new Map(users.map(user => [user.id, user]))
   const now = new Date()
 
   return integrations.map((integration) => {
     const account = integration.accountId ? accountById.get(integration.accountId) : null
+    const connectedUser = account?.userId ? userById.get(account.userId) : null
     const isExpired = account?.accessTokenExpiresAt ? account.accessTokenExpiresAt < now : false
 
     const status = integration.authType === 'oauth'
@@ -175,9 +192,34 @@ export const listOrganizationIntegrationsWithAccounts = async (
       status,
       scopes: account?.scope ?? null,
       connectedByUserId: account?.userId ?? null,
+      connectedByUserName: connectedUser?.name ?? null,
+      connectedByUserEmail: connectedUser?.email ?? null,
       expiresAt: account?.accessTokenExpiresAt ?? null
     }
   })
+}
+
+export const getOrganizationIntegrationSyncMetadata = async (
+  db: NodePgDatabase<typeof schema>,
+  organizationId: string
+) => {
+  const organizationRecord = await db.query.organization.findFirst({
+    columns: { lastSyncedAt: schema.organization.lastSyncedAt },
+    where: eq(schema.organization.id, organizationId)
+  })
+
+  return organizationRecord?.lastSyncedAt ?? null
+}
+
+export const updateOrganizationIntegrationSyncMetadata = async (
+  db: NodePgDatabase<typeof schema>,
+  organizationId: string,
+  lastSyncedAt: Date
+) => {
+  await db
+    .update(schema.organization)
+    .set({ lastSyncedAt })
+    .where(eq(schema.organization.id, organizationId))
 }
 
 export const getOrganizationIntegration = async (

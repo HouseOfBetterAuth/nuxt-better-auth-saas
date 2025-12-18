@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+--> statement-breakpoint
 CREATE TABLE "integration" (
     "id" uuid PRIMARY KEY NOT NULL,
     "organization_id" text NOT NULL,
@@ -40,7 +42,7 @@ INSERT INTO "integration" (
     "updated_at"
 )
 SELECT
-    md5(random()::text || clock_timestamp()::text)::uuid AS id,
+    gen_random_uuid() AS id,
     m.organization_id,
     'youtube' AS type,
     'YouTube' AS name,
@@ -73,7 +75,7 @@ INSERT INTO "integration" (
     "updated_at"
 )
 SELECT
-    md5(random()::text || clock_timestamp()::text)::uuid AS id,
+    gen_random_uuid() AS id,
     m.organization_id,
     'google_drive' AS type,
     'Google Drive' AS name,
@@ -106,7 +108,7 @@ INSERT INTO "integration" (
     "updated_at"
 )
 SELECT
-    md5(random()::text || clock_timestamp()::text)::uuid AS id,
+    gen_random_uuid() AS id,
     m.organization_id,
     'github' AS type,
     'GitHub' AS name,
@@ -133,6 +135,7 @@ WITH account_integration_map AS (
     JOIN "integration" i
       ON i.account_id = p.integration_id
      AND i.organization_id = p.organization_id
+     AND i.type = 'youtube'
     WHERE p.integration_id IS NOT NULL
     GROUP BY p.integration_id, p.organization_id
 )

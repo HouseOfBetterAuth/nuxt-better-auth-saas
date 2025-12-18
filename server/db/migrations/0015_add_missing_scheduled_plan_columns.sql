@@ -1,41 +1,9 @@
 -- Add missing scheduled_plan columns if they don't exist
 -- This fixes the case where migration 0001 wasn't applied or columns were dropped
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'subscription'
-      AND column_name = 'scheduled_plan_id'
-  ) THEN
-    ALTER TABLE "subscription" ADD COLUMN "scheduled_plan_id" text;
-  END IF;
-END $$;--> statement-breakpoint
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'subscription'
-      AND column_name = 'scheduled_plan_interval'
-  ) THEN
-    ALTER TABLE "subscription" ADD COLUMN "scheduled_plan_interval" text;
-  END IF;
-END $$;--> statement-breakpoint
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'subscription'
-      AND column_name = 'scheduled_plan_seats'
-  ) THEN
-    ALTER TABLE "subscription" ADD COLUMN "scheduled_plan_seats" integer;
-  END IF;
-END $$;--> statement-breakpoint
+ALTER TABLE "subscription" ADD COLUMN IF NOT EXISTS "scheduled_plan_id" text;--> statement-breakpoint
+ALTER TABLE "subscription" ADD COLUMN IF NOT EXISTS "scheduled_plan_interval" text;--> statement-breakpoint
+ALTER TABLE "subscription" ADD COLUMN IF NOT EXISTS "scheduled_plan_seats" integer;--> statement-breakpoint
 
 -- Add constraints if they don't exist
 DO $$
@@ -50,7 +18,6 @@ BEGIN
       CHECK ("scheduled_plan_interval" IS NULL OR "scheduled_plan_interval" IN ('month','year'));
   END IF;
 END $$;--> statement-breakpoint
-
 DO $$
 BEGIN
   IF NOT EXISTS (

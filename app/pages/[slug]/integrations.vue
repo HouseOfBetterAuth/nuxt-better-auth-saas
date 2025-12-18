@@ -529,7 +529,7 @@ if (import.meta.client) {
                 Connected by <strong>{{ youtubeConnectedByUser.name || youtubeConnectedByUser.email }}</strong>
               </p>
               <p v-else-if="youtubeIntegration">
-                Connected by <strong>Unknown user</strong>
+                Connected by <strong>{{ youtubeIntegration.connectedByUserName || youtubeIntegration.connectedByUserEmail || 'Unknown user' }}</strong>
               </p>
               <p>
                 Last updated:
@@ -610,7 +610,7 @@ if (import.meta.client) {
                 Connected by <strong>{{ githubConnectedByUser.name || githubConnectedByUser.email }}</strong>
               </p>
               <p v-else-if="githubIntegration">
-                Connected by <strong>Unknown user</strong>
+                Connected by <strong>{{ githubIntegration.connectedByUserName || githubIntegration.connectedByUserEmail || 'Unknown user' }}</strong>
               </p>
               <p>
                 Last updated:
@@ -683,7 +683,7 @@ if (import.meta.client) {
                 Connected by <strong>{{ googleDriveConnectedByUser.name || googleDriveConnectedByUser.email }}</strong>
               </p>
               <p v-else-if="googleDriveIntegration">
-                Connected by <strong>Unknown user</strong>
+                Connected by <strong>{{ googleDriveIntegration.connectedByUserName || googleDriveIntegration.connectedByUserEmail || 'Unknown user' }}</strong>
               </p>
               <p>
                 Last updated:
