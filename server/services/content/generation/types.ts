@@ -181,4 +181,9 @@ export interface ImageSuggestion {
   type?: 'generated' | 'screencap'
   videoId?: string
   estimatedTimestamp?: number
+  thumbnailFileId?: string
+  thumbnailUrl?: string
+  fullSizeFileId?: string
+  fullSizeUrl?: string
+  status?: 'pending' | 'thumbnail_ready' | 'added'
 }

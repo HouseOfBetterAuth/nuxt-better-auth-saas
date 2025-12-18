@@ -270,7 +270,8 @@ export const suggestImagesForContent = async (params: {
       ...suggestion,
       type: 'screencap',
       videoId,
-      estimatedTimestamp
+      estimatedTimestamp,
+      status: 'pending'
     }
   })
 }

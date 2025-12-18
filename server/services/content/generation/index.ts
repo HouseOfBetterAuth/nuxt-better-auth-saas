@@ -42,6 +42,7 @@ import { suggestImagesForContent } from './imageSuggestions'
 import { createGenerationMetadata, createSectionUpdateMetadata } from './metadata'
 import { generateContentOutline } from './planning'
 import { deriveSchemaMetadata, validateSchemaMetadata } from './schemaMetadata'
+import { attachThumbnailsToSuggestions } from './screencaps'
 import {
   CONTENT_SECTION_UPDATE_SYSTEM_PROMPT,
   generateContentSectionsFromOutline,
@@ -698,6 +699,33 @@ export const generateContentDraftFromSource = async (
 
   await emitProgress('Content saved.')
 
+  const hasScreencapSuggestions = imageSuggestions.some(suggestion => suggestion.type === 'screencap')
+  if (hasScreencapSuggestions) {
+    try {
+      await emitProgress('Preparing screencap thumbnails...')
+      const suggestionsWithThumbnails = await attachThumbnailsToSuggestions({
+        suggestions: imageSuggestions,
+        contentId: result.content.id,
+        userId
+      })
+      imageSuggestions = suggestionsWithThumbnails
+      pipelineStages.push('image_thumbnails')
+
+      const updatedAssets = createGenerationMetadata(sourceContent, pipelineStages, { imageSuggestions: suggestionsWithThumbnails })
+      const [updatedVersion] = await db
+        .update(schema.contentVersion)
+        .set({ assets: updatedAssets })
+        .where(eq(schema.contentVersion.id, result.version.id))
+        .returning()
+
+      if (updatedVersion) {
+        result.version = updatedVersion
+      }
+    } catch (error) {
+      safeWarn('[generateContentDraftFromSource] Screencap thumbnail preparation failed', { error })
+    }
+  }
+
   const meta = {
     engine: 'codex-pipeline',
     stages: {
@@ -1272,11 +1300,14 @@ export {
 } from './frontmatter'
 
 export {
+  insertImageSuggestion
+} from './insertImageSuggestion'
+
+export {
   createGenerationMetadata,
   createSectionUpdateMetadata
 } from './metadata'
 
-// Export granular functions for LLM tools
 export {
   generateContentOutline
 } from './planning'
