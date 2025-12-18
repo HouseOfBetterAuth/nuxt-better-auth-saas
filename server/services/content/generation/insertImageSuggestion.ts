@@ -139,7 +139,7 @@ export const insertImageSuggestion = async (
   const existingMarkdown = record.version.bodyMdx || ''
   const targetLine = typeof suggestion.position === 'number' && Number.isFinite(suggestion.position)
     ? suggestion.position
-    : existingMarkdown.split('\\n').length + 1
+    : existingMarkdown.split('\n').length + 1
   const updatedMarkdown = insertMarkdownAtLine(existingMarkdown, targetLine, markdownImage)
 
   const updatedSuggestions = [...imageSuggestions]

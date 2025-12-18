@@ -10,7 +10,7 @@ import UserNavigation from '~/components/UserNavigation.vue'
 const { t } = useI18n()
 const localePath = useLocalePath()
 const { loggedIn, useActiveOrganization } = useAuth()
-const activeOrg = useActiveOrganization()
+const _activeOrg = useActiveOrganization()
 
 // Keep in sync with `app/middleware/auth.global.ts`
 const KNOWN_LOCALES = ['en', 'zh-CN', 'ja', 'fr']
@@ -74,36 +74,54 @@ const isWorkspaceHeaderRoute = computed(() => {
 // structure divergence (hydration mismatches) and ensures the top header is visible.
 const showWorkspaceHeader = computed(() => isWorkspaceHeaderRoute.value)
 
-// Determine if we should show chat interface - only on conversation routes
-const shouldShowChat = computed(() => {
-  if (route.meta?.renderChatWidget === false)
-    return false
+const authRoutePrefixes = ['/signin', '/signup', '/forgot-password', '/reset-password']
+
+const isAuthPage = computed(() => {
   const path = pathWithoutLocale.value
-  // Check for /[slug]/conversations pattern (locale stripped)
-  return /^\/[^/]+\/conversations(?:\/|$)/.test(path)
+  return authRoutePrefixes.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
 })
 
-// Determine if we should show sidebar - on conversations and content routes, or home page when logged in with active org
-const shouldShowSidebar = computed(() => {
-  const path = pathWithoutLocale.value
-  if (!loggedIn.value)
-    return false
-  if (showWorkspaceHeader.value)
-    return false
-  // Show on home page if user has an active organization
-  if (path === '/' && activeOrg.value?.data?.id) {
-    return true
-  }
-  // Check for /[slug]/conversations or /[slug]/content patterns (locale stripped)
-  return /^\/[^/]+\/(?:conversations|content)(?:\/|$)/.test(path)
+const isPublicPage = computed(() => route.meta?.auth === false)
+
+const shouldRenderAppShell = computed(() => loggedIn.value && !isAuthPage.value && !isPublicPage.value)
+
+const shouldShowChatPanel = computed(() => shouldRenderAppShell.value && route.meta?.renderChatWidget !== false)
+
+const contentRouteMatch = computed(() => pathWithoutLocale.value.match(/^\/[^/]+\/content\/([^/]+)(?:\/|$)/))
+const conversationRouteMatch = computed(() => pathWithoutLocale.value.match(/^\/[^/]+\/conversations\/([^/]+)(?:\/|$)/))
+
+const normalizeRouteParam = (param?: string | string[]) => {
+  if (Array.isArray(param))
+    return param[0]
+  if (typeof param === 'string')
+    return param
+  return undefined
+}
+
+const _contentId = computed(() => {
+  if (!contentRouteMatch.value)
+    return undefined
+  const id = normalizeRouteParam(route.params.id)
+  return id || contentRouteMatch.value[1]
 })
 
-// Determine if we should use full-width layout (conversations and content pages)
-const shouldUseFullWidth = computed(() => {
-  const path = pathWithoutLocale.value
-  // Check for /[slug]/conversations or /[slug]/content patterns (locale stripped)
-  return /^\/[^/]+\/(?:conversations|content)(?:\/|$)/.test(path)
+const _conversationId = computed(() => {
+  if (!conversationRouteMatch.value)
+    return undefined
+  const id = normalizeRouteParam(route.params.id)
+  return id || conversationRouteMatch.value[1]
 })
+
+const chatCollapsed = ref(false)
+
+watch(() => shouldShowChatPanel.value, (next) => {
+  if (!next)
+    chatCollapsed.value = false
+})
+
+const _toggleChatPanel = () => {
+  chatCollapsed.value = !chatCollapsed.value
+}
 
 const primaryActionColor = computed(() => {
   return (workspaceHeader.value?.primaryActionColor ?? 'primary') as 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' | 'neutral'
