@@ -276,7 +276,7 @@ export const patchConversationPreviewMetadata = async (
     patch = sql`${patch} || jsonb_build_object('artifactCount', ${updates.artifactCount}::integer)`
   }
 
-  if (updates.diffStats && (updates.diffStats.additions || updates.diffStats.deletions)) {
+  if (updates.diffStats && (typeof updates.diffStats.additions === 'number' || typeof updates.diffStats.deletions === 'number')) {
     hasUpdates = true
     patch = sql`${patch} || jsonb_build_object(
       'diffStats',

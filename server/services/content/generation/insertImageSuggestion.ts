@@ -169,6 +169,20 @@ export const insertImageSuggestion = async (
   }
 
   const result = await db.transaction(async (tx) => {
+    // Verify the version hasn't changed since we read it
+    const [currentContent] = await tx
+      .select({ currentVersionId: schema.content.currentVersionId })
+      .from(schema.content)
+      .where(eq(schema.content.id, record.content.id))
+      .limit(1)
+
+    if (currentContent?.currentVersionId !== record.version.id) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Content was modified by another process. Please retry.'
+      })
+    }
+
     const [latestVersion] = await tx
       .select({ version: schema.contentVersion.version })
       .from(schema.contentVersion)

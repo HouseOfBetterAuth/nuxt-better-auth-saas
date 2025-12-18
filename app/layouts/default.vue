@@ -8,7 +8,7 @@ import SidebarNavigation from '~/components/SidebarNavigation.vue'
 
 const { t } = useI18n()
 const localePath = useLocalePath()
-const { loggedIn, signOut, user, useActiveOrganization } = useAuth()
+const { loggedIn, signOut, useActiveOrganization } = useAuth()
 const conversation = useConversation()
 const activeOrg = useActiveOrganization()
 
@@ -39,7 +39,6 @@ useHead(() => ({
 
 // Workspace header state
 const workspaceHeader = useState<WorkspaceHeaderState | null>('workspace/header', () => null)
-const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () => false)
 
 // Page title state - pages can set this via provide
 const headerTitle = useState<string | null>('page-header-title', () => null)
@@ -235,18 +234,14 @@ const visibleConversationItems = computed(() => {
 const canExpandConversationList = computed(() => {
   return !conversationsExpanded.value && (conversationItems.value.length > 3 || conversationHasMore.value)
 })
-
-const primaryActionColor = computed(() => {
-  return (workspaceHeader.value?.primaryActionColor ?? 'primary') as 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' | 'neutral'
-})
 </script>
 
 <template>
-  <div class="relative h-screen overflow-hidden bg-white dark:bg-neutral-950">
-    <div class="flex h-full min-h-0 flex-col lg:flex-row">
+  <div class="relative min-h-screen bg-white dark:bg-neutral-950 lg:h-screen lg:overflow-hidden">
+    <div class="flex min-h-screen flex-col lg:h-full lg:min-h-0 lg:flex-row">
       <UDashboardSidebar
         v-if="shouldRenderAppShell"
-        class="h-full flex-shrink-0 w-full border-b border-neutral-200/70 dark:border-neutral-800/60 lg:w-64 lg:border-b-0 lg:border-r xl:w-72"
+        class="flex-shrink-0 w-full border-b border-neutral-200/70 dark:border-neutral-800/60 lg:h-full lg:w-64 lg:border-b-0 lg:border-r xl:w-72"
         collapsible
         :ui="{
           root: 'h-full bg-neutral-100 dark:bg-neutral-950 border-none'
@@ -299,110 +294,14 @@ const primaryActionColor = computed(() => {
             v-if="showWorkspaceHeader"
             #left
           >
-            <div class="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div
-                v-if="workspaceHeaderLoading || !workspaceHeader"
-                class="flex w-full items-center gap-3"
+            <slot name="workspace-header">
+              <p
+                v-if="workspaceHeader"
+                class="text-base font-semibold truncate"
               >
-                <USkeleton class="h-10 w-10 flex-shrink-0 rounded-full" />
-                <div class="min-w-0 flex-1 space-y-1">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <USkeleton class="h-4 w-40 max-w-full rounded-md" />
-                    <USkeleton class="h-4 w-12 rounded-full" />
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <USkeleton class="h-3 w-20 rounded" />
-                    <USkeleton class="h-3 w-16 rounded" />
-                    <USkeleton class="h-3 w-28 rounded" />
-                  </div>
-                </div>
-              </div>
-
-              <div
-                v-else
-                class="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div class="flex w-full items-center gap-2 lg:w-auto">
-                  <UButton
-                    v-if="workspaceHeader.showBackButton"
-                    icon="i-lucide-arrow-left"
-                    variant="ghost"
-                    size="sm"
-                    :aria-label="t('global.back')"
-                    class="flex h-10 w-10 items-center justify-center rounded-full p-0"
-                    @click="workspaceHeader.onBack?.()"
-                  />
-                  <p class="text-base font-semibold truncate">
-                    {{ workspaceHeader.title }}
-                  </p>
-                  <UBadge
-                    v-if="workspaceHeader.status"
-                    color="neutral"
-                    variant="soft"
-                    size="xs"
-                    class="hidden capitalize lg:inline-flex"
-                  >
-                    {{ workspaceHeader.status }}
-                  </UBadge>
-                </div>
-                <div class="hidden flex-wrap items-center gap-1 text-xs text-muted-500 lg:flex">
-                  <span>{{ workspaceHeader.updatedAtLabel || '—' }}</span>
-                  <template v-if="workspaceHeader.contentType">
-                    <span>·</span>
-                    <span class="capitalize">
-                      {{ workspaceHeader.contentType }}
-                    </span>
-                  </template>
-                  <template v-if="workspaceHeader.contentId">
-                    <span>·</span>
-                    <span class="font-mono text-[11px] text-muted-600 truncate">
-                      {{ workspaceHeader.contentId }}
-                    </span>
-                  </template>
-                  <template v-if="workspaceHeader.contentType || workspaceHeader.contentId">
-                    <span>·</span>
-                  </template>
-                  <span class="text-emerald-500 dark:text-emerald-400">
-                    +{{ workspaceHeader.additions ?? 0 }}
-                  </span>
-                  <span class="text-rose-500 dark:text-rose-400">
-                    -{{ workspaceHeader.deletions ?? 0 }}
-                  </span>
-                </div>
-                <div class="hidden flex-wrap justify-end gap-2 lg:flex">
-                  <UButton
-                    v-if="workspaceHeader.onShare"
-                    icon="i-lucide-copy"
-                    size="sm"
-                    color="neutral"
-                    variant="ghost"
-                    @click="workspaceHeader.onShare?.()"
-                  >
-                    {{ t('content.copyMdx') }}
-                  </UButton>
-                  <UButton
-                    v-if="workspaceHeader.onArchive"
-                    icon="i-lucide-archive"
-                    size="sm"
-                    color="neutral"
-                    variant="ghost"
-                    @click="workspaceHeader.onArchive?.()"
-                  >
-                    {{ t('content.archive') }}
-                  </UButton>
-                  <UButton
-                    v-if="workspaceHeader.onPrimaryAction"
-                    :color="primaryActionColor"
-                    :icon="workspaceHeader.primaryActionIcon ?? 'i-lucide-arrow-right'"
-                    size="sm"
-                    :disabled="workspaceHeader.primaryActionDisabled"
-                    @click="workspaceHeader.onPrimaryAction?.()"
-                  >
-                    {{ workspaceHeader.primaryActionLabel || t('global.continue') }}
-                  </UButton>
-                </div>
-              </div>
-            </div>
+                {{ workspaceHeader.title }}
+              </p>
+            </slot>
           </template>
 
           <template
@@ -460,7 +359,7 @@ const primaryActionColor = computed(() => {
 
       <aside
         v-if="shouldShowChatPanel"
-        class="flex h-full w-full min-h-0 flex-col border-t border-neutral-200/70 bg-white dark:border-neutral-800/60 dark:bg-neutral-950 lg:w-[400px] lg:border-t-0 lg:border-l"
+        class="flex w-full min-h-0 flex-col border-t border-neutral-200/70 bg-white dark:border-neutral-800/60 dark:bg-neutral-950 max-lg:h-[60vh] lg:h-full lg:w-[400px] lg:border-t-0 lg:border-l"
       >
         <div class="flex items-center gap-2 border-b border-neutral-200/70 px-2 py-2 dark:border-neutral-800/60">
           <UButton

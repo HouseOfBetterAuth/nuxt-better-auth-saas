@@ -10,6 +10,7 @@ const { loggedIn, fetchSession, useActiveOrganization } = useAuth()
 const activeOrg = useActiveOrganization()
 
 const sessionReady = ref(false)
+const hasNavigated = ref(false)
 
 onMounted(async () => {
   try {
@@ -21,13 +22,14 @@ onMounted(async () => {
   }
 })
 
-watchEffect(() => {
-  if (!sessionReady.value || !loggedIn.value)
-    return
-
-  const slug = activeOrg.value?.data?.slug
-  const target = slug && slug !== 't' ? `/${slug}/conversations` : '/t/conversations'
-  navigateTo(localePath(target))
+// Watch for when session becomes ready and user logs in, then navigate once
+watch([sessionReady, loggedIn], () => {
+  if (sessionReady.value && loggedIn.value && !hasNavigated.value) {
+    hasNavigated.value = true
+    const slug = activeOrg.value?.data?.slug
+    const target = slug && slug !== 't' ? `/${slug}/conversations` : '/t/conversations'
+    navigateTo(localePath(target))
+  }
 })
 </script>
 

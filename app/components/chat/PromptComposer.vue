@@ -21,6 +21,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   submit: [value: string]
+  stop: []
 }>()
 
 const modelValue = defineModel<string>({ default: '' })
@@ -44,6 +45,10 @@ function setTextareaRef() {
   if (node instanceof HTMLTextAreaElement) {
     textareaRef.value = node
   }
+}
+
+const handleStop = () => {
+  emit('stop')
 }
 
 onMounted(() => {
@@ -87,6 +92,7 @@ watch(composerRef, () => {
                   submitted-icon="i-custom-square-solid"
                   streaming-color="primary"
                   streaming-variant="solid"
+                  @stop="handleStop"
                 />
               </slot>
             </div>

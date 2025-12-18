@@ -38,11 +38,42 @@ export const buildScreencapFileName = (
   return `screencap-${videoId}-${timestampPart}s${suffix}.jpg`
 }
 
+const getVersionArgs = (binary: string) => {
+  if (binary === 'ffmpeg') {
+    // Single dash variant works reliably even when stdout/stderr handling differs
+    return ['-version']
+  }
+  return ['--version']
+}
+
 const ensureBinaryAvailable = async (binary: string) => {
   try {
-    await execFileAsync(binary, ['--version'], { timeout: 5_000 })
+    await execFileAsync(binary, getVersionArgs(binary), { timeout: 5_000 })
     return true
   } catch (error) {
+    const stdout = typeof (error as any)?.stdout === 'string'
+      ? (error as any).stdout
+      : (error as any)?.stdout
+        ? String((error as any).stdout)
+        : ''
+    const stderr = typeof (error as any)?.stderr === 'string'
+      ? (error as any).stderr
+      : (error as any)?.stderr
+        ? String((error as any).stderr)
+        : ''
+    const combinedOutput = [stdout, stderr].filter(Boolean).join('\n').trim().toLowerCase()
+    const exitCode = (error as any)?.code
+    const errno = (error as any)?.errno
+    const binaryMissing = exitCode === 'ENOENT'
+      || errno === 'ENOENT'
+      || exitCode === 127
+      || exitCode === '127'
+
+    // Some binaries (notably ffmpeg) report version info to stderr even when exiting non-zero.
+    if (!binaryMissing && combinedOutput.includes('version')) {
+      return true
+    }
+
     safeWarn('[screencaps] Required binary missing', { binary, error })
     throw createError({
       statusCode: 500,

@@ -102,6 +102,47 @@ const formatUpdatedAgo = (value: Date) => {
   return formatter.format(value)
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const toNonNegativeInteger = (value: unknown): number => {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : Number.NaN
+  if (!Number.isFinite(numeric))
+    return 0
+  return Math.max(0, Math.trunc(numeric))
+}
+
+const parseDiffStats = (value: unknown): { additions: number, deletions: number } => {
+  if (!value)
+    return { additions: 0, deletions: 0 }
+
+  const candidate = (() => {
+    if (isRecord(value))
+      return value
+    if (typeof value !== 'string')
+      return null
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return isRecord(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  })()
+
+  if (!candidate)
+    return { additions: 0, deletions: 0 }
+
+  return {
+    additions: toNonNegativeInteger(candidate.additions),
+    deletions: toNonNegativeInteger(candidate.deletions)
+  }
+}
+
 export default defineEventHandler(async (event) => {
   try {
     console.log('[Conversations API] Starting request')
@@ -152,7 +193,7 @@ export default defineEventHandler(async (event) => {
         id: schema.conversation.id,
         updatedAt: schema.conversation.updatedAt,
         title: sql<string | null>`NULLIF(${schema.conversation.metadata}->>'title', '')`,
-        previewDiffStats: sql<{ additions?: number, deletions?: number } | null>`${schema.conversation.metadata}->'preview'->'diffStats'`
+        previewDiffStats: sql<unknown>`${schema.conversation.metadata}->'preview'->'diffStats'`
       })
       .from(schema.conversation)
       .where(whereClause)
@@ -189,9 +230,7 @@ export default defineEventHandler(async (event) => {
       conversations: conversations.map((conv) => {
         const updatedAtDate = conv.updatedAt instanceof Date ? conv.updatedAt : new Date(conv.updatedAt)
         const rawTitle = typeof conv.title === 'string' ? conv.title.trim() : ''
-        const diffStats = conv.previewDiffStats as any
-        const additions = typeof diffStats?.additions === 'number' ? diffStats.additions : Number(diffStats?.additions) || 0
-        const deletions = typeof diffStats?.deletions === 'number' ? diffStats.deletions : Number(diffStats?.deletions) || 0
+        const { additions, deletions } = parseDiffStats(conv.previewDiffStats)
         return {
           id: conv.id,
           displayLabel: rawTitle || 'Untitled conversation',
@@ -216,7 +255,8 @@ export default defineEventHandler(async (event) => {
     }
     // Re-throw H3 errors as-is, wrap others
     if (error && typeof error === 'object' && 'statusCode' in error) {
-      console.error('[Conversations API] Re-throwing H3 error with statusCode:', (error as any).statusCode)
+      const statusCode = isRecord(error) ? error.statusCode : undefined
+      console.error('[Conversations API] Re-throwing H3 error with statusCode:', statusCode)
       throw error
     }
     console.error('[Conversations API] Wrapping error in createError')

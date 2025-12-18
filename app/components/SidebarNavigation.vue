@@ -45,11 +45,9 @@ const activeContentId = computed(() => {
   return null
 })
 
-
 const isContentActive = (id: string) => {
   return activeContentId.value === id
 }
-
 
 const resolveContentPath = (contentId?: string | null) => {
   const slug = activeOrg.value?.data?.slug
@@ -64,7 +62,6 @@ const openContent = (contentId: string | null) => {
   if (path)
     router.push(localePath(path))
 }
-
 </script>
 
 <template>

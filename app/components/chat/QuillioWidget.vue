@@ -70,7 +70,10 @@ const reloadPage = () => {
 </script>
 
 <template>
-  <div class="h-full min-h-0 w-full" v-bind="$attrs">
+  <div
+    class="h-full min-h-0 w-full"
+    v-bind="$attrs"
+  >
     <ClientOnly>
       <NuxtErrorBoundary>
         <template #error="{ error, resetError }">

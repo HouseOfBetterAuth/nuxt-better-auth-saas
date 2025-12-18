@@ -26,13 +26,13 @@ const props = withDefaults(defineProps<{
 })
 
 const KNOWN_LOCALES = ['en', 'zh-CN', 'ja', 'fr']
+const NON_ORG_SLUG = 't'
 
 const router = useRouter()
 const route = useRoute()
 const localePath = useLocalePath()
 const { loggedIn, signIn, useActiveOrganization } = useAuth()
 const activeOrg = useActiveOrganization()
-const NON_ORG_SLUG = 't'
 
 const {
   messages,
@@ -45,7 +45,8 @@ const {
   prompt,
   mode,
   hydrateConversation,
-  getCachedMessagesMeta
+  getCachedMessagesMeta,
+  stopResponse
 } = useConversation()
 
 if (props.initialMode)
@@ -74,6 +75,10 @@ const conversationLoadToken = ref(0)
 
 const uiStatus = computed(() => status.value)
 const displayMessages = computed<ChatMessage[]>(() => messages.value)
+
+const showWelcomeState = computed(() =>
+  !messages.value.length && !conversationId.value && !isBusy.value && !promptSubmitting.value
+)
 
 const handleAgentModeGoogleSignup = () => {
   showAgentModeLoginModal.value = false
@@ -127,11 +132,21 @@ const handlePromptSubmit = async (value?: string) => {
   }
 }
 
+const handleStopStreaming = () => {
+  const stopped = stopResponse()
+  if (stopped) {
+    promptSubmitting.value = false
+  }
+}
+
 const routeConversationId = computed(() => {
+  if (!props.useRouteConversationId)
+    return null
   const path = stripLocalePrefix(route.path, KNOWN_LOCALES)
   const match = path.match(/^\/[^/]+\/conversations\/([^/]+)(?:\/|$)/)
   if (!match)
     return null
+
   const id = route.params.id
   if (Array.isArray(id))
     return id[0] || match[1] || null
@@ -139,14 +154,8 @@ const routeConversationId = computed(() => {
 })
 
 const conversationId = computed(() => {
-  const fromRoute = props.useRouteConversationId ? routeConversationId.value : null
-  return props.conversationId || fromRoute || activeConversationId.value
+  return props.conversationId || routeConversationId.value || activeConversationId.value
 })
-
-const showWelcomeState = computed(() =>
-  !messages.value.length && !conversationId.value && !isBusy.value && !promptSubmitting.value
-)
-
 const routeNewConversation = computed(() => {
   const flag = route.query.new
   if (Array.isArray(flag))
@@ -237,7 +246,9 @@ const requestConversationMessages = async (conversationId: string, options?: { f
     hydrateConversation({ conversationId, messages: cached.messages }, { skipCache: true })
   }
 
-  if (!chatVisible.value) {
+  // In embedded mode (right-panel shell), avoid deferring loads behind element-visibility;
+  // it can be flaky with nested overflow containers and causes stale conversations to stick.
+  if (!props.embedded && !chatVisible.value) {
     // Only update if not already pending or if it's a different conversation
     if (!pendingConversationLoad.value || pendingConversationLoad.value !== conversationId) {
       pendingConversationLoad.value = conversationId
@@ -253,30 +264,49 @@ const requestConversationMessages = async (conversationId: string, options?: { f
   await loadConversationMessages(conversationId, options)
 }
 
-watch(conversationId, async (targetId, previousId) => {
-  if (targetId === previousId)
+const switchingConversation = ref(false)
+
+const loadConversationById = async (targetId: string | null) => {
+  if (switchingConversation.value)
     return
 
   if (!targetId) {
-    pendingConversationLoad.value = null
-    activeConversationId.value = null
-    resetConversation()
+    if (activeConversationId.value) {
+      pendingConversationLoad.value = null
+      activeConversationId.value = null
+      resetConversation()
+    }
     return
   }
 
   if (!isValidUUID(targetId))
     return
 
-  if (activeConversationId.value !== targetId) {
+  switchingConversation.value = true
+  try {
+    pendingConversationLoad.value = null
     resetConversation()
     activeConversationId.value = targetId
-  }
-
-  try {
-    await requestConversationMessages(targetId)
+    await requestConversationMessages(targetId, { force: true })
   } catch (error) {
     console.error('Failed to load conversation history', error)
+  } finally {
+    switchingConversation.value = false
   }
+}
+
+watch(() => props.conversationId, (next, previous) => {
+  if (next === previous)
+    return
+  loadConversationById(next ?? null)
+}, { immediate: true })
+
+watch(routeConversationId, (next, previous) => {
+  if (next === previous)
+    return
+  if (props.conversationId)
+    return
+  loadConversationById(next)
 }, { immediate: true })
 
 watch(routeNewConversation, (isNew) => {
@@ -438,11 +468,6 @@ async function handleShare(message: ChatMessage) {
 }
 
 if (import.meta.client) {
-  watch(loggedIn, (value, previous) => {
-    if (value === previous)
-      return
-  })
-
   watch(mode, (newMode) => {
     if (newMode === 'agent' && !loggedIn.value) {
       mode.value = 'chat'
@@ -461,7 +486,7 @@ if (import.meta.client) {
     <div
       v-if="props.showMessages"
       class="w-full flex-1 min-h-0"
-      :class="props.embedded ? 'overflow-y-auto px-3 py-3' : 'flex flex-col justify-end lg:justify-start'"
+      :class="props.embedded ? 'flex flex-col overflow-y-auto overscroll-contain px-3 py-3' : 'flex flex-col justify-end lg:justify-start'"
     >
       <div
         class="w-full"
@@ -502,6 +527,7 @@ if (import.meta.client) {
           :disabled="isBusy || promptSubmitting"
           :status="promptSubmitting ? 'submitted' : uiStatus"
           @submit="handlePromptSubmit"
+          @stop="handleStopStreaming"
         >
           <template #footer>
             <component
@@ -606,6 +632,5 @@ if (import.meta.client) {
         </div>
       </template>
     </UModal>
-
   </div>
 </template>

@@ -1015,6 +1015,7 @@ export const updateContentSectionWithAI = async (
   )
 
   frontmatter = deriveSchemaMetadata(frontmatter, assembled.sections)
+  const schemaValidation = validateSchemaMetadata(frontmatter)
 
   const diffStats = calculateDiffStats(originalSectionBody, updatedBody)
 

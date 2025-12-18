@@ -81,22 +81,7 @@ const workspaceHeaderLoading = useState<boolean>('workspace/header/loading', () 
 
 const setShellHeader = () => {
   workspaceHeader.value = {
-    title: 'Loading content…',
-    status: null,
-    contentType: null,
-    updatedAtLabel: null,
-    versionId: null,
-    additions: 0,
-    deletions: 0,
-    contentId: contentId.value || undefined,
-    showBackButton: true,
-    onBack: null,
-    onArchive: null,
-    onShare: null,
-    onPrimaryAction: null,
-    primaryActionLabel: '',
-    primaryActionColor: '',
-    primaryActionDisabled: false
+    title: 'Loading content…'
   }
 }
 
@@ -184,24 +169,10 @@ const structuredDataSnippet = computed(() => {
 const schemaErrors = computed(() => contentEntry.value?.schemaValidation?.errors || [])
 const schemaWarnings = computed(() => contentEntry.value?.schemaValidation?.warnings || [])
 
-const isMounted = ref(false)
 const clearWorkspaceHeader = () => {
   workspaceHeader.value = null
   workspaceHeaderLoading.value = false
 }
-
-const setOnBackCallback = () => {
-  if (workspaceHeader.value) {
-    workspaceHeader.value.onBack = () => {
-      router.push(localePath(contentListPath.value))
-    }
-  }
-}
-
-onMounted(() => {
-  isMounted.value = true
-  setOnBackCallback()
-})
 
 onBeforeRouteLeave(() => {
   clearWorkspaceHeader()
@@ -213,29 +184,8 @@ onUnmounted(() => {
 
 watch(contentEntry, (entry) => {
   if (entry) {
-    const updatedAtLabel = formatDateRelative(entry.updatedAt, { includeTime: true })
-
     workspaceHeader.value = {
-      title: entry.title,
-      status: entry.status,
-      contentType: entry.contentType,
-      updatedAtLabel,
-      versionId: null,
-      additions: entry.additions ?? 0,
-      deletions: entry.deletions ?? 0,
-      contentId: entry.id,
-      showBackButton: true,
-      onBack: null,
-      onArchive: null,
-      onShare: null,
-      onPrimaryAction: null,
-      primaryActionLabel: '',
-      primaryActionColor: '',
-      primaryActionDisabled: false
-    }
-
-    if (isMounted.value) {
-      setOnBackCallback()
+      title: entry.title
     }
 
     workspaceHeaderLoading.value = false

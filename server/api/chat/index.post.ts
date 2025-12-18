@@ -168,6 +168,30 @@ interface ToolExecutionResult {
   contentId?: string | null
 }
 
+interface DiffStats {
+  additions?: number
+  deletions?: number
+}
+
+interface FileEdit {
+  filePath?: string
+  additions?: number
+  deletions?: number
+  lineRange?: unknown
+}
+
+interface Frontmatter {
+  diffStats?: DiffStats
+  [key: string]: unknown
+}
+
+interface ToolResultWithFileEdits {
+  result?: {
+    fileEdits?: FileEdit[]
+  }
+  fileEdits?: FileEdit[]
+}
+
 async function logToolEvent(
   db: Awaited<ReturnType<typeof useDB>>,
   conversationId: string,
@@ -2448,21 +2472,21 @@ export default defineEventHandler(async (event) => {
                         updatedAt: contentRecord.updatedAt ?? contentRecord.createdAt ?? new Date()
                       },
                       diffStats: (() => {
-                        const frontmatter = versionRecord.frontmatter as any
+                        const frontmatter = versionRecord.frontmatter as Frontmatter | null | undefined
                         const frontmatterDiff = frontmatter?.diffStats
-                        if (frontmatterDiff && (frontmatterDiff.additions || frontmatterDiff.deletions)) {
+                        if (frontmatterDiff && (frontmatterDiff.additions !== undefined || frontmatterDiff.deletions !== undefined)) {
                           return {
-                            additions: Number(frontmatterDiff.additions) || 0,
-                            deletions: Number(frontmatterDiff.deletions) || 0
+                            additions: frontmatterDiff.additions !== undefined ? Number(frontmatterDiff.additions) : 0,
+                            deletions: frontmatterDiff.deletions !== undefined ? Number(frontmatterDiff.deletions) : 0
                           }
                         }
-                        const toolResult: any = (toolExec as any)?.result
+                        const toolResult = toolExec.result as ToolResultWithFileEdits | undefined
                         const fileEdits = toolResult?.result?.fileEdits || toolResult?.fileEdits
                         const firstEdit = Array.isArray(fileEdits) ? fileEdits[0] : null
-                        if (firstEdit && (firstEdit.additions || firstEdit.deletions)) {
+                        if (firstEdit && (firstEdit.additions !== undefined || firstEdit.deletions !== undefined)) {
                           return {
-                            additions: Number(firstEdit.additions) || 0,
-                            deletions: Number(firstEdit.deletions) || 0
+                            additions: firstEdit.additions !== undefined ? Number(firstEdit.additions) : 0,
+                            deletions: firstEdit.deletions !== undefined ? Number(firstEdit.deletions) : 0
                           }
                         }
                         return null
