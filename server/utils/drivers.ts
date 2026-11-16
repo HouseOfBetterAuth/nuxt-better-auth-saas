@@ -13,7 +13,9 @@ const getDatabaseUrl = () => {
 
 const createPgPool = () => new pg.Pool({
   connectionString: getDatabaseUrl(),
-  max: 90,
+  // A node-server process shares one pool. 90 connections from a single
+  // process nearly exhausts PostgreSQL's default max_connections (100).
+  max: 10,
   idleTimeoutMillis: 30000
 })
 
