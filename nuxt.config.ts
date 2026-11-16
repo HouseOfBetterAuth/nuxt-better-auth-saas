@@ -30,7 +30,8 @@ export default defineNuxtConfig({
   },
   i18n: {
     vueI18n: '~/i18n/i18n.config.ts',
-    baseUrl: process.env.NUXT_APP_URL,
+    // Overridable at runtime with NUXT_PUBLIC_I18N_BASE_URL
+    baseUrl: process.env.NUXT_APP_URL || '',
     locales: [
       { code: 'en', language: 'en-US', name: 'English' },
       { code: 'zh-CN', language: 'zh-CN', name: '简体中文' },
@@ -100,7 +101,7 @@ export default defineNuxtConfig({
       // console.log(`\n`)
     }
   },
-  runtimeConfig: generateRuntimeConfig(),
+  runtimeConfig: generateRuntimeConfig(effectiveNitroPreset),
   app: {
     head: {
       charset: 'utf-8',
