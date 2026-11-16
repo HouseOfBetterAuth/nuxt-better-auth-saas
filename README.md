@@ -75,8 +75,8 @@ A production-ready Nuxt SaaS starter with authentication, billing, teams, and mo
 ```bash
 cp .env.example .env   # Fill in env vars (database, Stripe, auth, etc.)
 pnpm install
-pnpm run db:generate
-pnpm run db:migrate
+pnpm run db:generate   # writes server/db/migrations (gitignored)
+npx nuxt db migrate    # applies them; `pnpm dev` also does it on start
 pnpm run dev -o
 ```
 
@@ -126,10 +126,12 @@ Your `NUXT_APP_URL` is automatically added to `trustedOrigins` via `runtimeConfi
 - **Cloudflare Hyperdrive** — connection pooling for Postgres
 
 **Caching:**
-- **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching, rate limiting)
-- **Redis** — use Redis if you're not on Cloudflare (Upstash, Railway, Vercel etc.)
+- **Cloudflare KV** — no Redis needed when hosting on Cloudflare (used for session caching)
+- **Node.js** — Redis is optional: sessions go through NuxtHub KV, which uses Redis only when `REDIS_URL` is set at build time, and otherwise stores them under `.data/kv` (keep that directory persistent)
 
 The app automatically uses Cloudflare KV when deployed to Cloudflare Workers. No additional configuration needed.
+
+To run on Node.js (migrations, sessions, build, runtime variables, admin user), see [docs/SELF_HOSTING_NODE.md](docs/SELF_HOSTING_NODE.md).
 
 ---
 
@@ -204,7 +206,7 @@ npx wrangler deploy
 | Environment | Database | Cache |
 |-------------|----------|-------|
 | Cloudflare Workers | Hyperdrive | KV |
-| Node.js hosting | `DATABASE_URL` | Redis |
+| Node.js hosting | `DATABASE_URL` | NuxtHub KV: Redis if `REDIS_URL` is set at build, else `.data/kv` |
 
 ### Full Documentation
 

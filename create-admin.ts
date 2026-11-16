@@ -11,7 +11,7 @@ const { Pool } = pg
 
 // Database connection
 const pool = new Pool({
-  connectionString: process.env.NUXT_DATABASE_URL
+  connectionString: process.env.DATABASE_URL || process.env.NUXT_DATABASE_URL
 })
 const db = drizzle(pool)
 
