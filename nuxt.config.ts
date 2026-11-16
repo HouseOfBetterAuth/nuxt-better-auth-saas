@@ -24,7 +24,13 @@ export default defineNuxtConfig({
     '@nuxthub/core'
   ],
   hub: {
-    db: 'postgresql',
+    db: {
+      dialect: 'postgresql',
+      // Without a URL at build time NuxtHub falls back to PGlite, which is not
+      // installed: keep postgres-js and only migrate when a URL is available
+      driver: 'postgres-js',
+      applyMigrationsDuringBuild: !!(process.env.POSTGRES_URL || process.env.POSTGRESQL_URL || process.env.DATABASE_URL)
+    },
     kv: true,
     blob: true
   },
