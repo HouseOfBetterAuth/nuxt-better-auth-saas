@@ -10,13 +10,18 @@ import * as schema from '~~/server/db/schema'
 import { ac, admin, member, owner } from '~~/shared/utils/permissions'
 import { logAuditEvent } from './auditLogger'
 import { getDB } from './db'
-import { cacheClient, resendInstance } from './drivers'
+import { cacheClient, getResendClient } from './drivers'
 import { renderDeleteAccount, renderResetPassword, renderTeamInvite, renderVerifyEmail } from './email'
 import { runtimeConfig } from './runtimeConfig'
-import { createStripeClient, setupStripe } from './stripe'
+import { createStripeClient, isStripeConfigured, setupStripe } from './stripe'
 
 console.log(`Base URL is ${runtimeConfig.public.baseURL}`)
 console.log('Schema keys:', Object.keys(schema))
+
+// Used by npm run auth:schema only.
+const isAuthSchemaCommand = process.argv.some(arg => arg.includes('server/db/schema/auth.ts'))
+
+const emailSender = () => `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`
 
 export const createBetterAuth = () => betterAuth({
   baseURL: runtimeConfig.public.baseURL,
@@ -60,14 +65,24 @@ export const createBetterAuth = () => betterAuth({
     deleteUser: {
       enabled: true,
       async sendDeleteAccountVerification({ user, url }) {
-        if (resendInstance) {
-          const name = user.name || user.email.split('@')[0]
-          const html = await renderDeleteAccount(name, url)
-          await resendInstance.emails.send({
-            from: runtimeConfig.emailFrom!,
-            to: user.email,
-            subject: 'Confirm account deletion',
-            html
+        const resend = getResendClient()
+        if (!resend) {
+          console.warn('Resend is not configured: account deletion email not sent')
+          return
+        }
+        const name = user.name || user.email.split('@')[0]
+        const html = await renderDeleteAccount(name, url)
+        const response = await resend.emails.send({
+          from: emailSender(),
+          to: user.email,
+          subject: 'Confirm account deletion',
+          html
+        })
+        if (response.error) {
+          console.error(`Failed to send account deletion email: ${response.error.message}`)
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Internal Server Error'
           })
         }
       }
@@ -126,7 +141,7 @@ export const createBetterAuth = () => betterAuth({
 
               console.log('[Auth] Found owned orgs:', ownedOrgs.length)
 
-              if (ownedOrgs.length > 0) {
+              if (ownedOrgs.length > 0 && isStripeConfigured()) {
                 const stripe = createStripeClient()
                 for (const row of ownedOrgs) {
                   const org = row.organization
@@ -271,8 +286,16 @@ export const createBetterAuth = () => betterAuth({
     sendResetPassword: async ({ user, url }) => {
       const name = user.name || user.email.split('@')[0]
       const html = await renderResetPassword(name, url)
-      const response = await resendInstance.emails.send({
-        from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
+      const resend = getResendClient()
+      if (!resend) {
+        console.error('Resend is not configured: reset password email not sent')
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Internal Server Error'
+        })
+      }
+      const response = await resend.emails.send({
+        from: emailSender(),
         to: user.email,
         subject: 'Reset your password',
         html
@@ -299,15 +322,24 @@ export const createBetterAuth = () => betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      console.log('>>> EMAIL VERIFICATION LINK <<<')
-      console.log(`To: ${user.email}`)
-      console.log(url)
-      console.log('>>> ------------------------ <<<')
+      // The URL carries the verification token: only print it in development,
+      // where it lets sign-up work without an email provider.
+      const isDevelopment = runtimeConfig.public.appEnv === 'development'
+      if (isDevelopment) {
+        console.log('>>> EMAIL VERIFICATION LINK <<<')
+        console.log(`To: ${user.email}`)
+        console.log(url)
+        console.log('>>> ------------------------ <<<')
+      }
       try {
+        const resend = getResendClient()
+        if (!resend) {
+          throw new Error('Resend is not configured')
+        }
         const name = user.name || user.email.split('@')[0]
         const html = await renderVerifyEmail(name, url)
-        const response = await resendInstance.emails.send({
-          from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
+        const response = await resend.emails.send({
+          from: emailSender(),
           to: user.email,
           subject: 'Verify your email address',
           html
@@ -326,9 +358,6 @@ export const createBetterAuth = () => betterAuth({
         }
       } catch (e) {
         console.warn('Failed to send verification email:', e)
-        console.log('>>> MANUAL VERIFICATION LINK <<<')
-        console.log(url)
-        console.log('>>> ------------------------ <<<')
       }
     }
   },
@@ -424,12 +453,13 @@ export const createBetterAuth = () => betterAuth({
       },
       enableMetadata: true,
       async sendInvitationEmail({ email, inviter, organization, invitation }) {
-        if (resendInstance) {
+        const resend = getResendClient()
+        if (resend) {
           const inviterName = inviter.user.name || inviter.user.email.split('@')[0]
           const inviteUrl = `${runtimeConfig.public.baseURL}/invite/${invitation.id}`
           const html = await renderTeamInvite(inviterName, organization.name, inviteUrl)
-          await resendInstance.emails.send({
-            from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
+          await resend.emails.send({
+            from: emailSender(),
             to: email,
             subject: `You're invited to join ${organization.name}`,
             html
@@ -445,14 +475,14 @@ export const createBetterAuth = () => betterAuth({
         }
       }
     }),
-    setupStripe()
+    // Billing is optional: without a Stripe secret key the app runs without it.
+    // auth:schema keeps the plugin so the generated schema stays complete.
+    ...(isStripeConfigured() || isAuthSchemaCommand ? [setupStripe()] : [])
   ]
 })
 
 let _auth: ReturnType<typeof betterAuth>
 
-// Used by npm run auth:schema only.
-const isAuthSchemaCommand = process.argv.some(arg => arg.includes('server/db/schema/auth.ts'))
 if (isAuthSchemaCommand) {
   _auth = createBetterAuth()
 }

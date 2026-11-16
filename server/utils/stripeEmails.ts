@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { organization as organizationTable, user as userTable } from '~~/server/db/schema'
 import { findPlanById, findPlanByPriceId, getPlanPricing } from '~~/shared/utils/plans'
 import { useDB } from './db'
-import { resendInstance } from './drivers'
+import { getResendClient } from './drivers'
 import {
   renderPaymentFailed,
   renderSubscriptionCanceled,
@@ -206,11 +206,12 @@ function formatDate(date: Date): string {
  * Send an email using Resend
  */
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
-  if (!resendInstance)
+  const resend = getResendClient()
+  if (!resend)
     return false
 
   try {
-    await resendInstance.emails.send({
+    await resend.emails.send({
       from: `${runtimeConfig.public.appName} <${runtimeConfig.public.appNotifyEmail}>`,
       to,
       subject,
