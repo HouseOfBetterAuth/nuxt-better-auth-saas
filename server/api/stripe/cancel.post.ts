@@ -1,9 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import Stripe from 'stripe'
 import { member as memberTable } from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
+import { createStripeClient } from '~~/server/utils/stripe'
 
 export default defineEventHandler(async (event) => {
   const session = await getAuthSession(event)
@@ -47,7 +46,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const stripe = new Stripe(runtimeConfig.stripeSecretKey!)
+  const stripe = createStripeClient()
 
   try {
     // Cancel at period end

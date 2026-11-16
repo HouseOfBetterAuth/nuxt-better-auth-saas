@@ -1,8 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import Stripe from 'stripe'
 import { member as memberTable, organization as organizationTable, subscription as subscriptionTable } from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
+import { createStripeClient } from '~~/server/utils/stripe'
 import { sendSubscriptionUpdatedEmail } from '~~/server/utils/stripeEmails'
 import { getPlanKeyFromId, getTierForInterval } from '~~/shared/utils/plans'
 
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const stripe = new Stripe(runtimeConfig.stripeSecretKey!)
+  const stripe = createStripeClient()
 
   // Find active or trialing subscription
   const subscriptions = await stripe.subscriptions.list({

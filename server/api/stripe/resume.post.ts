@@ -1,10 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import Stripe from 'stripe'
 import { member as memberTable } from '~~/server/db/schema'
 import { getAuthSession } from '~~/server/utils/auth'
 import { useDB } from '~~/server/utils/db'
-import { runtimeConfig } from '~~/server/utils/runtimeConfig'
-import { addPaymentLog } from '~~/server/utils/stripe'
+import { addPaymentLog, createStripeClient } from '~~/server/utils/stripe'
 import { sendSubscriptionResumedEmail } from '~~/server/utils/stripeEmails'
 
 export default defineEventHandler(async (event) => {
@@ -49,7 +47,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const stripe = new Stripe(runtimeConfig.stripeSecretKey!)
+  const stripe = createStripeClient()
 
   try {
     // Resume subscription (disable cancel_at_period_end)

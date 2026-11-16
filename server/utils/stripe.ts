@@ -38,7 +38,19 @@ import { removeExcessMembersOnExpiration } from './subscription-handlers'
  *    - `organizationId` is the primary reference.
  */
 
+/**
+ * Billing is optional: it is enabled only when a Stripe secret key is set.
+ */
+export const isStripeConfigured = () => Boolean(runtimeConfig.stripeSecretKey)
+
 export const createStripeClient = () => {
+  if (!isStripeConfigured()) {
+    // The Stripe SDK throws an opaque error without a key; answer 503 instead.
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Billing is not configured'
+    })
+  }
   return new Stripe(runtimeConfig.stripeSecretKey!)
 }
 
